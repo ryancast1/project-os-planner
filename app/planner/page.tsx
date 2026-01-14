@@ -707,6 +707,7 @@ export default function PlannerPage() {
 
   const [drawerWindow, setDrawerWindow] = useState<DrawerWindow>("thisWeek");
   const [drawerDraft, setDrawerDraft] = useState("");
+  const [drawerType, setDrawerType] = useState<ItemType>("task");
 
   const [openDayIso, setOpenDayIso] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -958,13 +959,6 @@ function getWindowValue(which: DrawerWindow) {
     return out;
   }, [tasks, plans, focuses, windows]);
 
-  const thisWeekFocusOverlay = useMemo(() => {
-    const start = new Date(windows.thisWeekStart);
-    const startIso = windows.thisWeekStart;
-    const endIso = toISODate(addDays(start, 4));
-    const overlay = focuses.filter((f) => !f.scheduled_for && f.window_kind === "workweek" && f.window_start === startIso);
-    return { startIso, endIso, overlay };
-  }, [focuses, windows]);
 
   function ensureDayDraft(iso: string) {
     setDraftByDay((prev) => (prev[iso] ? prev : { ...prev, [iso]: { task: "", plan: "", focus: "" } }));
@@ -1102,7 +1096,7 @@ function getWindowValue(which: DrawerWindow) {
     const raw = drawerDraft.trim();
     if (!raw) return;
 
-    await createItem({ titleRaw: raw, notes: "", targetValue: getWindowValue(drawerWindow), itemType: "task" });
+    await createItem({ titleRaw: raw, notes: "", targetValue: getWindowValue(drawerWindow), itemType: drawerType });
     setDrawerDraft("");
   }
 
@@ -1145,6 +1139,16 @@ function getWindowValue(which: DrawerWindow) {
           </div>
 
           <div className="mt-2 flex gap-2">
+            <select
+              value={drawerType}
+              onChange={(e) => setDrawerType(e.target.value as ItemType)}
+              className="h-10 w-[92px] shrink-0 rounded-xl border border-neutral-800 bg-neutral-950 px-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
+            >
+              <option value="task">Task</option>
+              <option value="plan">Plan</option>
+              <option value="focus">Focus</option>
+            </select>
+
             <input
               value={drawerDraft}
               onChange={(e) => setDrawerDraft(e.target.value)}
@@ -1157,6 +1161,7 @@ function getWindowValue(which: DrawerWindow) {
               placeholder="Add…"
               className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
             />
+
             <button
               onClick={addDrawer}
               className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
@@ -1296,10 +1301,6 @@ function getWindowValue(which: DrawerWindow) {
             {/* Focus */}
             <div className="mt-4">
               <div className="mt-2 space-y-2">
-                {todayIso >= thisWeekFocusOverlay.startIso && todayIso <= thisWeekFocusOverlay.endIso &&
-                  thisWeekFocusOverlay.overlay.map((f) => (
-                    <FocusFloat key={`ov-${f.id}`} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
-                  ))}
                 {(focusesByDay[todayIso] ?? []).map((f) => (
                   <FocusFloat key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
                 ))}
@@ -1394,10 +1395,6 @@ function getWindowValue(which: DrawerWindow) {
 
                       <div className="mt-4">
                         <div className="mt-2 space-y-2">
-                          {iso >= thisWeekFocusOverlay.startIso && iso <= thisWeekFocusOverlay.endIso &&
-                            thisWeekFocusOverlay.overlay.map((f) => (
-                              <FocusFloat key={`ov-${iso}-${f.id}`} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
-                            ))}
                           {dayFocus.map((f) => (
                             <FocusFloat key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
                           ))}
