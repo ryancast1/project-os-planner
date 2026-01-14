@@ -1,6 +1,62 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+function PlannerTabs() {
+  const pathname = usePathname();
+
+  const tabs = [
+    { href: "/planner", label: "Planner" },
+    { href: "/goals", label: "Goals" },
+    { href: "/projects", label: "Projects" },
+    { href: "/habits", label: "Habits" },
+    { href: "/calendar", label: "Calendar" },
+  ] as const;
+
+  return (
+    <nav
+      className={clsx(
+        "fixed inset-x-0 bottom-0 z-[80] border-t border-neutral-800 bg-neutral-950/95",
+        "backdrop-blur supports-[backdrop-filter]:bg-neutral-950/70"
+      )}
+      aria-label="Planner tabs"
+    >
+      <div className="mx-auto flex max-w-xl items-stretch justify-between px-2 pb-[env(safe-area-inset-bottom)]">
+        {tabs.map((t) => {
+          const active = pathname === t.href;
+          return (
+            <Link
+              key={t.href}
+              href={t.href}
+              className={clsx(
+                "flex flex-1 flex-col items-center justify-center py-3",
+                "rounded-xl",
+                active ? "text-neutral-50" : "text-neutral-400"
+              )}
+              aria-current={active ? "page" : undefined}
+            >
+              <span
+                className={clsx(
+                  "text-[12px] font-semibold",
+                  active ? "" : ""
+                )}
+              >
+                {t.label}
+              </span>
+              <span
+                className={clsx(
+                  "mt-1 h-0.5 w-6 rounded-full",
+                  active ? "bg-neutral-50" : "bg-transparent"
+                )}
+              />
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
 import { supabase } from "@/lib/supabaseClient";
 
 type WindowKind = "workweek" | "weekend";
@@ -1582,7 +1638,7 @@ function getWindowValue(which: DrawerWindow) {
   }
 
   return (
-    <main className="min-h-dvh p-4 pb-20">
+    <main className="min-h-dvh p-4 pb-32">
       <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Planner</h1>
@@ -1998,7 +2054,7 @@ function getWindowValue(which: DrawerWindow) {
       {/* Floating add */}
       <button
         onClick={() => setAddOpen(true)}
-        className="fixed bottom-20 right-4 z-[55] h-12 w-12 rounded-full border border-neutral-800 bg-neutral-100 text-xl font-semibold text-neutral-900 shadow-lg active:scale-[0.98]"
+        className="fixed bottom-28 right-4 z-[55] h-12 w-12 rounded-full border border-neutral-800 bg-neutral-100 text-xl font-semibold text-neutral-900 shadow-lg active:scale-[0.98]"
         aria-label="Add"
         title="Add"
       >
@@ -2025,6 +2081,7 @@ function getWindowValue(which: DrawerWindow) {
         onDelete={deleteEditItem}
         onArchiveFocus={archiveEditedFocus}
       />
+      <PlannerTabs />
     </main>
   );
 }
