@@ -1,62 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-function PlannerTabs() {
-  const pathname = usePathname();
-
-  const tabs = [
-    { href: "/planner", label: "Planner" },
-    { href: "/goals", label: "Goals" },
-    { href: "/projects", label: "Projects" },
-    { href: "/habits", label: "Habits" },
-    { href: "/calendar", label: "Calendar" },
-  ] as const;
-
-  return (
-    <nav
-      className={clsx(
-        "fixed inset-x-0 bottom-0 z-[80] border-t border-neutral-800 bg-neutral-950/95",
-        "backdrop-blur supports-[backdrop-filter]:bg-neutral-950/70"
-      )}
-      aria-label="Planner tabs"
-    >
-      <div className="mx-auto flex max-w-xl items-stretch justify-between px-2 pb-[env(safe-area-inset-bottom)]">
-        {tabs.map((t) => {
-          const active = pathname === t.href;
-          return (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={clsx(
-                "flex flex-1 flex-col items-center justify-center py-3",
-                "rounded-xl",
-                active ? "text-neutral-50" : "text-neutral-400"
-              )}
-              aria-current={active ? "page" : undefined}
-            >
-              <span
-                className={clsx(
-                  "text-[12px] font-semibold",
-                  active ? "" : ""
-                )}
-              >
-                {t.label}
-              </span>
-              <span
-                className={clsx(
-                  "mt-1 h-0.5 w-6 rounded-full",
-                  active ? "bg-neutral-50" : "bg-transparent"
-                )}
-              />
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
-  );
-}
 import { supabase } from "@/lib/supabaseClient";
 
 type WindowKind = "workweek" | "weekend";
@@ -1638,145 +1582,21 @@ function getWindowValue(which: DrawerWindow) {
   }
 
   return (
-    <main className="min-h-dvh p-4 pb-32">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Planner</h1>
-        </div>
-      </div>
+    <main className="min-h-dvh p-4 pb-32 mx-auto max-w-6xl">
 
-      <div className="mt-4 h-px w-full bg-neutral-800" />
-
-      {/* Parking (formerly bottom drawer) */}
-      {!loading && (
-        <section className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm">
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {([
-              ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length})`],
-              ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length})`],
-              ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length})`],
-              ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length})`],
-              ["open", `Open (${drawerLists.open.task.length + drawerLists.open.plan.length + drawerLists.open.focus.length})`],
-            ] as const).map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => setDrawerWindow(k as DrawerWindow)}
-                className={clsx(
-                  "whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold",
-                  drawerWindow === k
-                    ? "border-neutral-200 bg-neutral-100 text-neutral-900"
-                    : "border-neutral-800 bg-neutral-950 text-neutral-200"
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-2">
-            <div className="mb-2 hidden gap-2 sm:mb-2 sm:gap-2 group-focus-within:flex" />
-            <div className="group">
-              <div className="mb-2 hidden gap-2 group-focus-within:flex">
-                {([
-                  ["task", "Task"],
-                  ["plan", "Plan"],
-                  ["focus", "Focus"],
-                ] as const).map(([k, label]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    onClick={() => setDrawerType(k as ItemType)}
-                    className={clsx(
-                      "rounded-xl border px-3 py-1.5 text-xs font-semibold",
-                      drawerType === k
-                        ? "border-neutral-200 bg-neutral-100 text-neutral-900"
-                        : "border-neutral-800 bg-neutral-950 text-neutral-200"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  value={drawerDraft}
-                  onChange={(e) => setDrawerDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addDrawer();
-                    }
-                  }}
-                  placeholder="Add…"
-                  className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
-                />
-
-                <button
-                  onClick={addDrawer}
-                  className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-            {drawerLists[drawerWindow].focus.map((f) => (
-              <FocusFloat
-                key={f.id}
-                focus={f}
-                moveTargets={moveTargets}
-                onMove={(id, v) => moveItem("focus", id, v)}
-                onEdit={(f) => openEdit("focus", f)}
-              />
-            ))}
-
-            {drawerLists[drawerWindow].plan.map((p) => (
-              <PlanRow
-                key={p.id}
-                plan={p}
-                moveTargets={moveTargets}
-                onMove={(id, v) => moveItem("plan", id, v)}
-                onEdit={(p) => openEdit("plan", p)}
-              />
-            ))}
-
-            {drawerLists[drawerWindow].task.map((t) => (
-              <TaskRow
-                key={t.id}
-                task={t}
-                moveTargets={moveTargets}
-                onMove={(id, v) => moveItem("task", id, v)}
-                onToggleDone={toggleTaskDone}
-                onEdit={(t) => openEdit("task", t)}
-              />
-            ))}
-
-            {drawerLists[drawerWindow].focus.length +
-              drawerLists[drawerWindow].plan.length +
-              drawerLists[drawerWindow].task.length ===
-              0 && <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>}
-          </div>
-        </section>
-      )}
 
       {loading ? (
         <div className="mt-6 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          {/* Today */}
-          <section
-            className={clsx(
-              "mt-6 rounded-2xl border border-neutral-800 p-4 shadow-sm",
-              (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
-            )}
-          >
+          <div className="mt-2 grid gap-4 md:grid-cols-2">
+            {/* Today */}
+            <section
+              className={clsx(
+                "rounded-2xl border border-neutral-800 p-4 shadow-sm",
+                (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
+              )}
+            >
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-lg font-semibold">Today</div>
@@ -1881,10 +1701,128 @@ function getWindowValue(which: DrawerWindow) {
                 ))}
               </div>
             </div>
-          </section>
+            </section>
+
+            {/* Parking */}
+            <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm">
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {([
+                  ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length})`],
+                  ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length})`],
+                  ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length})`],
+                  ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length})`],
+                  ["open", `Open (${drawerLists.open.task.length + drawerLists.open.plan.length + drawerLists.open.focus.length})`],
+                ] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    onClick={() => setDrawerWindow(k as DrawerWindow)}
+                    className={clsx(
+                      "whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                      drawerWindow === k
+                        ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                        : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-2">
+                <div className="mb-2 hidden gap-2 sm:mb-2 sm:gap-2 group-focus-within:flex" />
+                <div className="group">
+                  <div className="mb-2 hidden gap-2 group-focus-within:flex">
+                    {([
+                      ["task", "Task"],
+                      ["plan", "Plan"],
+                      ["focus", "Focus"],
+                    ] as const).map(([k, label]) => (
+                      <button
+                        key={k}
+                        type="button"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onClick={() => setDrawerType(k as ItemType)}
+                        className={clsx(
+                          "rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                          drawerType === k
+                            ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                            : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      value={drawerDraft}
+                      onChange={(e) => setDrawerDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addDrawer();
+                        }
+                      }}
+                      placeholder="Add…"
+                      className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                    />
+
+                    <button
+                      onClick={addDrawer}
+                      className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                {drawerLists[drawerWindow].focus.map((f) => (
+                  <FocusFloat
+                    key={f.id}
+                    focus={f}
+                    moveTargets={moveTargets}
+                    onMove={(id, v) => moveItem("focus", id, v)}
+                    onEdit={(f) => openEdit("focus", f)}
+                  />
+                ))}
+
+                {drawerLists[drawerWindow].plan.map((p) => (
+                  <PlanRow
+                    key={p.id}
+                    plan={p}
+                    moveTargets={moveTargets}
+                    onMove={(id, v) => moveItem("plan", id, v)}
+                    onEdit={(p) => openEdit("plan", p)}
+                  />
+                ))}
+
+                {drawerLists[drawerWindow].task.map((t) => (
+                  <TaskRow
+                    key={t.id}
+                    task={t}
+                    moveTargets={moveTargets}
+                    onMove={(id, v) => moveItem("task", id, v)}
+                    onToggleDone={toggleTaskDone}
+                    onEdit={(t) => openEdit("task", t)}
+                  />
+                ))}
+
+                {drawerLists[drawerWindow].focus.length +
+                  drawerLists[drawerWindow].plan.length +
+                  drawerLists[drawerWindow].task.length ===
+                  0 && <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>}
+              </div>
+            </section>
+          </div>
 
           {/* Next 6 days */}
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6">
             {days.slice(1).map((d, i) => {
               const iso = toISODate(d);
               const label = fmtDayLabel(d, i + 1);
@@ -1900,11 +1838,11 @@ function getWindowValue(which: DrawerWindow) {
 
               return (
                 <Fragment key={iso}>
-                  {afterSunday && <div className="my-4 h-px w-full bg-neutral-800/70" />}
                   <section
                     className={clsx(
                       "rounded-2xl border border-neutral-800 p-4 shadow-sm",
-                      isWeekend ? "bg-neutral-800/80" : "bg-neutral-900"
+                      isWeekend ? "bg-neutral-800/80" : "bg-neutral-900",
+                      afterSunday ? "md:ml-4" : ""
                     )}
                   >
                   <button
@@ -2081,7 +2019,6 @@ function getWindowValue(which: DrawerWindow) {
         onDelete={deleteEditItem}
         onArchiveFocus={archiveEditedFocus}
       />
-      <PlannerTabs />
     </main>
   );
 }
