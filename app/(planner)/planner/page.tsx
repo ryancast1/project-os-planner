@@ -740,7 +740,7 @@ function EditSheet({
     <div className="fixed inset-0 z-[70]">
       <button className="absolute inset-0 bg-black/60" onClick={onClose} aria-label="Close" />
 
-      <div className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] left-0 right-0 mx-auto max-w-xl">
+      <div className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] left-0 right-0 mx-auto max-w-xl px-2">
         <div className="max-h-[calc(100dvh-140px)] overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950 p-4 shadow-2xl">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Edit</div>
@@ -978,8 +978,8 @@ function AddSheet({
     <div className="fixed inset-0 z-[60]">
       <button className="absolute inset-0 bg-black/60" onClick={onClose} aria-label="Close" />
 
-      <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-xl">
-        <div className="rounded-t-2xl border border-neutral-800 bg-neutral-950 p-4 shadow-2xl">
+      <div className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] left-0 right-0 mx-auto max-w-xl px-2">
+  <div className="max-h-[calc(100dvh-140px)] overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950 p-4 shadow-2xl">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Add</div>
             <button
@@ -1115,6 +1115,7 @@ function AddSheet({
             </div>
 
             <div className="text-[11px] text-neutral-500">Tip: Cmd/Ctrl+Enter to add. Escape to close.</div>
+            <div className="h-[env(safe-area-inset-bottom)]" />
           </div>
         </div>
       </div>

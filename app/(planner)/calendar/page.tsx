@@ -150,6 +150,19 @@ export default function CalendarPage() {
 
   const [openIso, setOpenIso] = useState<string | null>(null);
 
+  const [maxPlansPerCell, setMaxPlansPerCell] = useState(3);
+
+  useEffect(() => {
+    function compute() {
+      // Tailwind md breakpoint ~768px. Treat md+ as iPad/Mac: show more.
+      const w = window.innerWidth || 0;
+      setMaxPlansPerCell(w >= 768 ? 5 : 3);
+    }
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, []);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -311,7 +324,7 @@ export default function CalendarPage() {
             <div
               key={w}
               className={clsx(
-                "border border-neutral-800 bg-neutral-950/40 px-0.5 py-1 text-center text-[9px] font-semibold leading-none text-neutral-300 sm:text-xs",
+                "border border-neutral-800 bg-neutral-950/40 px-0.5 py-1 text-center text-[9px] font-semibold leading-none text-neutral-300 sm:text-xs md:landscape:text-sm",
                 idx >= 5 ? "bg-neutral-900/40" : ""
               )}
             >
@@ -330,7 +343,7 @@ export default function CalendarPage() {
                     const iso = toISODate(d);
                     const isToday = iso === todayIso;
                     const dayPlans = plansByDay[iso] ?? [];
-                    const show = dayPlans.slice(0, 2);
+                    const show = dayPlans.slice(0, maxPlansPerCell);
                     const extra = Math.max(0, dayPlans.length - show.length);
                     const weekend = isWeekend(d);
 
@@ -361,27 +374,27 @@ export default function CalendarPage() {
                           // thicker left border when month changes vs the cell to the left (e.g., Jan 31 -> Feb 1)
                           monthChangeFromLeft ? "border-l-2 border-l-neutral-500/60" : "",
                           isToday
-                            ? "bg-neutral-800/35 ring-1 ring-neutral-500/40"
+                            ? "bg-neutral-600/55 ring-2 ring-neutral-200/35"
                             : weekend
-                              ? "bg-neutral-900/55"
+                              ? "bg-neutral-800/55"
                               : "bg-neutral-950/25"
                         )}
                         style={{ touchAction: "manipulation" }}
                       >
-                        <div className="absolute right-1 top-1 text-[10px] text-neutral-400">{d.getDate()}</div>
+                        <div className="absolute right-1 top-1 text-[10px] text-neutral-400 md:landscape:text-xs">{d.getDate()}</div>
 
-                        <div className="mt-3 space-y-0.5">
+                        <div className="mt-3 space-y-0.5 md:landscape:mt-0 md:landscape:h-full md:landscape:pt-5 md:landscape:pb-2 md:landscape:flex md:landscape:flex-col md:landscape:justify-center">
                           {show.map((p) => (
                             <div
                               key={p.id}
-                              className="truncate text-[8px] leading-tight text-neutral-200 sm:text-[11px]"
+                              className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-200 sm:text-[11px] md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
                               title={p.title}
                             >
                               {p.title}
                             </div>
                           ))}
                           {extra > 0 ? (
-                            <div className="text-[8px] leading-tight text-neutral-400 sm:text-[11px]">+{extra}</div>
+                            <div className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 sm:text-[11px] md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
                           ) : null}
                         </div>
                       </div>
