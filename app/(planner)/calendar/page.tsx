@@ -496,18 +496,18 @@ export default function CalendarPage() {
                         >
                           <div className="absolute right-1 top-1 text-[10px] text-neutral-400 md:landscape:text-xs">{d.getDate()}</div>
 
-                          <div className="mt-6 space-y-0.5 sm:space-y-1 landscape:space-y-1 md:landscape:space-y-2 md:landscape:mt-0 md:landscape:h-full md:landscape:pt-5 md:landscape:pb-2 md:landscape:flex md:landscape:flex-col md:landscape:justify-center">
+                          <div className="mt-5 space-y-0.5 sm:space-y-1 landscape:space-y-1 md:landscape:space-y-2 md:landscape:mt-0 md:landscape:h-full md:landscape:pt-5 md:landscape:pb-2 md:landscape:flex md:landscape:flex-col md:landscape:justify-center">
                             {show.map((p) => (
                               <div
                                 key={p.id}
-                                className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-200 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:break-words landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
+                                className="text-center whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-200 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:break-words landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
                                 title={p.title}
                               >
                                 {p.title}
                               </div>
                             ))}
                             {extra > 0 ? (
-                              <div className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
+                              <div className="text-center whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
                             ) : null}
                           </div>
                         </div>
@@ -526,8 +526,8 @@ export default function CalendarPage() {
                       {spansByWeek[wIdx].map((s) => {
                         // Desktop/iPad landscape: a little lower than before to leave a tiny gap under day numbers.
                         const top = 22 + s.lane * 16;
-                        // Mobile: stack from the bottom up.
-                        const bottom = 6 + s.lane * 12;
+                        // Mobile: stack from the bottom up. Use thinner bars + tighter stacking.
+                        const bottom = 4 + s.lane * 8;
 
                         return (
                           <div
@@ -541,20 +541,19 @@ export default function CalendarPage() {
                           >
                             <div
                               className={clsx(
-                                "w-full rounded-md border border-neutral-200/25 bg-neutral-200/15 px-1 backdrop-blur",
+                                "w-full border border-neutral-200/25 bg-neutral-200/10 backdrop-blur",
                                 isWide
-                                  ? "py-1 text-[11px] leading-none text-neutral-100"
-                                  : "py-0.5 text-[9px] leading-none text-neutral-100"
+                                  ? "rounded-md px-1 py-1 text-[11px] leading-none text-neutral-100"
+                                  : "rounded-sm px-1 text-[8px] leading-none text-neutral-100 h-3 flex items-center"
                               )}
                             >
                               <div className="flex w-full items-center justify-center gap-1 overflow-hidden">
                                 {s.continuesLeft ? (
-                                  <span className="shrink-0 text-neutral-200/80">←</span>
+                                  <span className={clsx("shrink-0", isWide ? "text-neutral-200/80" : "text-neutral-200/60")}>←</span>
                                 ) : null}
                                 <span
                                   className={clsx(
                                     "min-w-0 truncate text-center",
-                                    // Let it breathe a bit on wide views.
                                     isWide ? "max-w-full" : "max-w-full"
                                   )}
                                   title={s.title}
@@ -562,7 +561,7 @@ export default function CalendarPage() {
                                   {s.title}
                                 </span>
                                 {s.continuesRight ? (
-                                  <span className="shrink-0 text-neutral-200/80">→</span>
+                                  <span className={clsx("shrink-0", isWide ? "text-neutral-200/80" : "text-neutral-200/60")}>→</span>
                                 ) : null}
                               </div>
                             </div>
