@@ -434,7 +434,7 @@ function TaskRow({
         }}
         className={clsx(
           compact ? "shrink-0 h-4 w-4 rounded border grid place-items-center" : "shrink-0 h-6 w-6 rounded-md border grid place-items-center",
-          isDone ? "border-neutral-500 bg-neutral-200 text-neutral-900" : "border-neutral-700 bg-neutral-950 text-neutral-200"
+          isDone ? "border-emerald-400/70 bg-emerald-300 text-neutral-900" : "border-neutral-700 bg-neutral-950 text-neutral-200"
         )}
         aria-label={isDone ? "Mark not done" : "Mark done"}
         title={isDone ? "Mark not done" : "Mark done"}
@@ -443,7 +443,13 @@ function TaskRow({
       </button>
 
       <div className="min-w-0 flex-1">
-        <div className={clsx("truncate", compact ? "text-[11px]" : "text-sm", isDone && "line-through text-neutral-500")}>
+        <div
+          className={clsx(
+            "truncate",
+            compact ? "text-[11px]" : "text-sm",
+            isDone ? "text-emerald-300" : "text-neutral-200"
+          )}
+        >
           {task.title}
         </div>
       </div>
@@ -727,8 +733,8 @@ function EditSheet({
     <div className="fixed inset-0 z-[70]">
       <button className="absolute inset-0 bg-black/60" onClick={onClose} aria-label="Close" />
 
-      <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-xl">
-        <div className="rounded-t-2xl border border-neutral-800 bg-neutral-950 p-4 shadow-2xl">
+      <div className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] left-0 right-0 mx-auto max-w-xl">
+        <div className="max-h-[calc(100dvh-140px)] overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950 p-4 shadow-2xl">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Edit</div>
             <button
@@ -1983,7 +1989,6 @@ function getWindowValue(which: DrawerWindow) {
 
                       {/* Focus band */}
                       <FocusBand
-                        compact
                         items={dayFocus}
                         moveTargets={moveTargets}
                         onMove={(id, v) => moveItem("focus", id, v)}
@@ -1993,7 +1998,7 @@ function getWindowValue(which: DrawerWindow) {
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayPlans.map((p) => (
-                            <PlanRow compact key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
+                            <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
                           ))}
                         </div>
                       </div>
@@ -2001,7 +2006,7 @@ function getWindowValue(which: DrawerWindow) {
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayTasks.map((t) => (
-                            <TaskRow compact key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
+                            <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
                           ))}
                         </div>
                       </div>

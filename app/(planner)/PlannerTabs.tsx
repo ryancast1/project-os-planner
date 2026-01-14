@@ -9,8 +9,7 @@ export default function PlannerTabs() {
 
   const tabs = [
     { href: "/planner", label: "Planner" },
-    { href: "/goals", label: "Goals" },
-    { href: "/projects", label: "Projects" },
+    { href: "/goals", label: "Projects/Goals" },
     { href: "/habits", label: "Habits" },
     { href: "/calendar", label: "Calendar" },
   ] as const;
@@ -23,7 +22,7 @@ export default function PlannerTabs() {
       )}
       aria-label="Planner tabs"
     >
-      <div className="mx-auto flex max-w-6xl items-stretch justify-between px-2 pb-[env(safe-area-inset-bottom)]">
+      <div className="mx-auto flex max-w-6xl items-stretch justify-between px-2 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
         {tabs.map((t) => {
           const active = pathname === t.href;
           return (
@@ -31,12 +30,12 @@ export default function PlannerTabs() {
               key={t.href}
               href={t.href}
               className={clsx(
-                "flex flex-1 flex-col items-center justify-center py-3 rounded-xl",
+                "flex flex-1 flex-col items-center justify-center py-4 min-h-[56px] rounded-xl",
                 active ? "text-neutral-50" : "text-neutral-400"
               )}
               aria-current={active ? "page" : undefined}
             >
-              <span className="text-[12px] font-semibold">{t.label}</span>
+              <span className="text-[13px] font-semibold">{t.label}</span>
               <span
                 className={clsx(
                   "mt-1 h-0.5 w-6 rounded-full",
