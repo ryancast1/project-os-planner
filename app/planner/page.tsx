@@ -1160,6 +1160,10 @@ function getWindowValue(which: DrawerWindow) {
                   <button
                     key={k}
                     type="button"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
                     onClick={() => setDrawerType(k as ItemType)}
                     className={clsx(
                       "rounded-xl border px-3 py-1.5 text-xs font-semibold",
@@ -1262,6 +1266,10 @@ function getWindowValue(which: DrawerWindow) {
                   <button
                     key={k}
                     type="button"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
                     onClick={() => {
                       ensureDayDraft(todayIso);
                       setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
@@ -1388,6 +1396,10 @@ function getWindowValue(which: DrawerWindow) {
                             <button
                               key={k}
                               type="button"
+                              onPointerDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
                               onClick={() => {
                                 ensureDayDraft(iso);
                                 setDraftTypeByDay((p) => ({ ...p, [iso]: k as ItemType }));
