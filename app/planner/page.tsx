@@ -69,7 +69,7 @@ function toISODate(d: Date) {
 function fmtDayLabel(d: Date, index: number) {
   if (index === 0) return "Today";
   if (index === 1) return "Tomorrow";
-  return d.toLocaleDateString(undefined, { weekday: "short" });
+  return d.toLocaleDateString(undefined, { weekday: "long" });
 }
 
 function fmtMonthDay(d: Date) {
@@ -267,10 +267,12 @@ function RowShell({
   tone,
   children,
   onDelete,
+  onTap,
 }: {
   tone?: "normal" | "overdue";
   children: React.ReactNode;
   onDelete?: () => void;
+  onTap?: () => void;
 }) {
   const timerRef = useRef<number | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
@@ -324,9 +326,14 @@ function RowShell({
   return (
     <div
       className={clsx(
-        "flex items-center gap-2 rounded-xl border px-3 py-2",
-        tone === "overdue" ? "border-red-900/60 bg-red-950/30" : "border-neutral-800 bg-neutral-900"
+        "flex items-center gap-2 px-3 py-2 border-b border-neutral-800 last:border-b-0",
+        tone === "overdue" ? "bg-red-950/20" : "bg-transparent"
       )}
+      onClick={(e) => {
+        if (!onTap) return;
+        if (isInteractiveTarget(e.target)) return;
+        onTap();
+      }}
       onPointerDown={start}
       onPointerMove={maybeCancelOnMove}
       onPointerUp={clear}
@@ -364,8 +371,7 @@ function MoveSelect({
       aria-label="Move"
       title="Move"
       onPointerDown={(e) => e.stopPropagation()}
-    >
-     
+    >{/* removed blank line */}
       {dayTargets.map((t) => (
         <option key={t.value} value={t.value}>
           {t.label}
@@ -399,9 +405,10 @@ function TaskRow({
   tone?: "normal" | "overdue";
 }) {
   const isDone = task.status === "done";
+  const [showMove, setShowMove] = useState(false);
 
   return (
-    <RowShell tone={tone} onDelete={() => onDelete(task.id)}>
+    <RowShell tone={tone} onDelete={() => onDelete(task.id)} onTap={() => setShowMove((s) => !s)}>
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
@@ -424,7 +431,9 @@ function TaskRow({
         </div>
       </div>
 
-      <MoveSelect value={locationValueFor(task)} onChange={(v) => onMove(task.id, v)} moveTargets={moveTargets} />
+      {showMove && (
+        <MoveSelect value={locationValueFor(task)} onChange={(v) => onMove(task.id, v)} moveTargets={moveTargets} />
+      )}
     </RowShell>
   );
 }
@@ -440,8 +449,9 @@ function PlanRow({
   onMove: (id: string, targetValue: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const [showMove, setShowMove] = useState(false);
   return (
-    <RowShell onDelete={() => onDelete(plan.id)}>
+    <RowShell onDelete={() => onDelete(plan.id)} onTap={() => setShowMove((s) => !s)}>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">
           {plan.title}
@@ -449,7 +459,9 @@ function PlanRow({
         </div>
       </div>
 
-      <MoveSelect value={locationValueFor(plan)} onChange={(v) => onMove(plan.id, v)} moveTargets={moveTargets} />
+      {showMove && (
+        <MoveSelect value={locationValueFor(plan)} onChange={(v) => onMove(plan.id, v)} moveTargets={moveTargets} />
+      )}
     </RowShell>
   );
 }
@@ -465,13 +477,16 @@ function FocusRow({
   onMove: (id: string, targetValue: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const [showMove, setShowMove] = useState(false);
   return (
-    <RowShell onDelete={() => onDelete(focus.id)}>
+    <RowShell onDelete={() => onDelete(focus.id)} onTap={() => setShowMove((s) => !s)}>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">{focus.title}</div>
       </div>
 
-      <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
+      {showMove && (
+        <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
+      )}
     </RowShell>
   );
 }
@@ -487,22 +502,17 @@ function FocusFloat({
   onMove: (id: string, targetValue: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const [showMove, setShowMove] = useState(false);
+
   return (
-    <div
-      className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-neutral-200/90"
-      onPointerDown={() => {
-        // no-op; long press handled by RowShell style below
-      }}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        if (confirm("Delete this item?")) onDelete(focus.id);
-      }}
-    >
-      <div className="min-w-0 flex-1 italic truncate">{focus.title}</div>
-      <div className="opacity-70">
-        <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
-      </div>
-    </div>
+    <RowShell onDelete={() => onDelete(focus.id)} onTap={() => setShowMove((s) => !s)}>
+      <div className="min-w-0 flex-1 italic truncate text-sm text-neutral-200/90">{focus.title}</div>
+      {showMove && (
+        <div className="opacity-80">
+          <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
+        </div>
+      )}
+    </RowShell>
   );
 }
 
@@ -1138,39 +1148,56 @@ function getWindowValue(which: DrawerWindow) {
             ))}
           </div>
 
-          <div className="mt-2 flex gap-2">
-            <select
-              value={drawerType}
-              onChange={(e) => setDrawerType(e.target.value as ItemType)}
-              className="h-10 w-[92px] shrink-0 rounded-xl border border-neutral-800 bg-neutral-950 px-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
-            >
-              <option value="task">Task</option>
-              <option value="plan">Plan</option>
-              <option value="focus">Focus</option>
-            </select>
+          <div className="mt-2">
+            <div className="mb-2 hidden gap-2 sm:mb-2 sm:gap-2 group-focus-within:flex" />
+            <div className="group">
+              <div className="mb-2 hidden gap-2 group-focus-within:flex">
+                {([
+                  ["task", "Task"],
+                  ["plan", "Plan"],
+                  ["focus", "Focus"],
+                ] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setDrawerType(k as ItemType)}
+                    className={clsx(
+                      "rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                      drawerType === k
+                        ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                        : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
 
-            <input
-              value={drawerDraft}
-              onChange={(e) => setDrawerDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addDrawer();
-                }
-              }}
-              placeholder="Add…"
-              className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
-            />
+              <div className="flex gap-2">
+                <input
+                  value={drawerDraft}
+                  onChange={(e) => setDrawerDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addDrawer();
+                    }
+                  }}
+                  placeholder="Add…"
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                />
 
-            <button
-              onClick={addDrawer}
-              className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
-            >
-              Add
-            </button>
+                <button
+                  onClick={addDrawer}
+                  className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
             {drawerLists[drawerWindow].focus.map((f) => (
               <FocusRow
                 key={f.id}
@@ -1205,7 +1232,7 @@ function getWindowValue(which: DrawerWindow) {
             {drawerLists[drawerWindow].focus.length +
               drawerLists[drawerWindow].plan.length +
               drawerLists[drawerWindow].task.length ===
-              0 && <div className="text-sm text-neutral-500">Empty.</div>}
+              0 && <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>}
           </div>
         </section>
       )}
@@ -1225,54 +1252,66 @@ function getWindowValue(which: DrawerWindow) {
             </div>
 
             {/* Inline add */}
-            <div className="mt-3 flex gap-2">
-              <select
-                value={draftTypeByDay[todayIso] ?? "task"}
-                onChange={(e) => {
-                  ensureDayDraft(todayIso);
-                  setDraftTypeByDay((p) => ({ ...p, [todayIso]: e.target.value as ItemType }));
-                }}
-                className="h-10 w-[92px] rounded-xl border border-neutral-800 bg-neutral-950 px-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
-              >
-                <option value="task">Task</option>
-                <option value="plan">Plan</option>
-                <option value="focus">Focus</option>
-              </select>
+            <div className="mt-3 group">
+              <div className="mb-2 hidden gap-2 group-focus-within:flex">
+                {([
+                  ["task", "Task"],
+                  ["plan", "Plan"],
+                  ["focus", "Focus"],
+                ] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      ensureDayDraft(todayIso);
+                      setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
+                    }}
+                    className={clsx(
+                      "rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                      (draftTypeByDay[todayIso] ?? "task") === k
+                        ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                        : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
 
-              <input
-                value={draftByDay[todayIso]?.[(draftTypeByDay[todayIso] ?? "task") as ItemType] ?? ""}
-                onFocus={() => ensureDayDraft(todayIso)}
-                onChange={(e) => {
-                  ensureDayDraft(todayIso);
-                  const type = (draftTypeByDay[todayIso] ?? "task") as ItemType;
-                  setDraftByDay((prev) => ({
-                    ...prev,
-                    [todayIso]: { ...(prev[todayIso] ?? { task: "", plan: "", focus: "" }), [type]: e.target.value },
-                  }));
-                }}
-                onKeyDown={(e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    addInline(todayIso);
-  }
-}}
-                placeholder="Add…"
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
-              />
+              <div className="flex gap-2">
+                <input
+                  value={draftByDay[todayIso]?.[(draftTypeByDay[todayIso] ?? "task") as ItemType] ?? ""}
+                  onFocus={() => ensureDayDraft(todayIso)}
+                  onChange={(e) => {
+                    ensureDayDraft(todayIso);
+                    const type = (draftTypeByDay[todayIso] ?? "task") as ItemType;
+                    setDraftByDay((prev) => ({
+                      ...prev,
+                      [todayIso]: { ...(prev[todayIso] ?? { task: "", plan: "", focus: "" }), [type]: e.target.value },
+                    }));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addInline(todayIso);
+                    }
+                  }}
+                  placeholder="Add…"
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                />
 
-              
-
-              <button
-                onClick={() => addInline(todayIso)}
-                className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
-              >
-                Add
-              </button>
+                <button
+                  onClick={() => addInline(todayIso)}
+                  className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                >
+                  Add
+                </button>
+              </div>
             </div>
 
             {/* Plans */}
             <div className="mt-4">
-              <div className="mt-2 space-y-2">
+              <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                 {(plansByDay[todayIso] ?? []).map((p) => (
                   <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onDelete={deletePlan} />
                 ))}
@@ -1284,14 +1323,14 @@ function getWindowValue(which: DrawerWindow) {
               {overdueTasks.length > 0 && (
                 <div className="mt-2">
                   <div className="text-xs font-semibold text-red-300">Overdue</div>
-                  <div className="mt-2 space-y-2">
+                  <div className="mt-2 overflow-hidden rounded-xl border border-red-900/50 bg-red-950/10">
                     {overdueTasks.map((t) => (
                       <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onDelete={deleteTask} tone="overdue" />
                     ))}
                   </div>
                 </div>
               )}
-              <div className="mt-2 space-y-2">
+              <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                 {(tasksByDay[todayIso] ?? []).map((t) => (
                   <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onDelete={deleteTask} />
                 ))}
@@ -1300,7 +1339,7 @@ function getWindowValue(which: DrawerWindow) {
 
             {/* Focus */}
             <div className="mt-4">
-              <div className="mt-2 space-y-2">
+              <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/10">
                 {(focusesByDay[todayIso] ?? []).map((f) => (
                   <FocusFloat key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
                 ))}
@@ -1339,46 +1378,64 @@ function getWindowValue(which: DrawerWindow) {
 
                   {isOpen ? (
                     <>
-                      <div className="mt-3 flex gap-2">
-                        <select
-                          value={draftTypeByDay[iso] ?? "task"}
-                          onChange={(e) => setDraftTypeByDay((p) => ({ ...p, [iso]: e.target.value as ItemType }))}
-                          className="h-10 w-[92px] rounded-xl border border-neutral-800 bg-neutral-950 px-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
-                        >
-                          <option value="task">Task</option>
-                          <option value="plan">Plan</option>
-                          <option value="focus">Focus</option>
-                        </select>
+                      <div className="mt-3 group">
+                        <div className="mb-2 hidden gap-2 group-focus-within:flex">
+                          {([
+                            ["task", "Task"],
+                            ["plan", "Plan"],
+                            ["focus", "Focus"],
+                          ] as const).map(([k, label]) => (
+                            <button
+                              key={k}
+                              type="button"
+                              onClick={() => {
+                                ensureDayDraft(iso);
+                                setDraftTypeByDay((p) => ({ ...p, [iso]: k as ItemType }));
+                              }}
+                              className={clsx(
+                                "rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                                (draftTypeByDay[iso] ?? "task") === k
+                                  ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                                  : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                              )}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
 
-                        <input
-                          value={draftByDay[iso]?.[(draftTypeByDay[iso] ?? "task") as ItemType] ?? ""}
-                          onChange={(e) => {
-                            const type = (draftTypeByDay[iso] ?? "task") as ItemType;
-                            setDraftByDay((prev) => ({
-                              ...prev,
-                              [iso]: { ...(prev[iso] ?? { task: "", plan: "", focus: "" }), [type]: e.target.value },
-                            }));
-                          }}
-                          placeholder="Add…"
-                          onKeyDown={(e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    addInline(iso);
-  }
-}}
-                          className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
-                        />
+                        <div className="flex gap-2">
+                          <input
+                            value={draftByDay[iso]?.[(draftTypeByDay[iso] ?? "task") as ItemType] ?? ""}
+                            onFocus={() => ensureDayDraft(iso)}
+                            onChange={(e) => {
+                              const type = (draftTypeByDay[iso] ?? "task") as ItemType;
+                              setDraftByDay((prev) => ({
+                                ...prev,
+                                [iso]: { ...(prev[iso] ?? { task: "", plan: "", focus: "" }), [type]: e.target.value },
+                              }));
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                addInline(iso);
+                              }
+                            }}
+                            placeholder="Add…"
+                            className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                          />
 
-                        <button
-                          onClick={() => addInline(iso)}
-                          className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
-                        >
-                          Add
-                        </button>
+                          <button
+                            onClick={() => addInline(iso)}
+                            className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                          >
+                            Add
+                          </button>
+                        </div>
                       </div>
 
                       <div className="mt-4">
-                        <div className="mt-2 space-y-2">
+                        <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayPlans.map((p) => (
                             <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onDelete={deletePlan} />
                           ))}
@@ -1386,7 +1443,7 @@ function getWindowValue(which: DrawerWindow) {
                       </div>
 
                       <div className="mt-4">
-                        <div className="mt-2 space-y-2">
+                        <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayTasks.map((t) => (
                             <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onDelete={deleteTask} />
                           ))}
@@ -1394,7 +1451,7 @@ function getWindowValue(which: DrawerWindow) {
                       </div>
 
                       <div className="mt-4">
-                        <div className="mt-2 space-y-2">
+                        <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/10">
                           {dayFocus.map((f) => (
                             <FocusFloat key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
                           ))}
@@ -1402,7 +1459,7 @@ function getWindowValue(which: DrawerWindow) {
                       </div>
                     </>
                   ) : (
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                       {dayFocus.map((f) => (
                         <FocusFloat
                           key={f.id}
