@@ -66,6 +66,13 @@ function toISODate(d: Date) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function fromISODate(iso: string) {
+  const [y, m, d] = iso.split("-").map((x) => Number(x));
+  const dt = new Date(y, m - 1, d);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
 function fmtDayLabel(d: Date, index: number) {
   if (index === 0) return "Today";
   if (index === 1) return "Tomorrow";
@@ -1013,7 +1020,7 @@ function AddSheet({
               <input
                 value={titleRaw}
                 onChange={(e) => setTitleRaw(e.target.value)}
-                placeholder="e.g. Call Papa #sun"
+                placeholder="Add..."
                 className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                 autoFocus
               />
@@ -1134,6 +1141,24 @@ export default function PlannerPage() {
   const [editType, setEditType] = useState<ItemType>("task");
   const [editItem, setEditItem] = useState<Task | Plan | Focus | null>(null);
 
+  // Responsive flag for md (768px+) and up
+  const [isMdUp, setIsMdUp] = useState(false);
+
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 768px)");
+    const apply = () => setIsMdUp(mql.matches);
+    apply();
+    if ("addEventListener" in mql) {
+      mql.addEventListener("change", apply);
+      return () => mql.removeEventListener("change", apply);
+    }
+    // Safari fallback
+    // @ts-ignore
+    mql.addListener(apply);
+    // @ts-ignore
+    return () => mql.removeListener(apply);
+  }, []);
+
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -1180,7 +1205,24 @@ function getWindowValue(which: DrawerWindow) {
     setLoading(true);
 
     const start = toISODate(days[0]);
-    const end = toISODate(days[6]);
+
+    // We normally show 7 days (today + next 6). But we ALSO want future-dated items that fall into
+    // This Week / This Weekend / Next Week / Next Weekend to appear in the Parking Lot tabs.
+    // So we extend the fetch horizon to at least the end of next weekend.
+    const thisWeekEnd = toISODate(addDays(fromISODate(windows.thisWeekStart), 4));
+    const nextWeekEnd = toISODate(addDays(fromISODate(windows.nextWeekStart), 4));
+    const thisWeekendEnd = toISODate(addDays(fromISODate(windows.thisWeekendStart), 1));
+    const nextWeekendEnd = toISODate(addDays(fromISODate(windows.nextWeekendStart), 1));
+
+    const endCandidates = [
+      days[6],
+      fromISODate(thisWeekEnd),
+      fromISODate(nextWeekEnd),
+      fromISODate(thisWeekendEnd),
+      fromISODate(nextWeekendEnd),
+    ];
+    const maxEnd = endCandidates.reduce((a, b) => (a.getTime() > b.getTime() ? a : b));
+    const end = toISODate(maxEnd);
 
     const parkingOr = [
       `and(window_kind.eq.workweek,window_start.eq.${windows.thisWeekStart})`,
@@ -1350,6 +1392,24 @@ function getWindowValue(which: DrawerWindow) {
       open: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[] },
     };
 
+    const visibleStart = toISODate(days[0]);
+    const visibleEnd = toISODate(days[6]);
+
+    const thisWeekEnd = toISODate(addDays(fromISODate(windows.thisWeekStart), 4));
+    const nextWeekEnd = toISODate(addDays(fromISODate(windows.nextWeekStart), 4));
+    const thisWeekendEnd = toISODate(addDays(fromISODate(windows.thisWeekendStart), 1));
+    const nextWeekendEnd = toISODate(addDays(fromISODate(windows.nextWeekendStart), 1));
+
+    const classifyScheduled = (iso: string) => {
+      // Workweek windows: Mon–Fri
+      if (iso >= windows.thisWeekStart && iso <= thisWeekEnd) return "thisWeek" as const;
+      if (iso >= windows.nextWeekStart && iso <= nextWeekEnd) return "nextWeek" as const;
+      // Weekend windows: Sat–Sun
+      if (iso >= windows.thisWeekendStart && iso <= thisWeekendEnd) return "thisWeekend" as const;
+      if (iso >= windows.nextWeekendStart && iso <= nextWeekendEnd) return "nextWeekend" as const;
+      return null;
+    };
+
     const matchWindow = (kind: WindowKind | null, start: string | null) => {
       if (!kind || !start) return null;
       if (kind === "workweek" && start === windows.thisWeekStart) return "thisWeek" as const;
@@ -1360,26 +1420,67 @@ function getWindowValue(which: DrawerWindow) {
     };
 
     for (const t of tasks) {
-      if (t.scheduled_for) continue;
+      if (t.scheduled_for) {
+        // If it's outside the 7-day cards, but within one of the planning windows, show it in that tab.
+        if (t.scheduled_for < visibleStart || t.scheduled_for > visibleEnd) {
+          const which = classifyScheduled(t.scheduled_for);
+          if (which) out[which].task.push(t);
+        }
+        continue;
+      }
       const which = matchWindow(t.window_kind, t.window_start);
       if (which) out[which].task.push(t);
       else if (!t.window_kind && !t.window_start) out.open.task.push(t);
     }
     for (const p of plans) {
-      if (p.scheduled_for) continue;
+      if (p.scheduled_for) {
+        if (p.scheduled_for < visibleStart || p.scheduled_for > visibleEnd) {
+          const which = classifyScheduled(p.scheduled_for);
+          if (which) out[which].plan.push(p);
+        }
+        continue;
+      }
       const which = matchWindow(p.window_kind, p.window_start);
       if (which) out[which].plan.push(p);
       else if (!p.window_kind && !p.window_start) out.open.plan.push(p);
     }
     for (const f of focuses) {
-      if (f.scheduled_for) continue;
+      if (f.scheduled_for) {
+        if (f.scheduled_for < visibleStart || f.scheduled_for > visibleEnd) {
+          const which = classifyScheduled(f.scheduled_for);
+          if (which) out[which].focus.push(f);
+        }
+        continue;
+      }
       const which = matchWindow(f.window_kind, f.window_start);
       if (which) out[which].focus.push(f);
       else if (!f.window_kind && !f.window_start) out.open.focus.push(f);
     }
 
+    const sortByDate = <T extends { scheduled_for: string | null; created_at: string }>(arr: T[]) => {
+      arr.sort((a, b) => {
+        const da = a.scheduled_for ?? "9999-12-31";
+        const db = b.scheduled_for ?? "9999-12-31";
+        if (da !== db) return da.localeCompare(db);
+        return a.created_at.localeCompare(b.created_at);
+      });
+    };
+
+    sortByDate(out.thisWeek.task);
+    sortByDate(out.thisWeek.plan);
+    sortByDate(out.thisWeek.focus);
+    sortByDate(out.thisWeekend.task);
+    sortByDate(out.thisWeekend.plan);
+    sortByDate(out.thisWeekend.focus);
+    sortByDate(out.nextWeek.task);
+    sortByDate(out.nextWeek.plan);
+    sortByDate(out.nextWeek.focus);
+    sortByDate(out.nextWeekend.task);
+    sortByDate(out.nextWeekend.plan);
+    sortByDate(out.nextWeekend.focus);
+
     return out;
-  }, [tasks, plans, focuses, windows]);
+  }, [tasks, plans, focuses, windows, days]);
 
 
   function ensureDayDraft(iso: string) {
@@ -1989,6 +2090,7 @@ function getWindowValue(which: DrawerWindow) {
 
                       {/* Focus band */}
                       <FocusBand
+                        compact={isMdUp}
                         items={dayFocus}
                         moveTargets={moveTargets}
                         onMove={(id, v) => moveItem("focus", id, v)}
@@ -1998,7 +2100,7 @@ function getWindowValue(which: DrawerWindow) {
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayPlans.map((p) => (
-                            <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
+                            <PlanRow compact={isMdUp} key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
                           ))}
                         </div>
                       </div>
@@ -2006,7 +2108,7 @@ function getWindowValue(which: DrawerWindow) {
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayTasks.map((t) => (
-                            <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
+                            <TaskRow compact={isMdUp} key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
                           ))}
                         </div>
                       </div>
