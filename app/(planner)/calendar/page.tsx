@@ -7,6 +7,7 @@ type Plan = {
   id: string;
   title: string;
   scheduled_for: string; // YYYY-MM-DD
+  end_date?: string | null; // YYYY-MM-DD
   starts_at?: string | null;
   status?: string | null;
 };
@@ -31,6 +32,18 @@ function pad2(n: number) {
 
 function toISODate(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function isoMax(a: string, b: string) {
+  return a >= b ? a : b;
+}
+
+function isoMin(a: string, b: string) {
+  return a <= b ? a : b;
+}
+
+function planEndIso(p: Plan) {
+  return (p.end_date ?? p.scheduled_for) || p.scheduled_for;
 }
 
 function startOfWeekMonday(d: Date) {
@@ -174,7 +187,7 @@ export default function CalendarPage() {
       const [plansRes, tasksRes, focusRes] = await Promise.all([
         supabase
           .from("plans")
-          .select("id,title,scheduled_for,starts_at,status")
+          .select("id,title,scheduled_for,end_date,starts_at,status")
           .gte("scheduled_for", range.start)
           .lte("scheduled_for", range.end)
           .order("scheduled_for", { ascending: true })
@@ -215,6 +228,9 @@ export default function CalendarPage() {
     const m: Record<string, Plan[]> = {};
     for (const p of plans) {
       if (!p.scheduled_for) continue;
+      const endIso = planEndIso(p);
+      // Only show single-day plans inside cells; multi-day plans render as bars.
+      if (endIso !== p.scheduled_for) continue;
       (m[p.scheduled_for] ||= []).push(p);
     }
     return m;
@@ -233,18 +249,107 @@ export default function CalendarPage() {
     const m: Record<string, Focus[]> = {};
     for (const f of focuses) {
       if (!f.scheduled_for) continue;
+      const st = String(f.status ?? "").toLowerCase();
+      if (st === "archived") continue;
       (m[f.scheduled_for] ||= []).push(f);
     }
     return m;
   }, [focuses]);
 
+  const multiDayPlans = useMemo(() => {
+    return plans
+      .filter((p) => p.scheduled_for)
+      .map((p) => ({ ...p, _end: planEndIso(p) }))
+      .filter((p) => p._end && p._end !== p.scheduled_for)
+      .sort((a, b) => {
+        if (a.scheduled_for !== b.scheduled_for) return a.scheduled_for.localeCompare(b.scheduled_for);
+        return a._end.localeCompare(b._end);
+      });
+  }, [plans]);
+
+  type WeekSpan = {
+    key: string;
+    title: string;
+    startCol: number; // 0..6
+    endCol: number; // 0..6
+    continuesLeft: boolean;
+    continuesRight: boolean;
+    lane: number;
+  };
+
+  const spansByWeek = useMemo(() => {
+    return weeks.map((row) => {
+      const weekStartIso = toISODate(row[0]);
+      const weekEndIso = toISODate(row[6]);
+
+      const raw: Omit<WeekSpan, "lane">[] = [];
+
+      for (const p of multiDayPlans as Array<Plan & { _end: string }>) {
+        const startIso = p.scheduled_for;
+        const endIso = p._end;
+
+        // No overlap
+        if (endIso < weekStartIso || startIso > weekEndIso) continue;
+
+        const segStart = isoMax(startIso, weekStartIso);
+        const segEnd = isoMin(endIso, weekEndIso);
+
+        const startCol = row.findIndex((d) => toISODate(d) === segStart);
+        const endCol = row.findIndex((d) => toISODate(d) === segEnd);
+        if (startCol < 0 || endCol < 0) continue;
+
+        raw.push({
+          key: `${p.id}-${weekStartIso}`,
+          title: p.title,
+          startCol,
+          endCol,
+          continuesLeft: startIso < weekStartIso,
+          continuesRight: endIso > weekEndIso,
+        });
+      }
+
+      // Lane assignment so overlapping bars stack.
+      raw.sort((a, b) => (a.startCol - b.startCol) || (a.endCol - b.endCol) || a.title.localeCompare(b.title));
+      const laneEnd: number[] = [];
+      const spans: WeekSpan[] = [];
+
+      for (const s of raw) {
+        let lane = 0;
+        while (lane < laneEnd.length) {
+          if (s.startCol > laneEnd[lane]) break;
+          lane++;
+        }
+        if (lane === laneEnd.length) laneEnd.push(s.endCol);
+        else laneEnd[lane] = s.endCol;
+        spans.push({ ...s, lane });
+      }
+
+      return spans;
+    });
+  }, [weeks, multiDayPlans]);
+
   const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
   function dayModalContent(iso: string) {
     const d = new Date(iso + "T00:00:00");
-    const dayPlans = plansByDay[iso] ?? [];
+    const dayPlans = plans
+      .filter((p) => p.scheduled_for)
+      .filter((p) => {
+        const start = p.scheduled_for;
+        const end = planEndIso(p);
+        return start <= iso && iso <= end;
+      })
+      .sort((a, b) => {
+        const aEnd = planEndIso(a);
+        const bEnd = planEndIso(b);
+        if (a.scheduled_for !== b.scheduled_for) return a.scheduled_for.localeCompare(b.scheduled_for);
+        if (aEnd !== bEnd) return aEnd.localeCompare(bEnd);
+        return (a.starts_at ?? "").localeCompare(b.starts_at ?? "");
+      });
     const dayTasks = tasksByDay[iso] ?? [];
-    const dayFocus = focusByDay[iso] ?? [];
+    const dayFocus = (focusByDay[iso] ?? []).filter(
+      (f) => String(f.status ?? "").toLowerCase() !== "archived"
+    );
 
     return (
       <div className="w-[min(560px,92vw)] rounded-3xl border border-neutral-800 bg-neutral-950/95 p-4 shadow-2xl backdrop-blur">
@@ -342,68 +447,91 @@ export default function CalendarPage() {
           <div>
             {weeks.map((row, wIdx) => {
               return (
-                <div key={`week-${wIdx}`} className="grid grid-cols-7">
-                  {row.map((d, dIdx) => {
-                    const iso = toISODate(d);
-                    const isToday = iso === todayIso;
-                    const dayPlans = plansByDay[iso] ?? [];
-                    const show = dayPlans.slice(0, maxPlansPerCell);
-                    const extra = Math.max(0, dayPlans.length - show.length);
-                    const weekend = isWeekend(d);
+                <div key={`week-${wIdx}`} className="relative">
+                  <div className="grid grid-cols-7">
+                    {row.map((d, dIdx) => {
+                      const iso = toISODate(d);
+                      const isToday = iso === todayIso;
+                      const dayPlans = plansByDay[iso] ?? [];
+                      const show = dayPlans.slice(0, maxPlansPerCell);
+                      const extra = Math.max(0, dayPlans.length - show.length);
+                      const weekend = isWeekend(d);
 
-                    const monthChangeFromTop =
-                      wIdx > 0 && weeks[wIdx - 1][dIdx].getMonth() !== d.getMonth();
-                    const monthChangeFromLeft =
-                      dIdx > 0 && row[dIdx - 1].getMonth() !== d.getMonth();
+                      const monthChangeFromTop =
+                        wIdx > 0 && weeks[wIdx - 1][dIdx].getMonth() !== d.getMonth();
+                      const monthChangeFromLeft =
+                        dIdx > 0 && row[dIdx - 1].getMonth() !== d.getMonth();
 
-                    const lp = useLongPress({
-                      onLongPress: () => setOpenIso(iso),
-                      ms: 450,
-                    });
+                      const lp = useLongPress({
+                        onLongPress: () => setOpenIso(iso),
+                        ms: 450,
+                      });
 
-                    return (
-                      <div
-                        key={iso}
-                        {...lp}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setOpenIso(iso);
-                        }}
-                        className={clsx(
-                          "relative p-1 select-none aspect-square",
-                          // grid lines
-                          dIdx === 6 ? "border-r-0" : "border-r border-r-neutral-800",
-                          // top border for every cell; thicker when month changes vs the cell above
-                          monthChangeFromTop ? "border-t-2 border-t-neutral-500/60" : "border-t border-t-neutral-800",
-                          // thicker left border when month changes vs the cell to the left (e.g., Jan 31 -> Feb 1)
-                          monthChangeFromLeft ? "border-l-2 border-l-neutral-500/60" : "",
-                          isToday
-                            ? "bg-neutral-600/55 ring-2 ring-neutral-200/35"
-                            : weekend
-                              ? "bg-neutral-800/55"
-                              : "bg-neutral-950/25"
-                        )}
-                        style={{ touchAction: "manipulation" }}
-                      >
-                        <div className="absolute right-1 top-1 text-[10px] text-neutral-400 md:landscape:text-xs">{d.getDate()}</div>
+                      return (
+                        <div
+                          key={iso}
+                          {...lp}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            setOpenIso(iso);
+                          }}
+                          className={clsx(
+                            "relative p-1 select-none aspect-square",
+                            // grid lines
+                            dIdx === 6 ? "border-r-0" : "border-r border-r-neutral-800",
+                            // top border for every cell; thicker when month changes vs the cell above
+                            monthChangeFromTop ? "border-t-2 border-t-neutral-500/60" : "border-t border-t-neutral-800",
+                            // thicker left border when month changes vs the cell to the left (e.g., Jan 31 -> Feb 1)
+                            monthChangeFromLeft ? "border-l-2 border-l-neutral-500/60" : "",
+                            isToday
+                              ? "bg-neutral-600/55 ring-2 ring-neutral-200/35"
+                              : weekend
+                                ? "bg-neutral-800/55"
+                                : "bg-neutral-950/25"
+                          )}
+                          style={{ touchAction: "manipulation" }}
+                        >
+                          <div className="absolute right-1 top-1 text-[10px] text-neutral-400 md:landscape:text-xs">{d.getDate()}</div>
 
-                        <div className="mt-3 space-y-0.5 md:landscape:mt-0 md:landscape:h-full md:landscape:pt-5 md:landscape:pb-2 md:landscape:flex md:landscape:flex-col md:landscape:justify-center">
-                          {show.map((p) => (
-                            <div
-                              key={p.id}
-                              className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-200 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:break-words landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
-                              title={p.title}
-                            >
-                              {p.title}
-                            </div>
-                          ))}
-                          {extra > 0 ? (
-                            <div className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
-                          ) : null}
+                          <div className="mt-6 space-y-0.5 sm:space-y-1 landscape:space-y-1 md:landscape:space-y-2 md:landscape:mt-0 md:landscape:h-full md:landscape:pt-5 md:landscape:pb-2 md:landscape:flex md:landscape:flex-col md:landscape:justify-center">
+                            {show.map((p) => (
+                              <div
+                                key={p.id}
+                                className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-200 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:break-words landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
+                                title={p.title}
+                              >
+                                {p.title}
+                              </div>
+                            ))}
+                            {extra > 0 ? (
+                              <div className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                  {/* Multi-day plan bars */}
+                  {spansByWeek[wIdx]?.length ? (
+                    <div className="pointer-events-none absolute inset-0 grid grid-cols-7">
+                      {spansByWeek[wIdx].map((s) => {
+                        const top = 18 + s.lane * 14; // pixels below top of cell
+                        return (
+                          <div
+                            key={s.key}
+                            style={{ gridColumn: `${s.startCol + 1} / ${s.endCol + 2}`, marginTop: top }}
+                            className="z-10 px-1"
+                          >
+                            <div className="w-full rounded-md border border-neutral-200/25 bg-neutral-200/15 px-1 py-0.5 text-[9px] leading-none text-neutral-100 backdrop-blur md:landscape:text-xs">
+                              <span className="mr-1 text-neutral-200/80">{s.continuesLeft ? "←" : ""}</span>
+                              <span className="align-middle">{s.title}</span>
+                              <span className="ml-1 text-neutral-200/80">{s.continuesRight ? "→" : ""}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

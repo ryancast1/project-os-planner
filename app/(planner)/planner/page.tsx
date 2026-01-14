@@ -21,8 +21,9 @@ type Plan = {
   id: string;
   title: string;
   notes: string | null;
-  starts_at: string | null; // ISO
-  ends_at: string | null; // ISO
+  starts_at: string | null; // ISO (optional time)
+  ends_at: string | null; // ISO (optional time)  <-- keep, but NOT used for multi-day
+  end_date: string | null; // YYYY-MM-DD (multi-day end)
   status: "open" | "done" | "canceled";
   scheduled_for: string | null; // YYYY-MM-DD
   window_kind: WindowKind | null;
@@ -693,6 +694,7 @@ function EditSheet({
     notes: string | null;
     targetValue: string;
     planStartTime?: string;
+    planEndDate?: string;
   }) => void;
   onDelete: () => void;
   onArchiveFocus: () => void;
@@ -701,6 +703,7 @@ function EditSheet({
   const [notes, setNotes] = useState("");
   const [targetValue, setTargetValue] = useState<string>("none");
   const [planStartTime, setPlanStartTime] = useState("");
+  const [planEndDate, setPlanEndDate] = useState("");
   const [localType, setLocalType] = useState<ItemType>("task");
   // Date picker state for custom date
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -715,8 +718,10 @@ function EditSheet({
     if (itemType === "plan") {
       const p = item as Plan;
       setPlanStartTime(isoToTimeInput(p.starts_at));
+      setPlanEndDate(p.end_date ?? "");
     } else {
       setPlanStartTime("");
+      setPlanEndDate("");
     }
     // Custom date logic
     let initialDate = "";
@@ -849,6 +854,17 @@ function EditSheet({
                     className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
                   />
                 </div>
+
+                <div>
+                  <div className="mb-1 text-xs text-neutral-400">End date</div>
+                  <input
+                    type="date"
+                    value={planEndDate}
+                    min={targetValue.startsWith("D|") ? targetValue.split("|")[1] : undefined}
+                    onChange={(e) => setPlanEndDate(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
+                  />
+                </div>
               </div>
             )}
 
@@ -870,6 +886,7 @@ function EditSheet({
                     notes: notes.trim() ? notes.trim() : null,
                     targetValue,
                     planStartTime,
+                    planEndDate,
                   })
                 }
                 className="flex-1 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
@@ -925,6 +942,7 @@ function AddSheet({
     targetValue: string;
     itemType: ItemType;
     planStartTime: string;
+    planEndDate: string;
   }) => void;
   moveTargets: MoveTarget[];
   defaultTarget: string;
@@ -934,6 +952,7 @@ function AddSheet({
   const [notes, setNotes] = useState("");
   const [targetValue, setTargetValue] = useState(defaultTarget);
   const [planStartTime, setPlanStartTime] = useState("");
+  const [planEndDate, setPlanEndDate] = useState("");
   // Date picker state for custom date
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [customDate, setCustomDate] = useState("");
@@ -945,6 +964,7 @@ function AddSheet({
     setNotes("");
     setTargetValue(defaultTarget);
     setPlanStartTime("");
+    setPlanEndDate("");
     // Date picker: set to today or to defaultTarget if D|
     let initialDate = "";
     if (defaultTarget.startsWith("D|")) {
@@ -961,12 +981,12 @@ function AddSheet({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        onCreate({ titleRaw, notes, targetValue, itemType, planStartTime });
+        onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, onCreate, titleRaw, notes, targetValue, itemType, planStartTime]);
+  }, [open, onClose, onCreate, titleRaw, notes, targetValue, itemType, planStartTime, planEndDate]);
 
   const dayTargets = moveTargets.filter((t) => t.group === "days");
   const parkingTargets = moveTargets.filter((t) => t.group === "parking");
@@ -983,10 +1003,14 @@ function AddSheet({
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Add</div>
             <button
-              onClick={onClose}
-              className="rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+              onClick={() => {
+                if (!titleRaw.trim()) return;
+                onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate });
+                onClose();
+              }}
+              className="rounded-lg border border-neutral-800 bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-900 active:scale-[0.99]"
             >
-              Close
+              Add
             </button>
           </div>
 
@@ -1060,7 +1084,7 @@ function AddSheet({
                 <option value="__custom_date__">Pick a date…</option>
               </select>
               {showDatePicker && (
-                <div className="mt-2">
+                <div className="mt-2 space-y-2">
                   <input
                     type="date"
                     value={customDate}
@@ -1068,9 +1092,21 @@ function AddSheet({
                       const v = e.target.value;
                       setCustomDate(v);
                       setTargetValue(v ? `D|${v}` : "none");
+                      // If end date is before start date, clear it.
+                      if (planEndDate && v && planEndDate < v) setPlanEndDate("");
                     }}
                     className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
                   />
+
+                  {itemType === "plan" && (
+                    <input
+                      type="date"
+                      value={planEndDate}
+                      min={customDate || undefined}
+                      onChange={(e) => setPlanEndDate(e.target.value)}
+                      className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -1101,7 +1137,11 @@ function AddSheet({
 
             <div className="flex gap-2">
               <button
-                onClick={() => onCreate({ titleRaw, notes, targetValue, itemType, planStartTime })}
+                onClick={() => {
+                  if (!titleRaw.trim()) return;
+                  onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate });
+                  onClose();
+                }}
                 className="flex-1 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
               >
                 Add
@@ -1270,7 +1310,7 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("plans")
-        .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,starts_at,ends_at,end_date,status,scheduled_for,window_kind,window_start,created_at")
         .eq("status", "open")
         .not("scheduled_for", "is", null)
         .gte("scheduled_for", start)
@@ -1281,7 +1321,7 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("plans")
-        .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,starts_at,ends_at,end_date,status,scheduled_for,window_kind,window_start,created_at")
         .eq("status", "open")
         .is("scheduled_for", null)
         .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
@@ -1358,19 +1398,34 @@ function getWindowValue(which: DrawerWindow) {
 
   const plansByDay = useMemo(() => {
     const map: Record<string, Plan[]> = {};
-    for (const d of days) map[toISODate(d)] = [];
+    const dayIsos = days.map((d) => toISODate(d));
+    for (const iso of dayIsos) map[iso] = [];
+
     for (const p of plans) {
-      if (!p.scheduled_for) continue;
-      if (map[p.scheduled_for]) map[p.scheduled_for].push(p);
-    }
+  // We render plans on day cards only when they have a scheduled_for date.
+  if (!p.scheduled_for) continue;
+
+  const startIso = p.scheduled_for;
+  const endIso = p.end_date && p.end_date >= startIso ? p.end_date : startIso;
+
+  // Add this plan to every visible day between start and end (inclusive).
+  for (const iso of dayIsos) {
+    if (iso < startIso) continue;
+    if (iso > endIso) break;
+    map[iso].push(p);
+  }
+}
+
     for (const k of Object.keys(map)) {
       map[k].sort((a, b) => {
+        // Keep timed plans earlier; otherwise keep stable by created_at.
         if (a.starts_at && b.starts_at) return a.starts_at.localeCompare(b.starts_at);
         if (a.starts_at && !b.starts_at) return -1;
         if (!a.starts_at && b.starts_at) return 1;
         return a.created_at.localeCompare(b.created_at);
       });
     }
+
     return map;
   }, [plans, days]);
 
@@ -1495,6 +1550,7 @@ function getWindowValue(which: DrawerWindow) {
     targetValue: string;
     itemType: ItemType;
     planStartTime?: string;
+    planEndDate?: string;
   }) {
     const parsed = parseHashtags(args.titleRaw, { targetValue: args.targetValue, today, windows, itemType: args.itemType });
     const title = parsed.title.trim();
@@ -1535,13 +1591,25 @@ function getWindowValue(which: DrawerWindow) {
 
     // plan
     let starts_at: string | null = null;
-    if (placement.scheduled_for && args.planStartTime) starts_at = new Date(`${placement.scheduled_for}T${args.planStartTime}:00`).toISOString();
+    if (placement.scheduled_for && args.planStartTime) {
+      starts_at = new Date(`${placement.scheduled_for}T${args.planStartTime}:00`).toISOString();
+    }
 
-    const { data, error } = await supabase
-      .from("plans")
-      .insert({ title, notes: notesVal, status: "open", starts_at, ...placement })
-      .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
-      .single();
+    // Optional multi-day end date (date-only)
+let end_date: string | null = null;
+if (args.planEndDate && args.planEndDate.trim()) {
+  const endIso = args.planEndDate.trim();
+  // Guard: if we have a start day, ignore end dates earlier than start.
+  if (!placement.scheduled_for || endIso >= placement.scheduled_for) {
+    end_date = endIso;
+  }
+}
+
+const { data, error } = await supabase
+  .from("plans")
+  .insert({ title, notes: notesVal, status: "open", starts_at, end_date, ...placement })
+  .select("id,title,notes,starts_at,ends_at,end_date,status,scheduled_for,window_kind,window_start,created_at")
+  .single();
     if (error) return console.error(error);
     if (data) setPlans((p) => [...p, data as Plan]);
   }
@@ -1629,7 +1697,7 @@ function getWindowValue(which: DrawerWindow) {
     setEditOpen(true);
   }
 
-  async function saveEdit(patch: { itemType: ItemType; title: string; notes: string | null; targetValue: string; planStartTime?: string }) {
+  async function saveEdit(patch: { itemType: ItemType; title: string; notes: string | null; targetValue: string; planStartTime?: string; planEndDate?: string }) {
     if (!editItem) return;
     const id = (editItem as any).id as string;
 
@@ -1673,10 +1741,17 @@ function getWindowValue(which: DrawerWindow) {
       }
 
       if (patch.itemType === "plan") {
+        // Optional multi-day end date (date-only)
+        let end_date: string | null = null;
+        if (placement.scheduled_for && patch.planEndDate && patch.planEndDate.trim()) {
+          const endIso = patch.planEndDate.trim();
+          if (endIso >= placement.scheduled_for) end_date = endIso;
+        }
+
         const { data, error } = await supabase
           .from("plans")
-          .insert({ title: patch.title, notes: patch.notes, status: "open", starts_at, ...placement })
-          .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
+          .insert({ title: patch.title, notes: patch.notes, status: "open", starts_at, end_date, ...placement })
+          .select("id,title,notes,starts_at,ends_at,end_date,status,scheduled_for,window_kind,window_start,created_at")
           .single();
         if (error) return console.error(error);
         if (data) setPlans((p) => [...p, data as Plan]);
@@ -1711,15 +1786,23 @@ function getWindowValue(which: DrawerWindow) {
     let starts_at: string | null = null;
     if (placement.scheduled_for && patch.planStartTime) starts_at = new Date(`${placement.scheduled_for}T${patch.planStartTime}:00`).toISOString();
 
-    const { error } = await supabase
-      .from("plans")
-      .update({ title: patch.title, notes: patch.notes, starts_at, ...placement })
-      .eq("id", id);
+    let end_date: string | null = null;
+if (placement.scheduled_for && patch.planEndDate && patch.planEndDate.trim()) {
+  const endIso = patch.planEndDate.trim();
+  if (endIso >= placement.scheduled_for) {
+    end_date = endIso;
+  }
+}
+
+const { error } = await supabase
+  .from("plans")
+  .update({ title: patch.title, notes: patch.notes, starts_at, end_date, ...placement })
+  .eq("id", id);
     if (error) return console.error(error);
 
     setPlans((p) =>
       p.map((pl) =>
-        pl.id === id ? ({ ...pl, title: patch.title, notes: patch.notes, starts_at, ends_at: pl.ends_at, ...placement } as Plan) : pl
+        pl.id === id ? ({ ...pl, title: patch.title, notes: patch.notes, starts_at, end_date, ...placement } as Plan) : pl
       )
     );
 
@@ -2158,7 +2241,6 @@ function getWindowValue(which: DrawerWindow) {
         </>
       )}
 
-
       {/* Floating add */}
       <button
         onClick={() => setAddOpen(true)}
@@ -2172,13 +2254,20 @@ function getWindowValue(which: DrawerWindow) {
       <AddSheet
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onCreate={async ({ titleRaw, notes, targetValue, itemType, planStartTime }) => {
-          await createItem({ titleRaw, notes, targetValue, itemType, planStartTime });
-          setAddOpen(false);
-        }}
         moveTargets={moveTargets}
-        defaultTarget={`D|${todayIso}`}
+        defaultTarget={openDayIso ? `D|${openDayIso}` : `D|${todayIso}`}
+        onCreate={async (args) => {
+          await createItem({
+            titleRaw: args.titleRaw,
+            notes: args.notes,
+            targetValue: args.targetValue,
+            itemType: args.itemType,
+            planStartTime: args.planStartTime,
+            planEndDate: args.planEndDate,
+          });
+        }}
       />
+
       <EditSheet
         open={editOpen}
         item={editItem}
