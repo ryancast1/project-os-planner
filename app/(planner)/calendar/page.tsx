@@ -79,6 +79,10 @@ function useLongPress(opts: {
   }
 
   function onPointerDown(e: React.PointerEvent) {
+    // Avoid iOS long-press text selection/callout.
+    if (e.pointerType === "touch") {
+      e.preventDefault();
+    }
     if (e.pointerType === "mouse" && e.button !== 0) return;
     firedRef.current = false;
     startRef.current = { x: e.clientX, y: e.clientY };
@@ -387,14 +391,14 @@ export default function CalendarPage() {
                           {show.map((p) => (
                             <div
                               key={p.id}
-                              className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-200 sm:text-[11px] md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
+                              className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-200 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:break-words landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
                               title={p.title}
                             >
                               {p.title}
                             </div>
                           ))}
                           {extra > 0 ? (
-                            <div className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 sm:text-[11px] md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
+                            <div className="whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
                           ) : null}
                         </div>
                       </div>

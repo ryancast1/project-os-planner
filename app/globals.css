@@ -39,3 +39,17 @@ html, body {
   max-width: 100%;
   overflow-x: hidden;
 }
+
+/* Prevent iOS long-press text selection/callout chrome across the app.
+   Re-enable selection inside editable fields. */
+html, body {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input, textarea, [contenteditable="true"] {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
