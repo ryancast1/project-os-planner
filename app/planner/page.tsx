@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type WindowKind = "workweek" | "weekend";
@@ -74,6 +74,14 @@ function fmtDayLabel(d: Date, index: number) {
 
 function fmtMonthDay(d: Date) {
   return d.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+}
+
+function isoToTimeInput(iso: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 function startOfWeekMonday(d: Date) {
@@ -266,12 +274,12 @@ function TimePill({ startsAt, endsAt }: { startsAt: string | null; endsAt: strin
 function RowShell({
   tone,
   children,
-  onDelete,
+  onEdit,
   onTap,
 }: {
   tone?: "normal" | "overdue";
   children: React.ReactNode;
-  onDelete?: () => void;
+  onEdit?: () => void;
   onTap?: () => void;
 }) {
   const timerRef = useRef<number | null>(null);
@@ -291,12 +299,12 @@ function RowShell({
   };
 
   const start = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!onDelete) return;
+    if (!onEdit) return;
 
-    // Long-press delete ONLY on touch. Desktop uses right-click.
+    // Long-press edit ONLY on touch. Desktop uses right-click.
     if (e.pointerType !== "touch") return;
 
-    // If they pressed on a control inside the row (checkbox/move select), do not arm delete.
+    // If they pressed on a control inside the row (checkbox/move select), do not arm edit.
     if (isInteractiveTarget(e.target)) return;
 
     clear();
@@ -305,9 +313,8 @@ function RowShell({
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
       startRef.current = null;
-      // On iOS, this is effectively the long-press action.
-      if (confirm("Delete this item?")) onDelete();
-    }, 750);
+      onEdit();
+    }, 650);
   };
 
   const maybeCancelOnMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -340,9 +347,9 @@ function RowShell({
       onPointerCancel={clear}
       onPointerLeave={clear}
       onContextMenu={(e) => {
-        if (!onDelete) return;
+        if (!onEdit) return;
         e.preventDefault();
-        if (confirm("Delete this item?")) onDelete();
+        onEdit();
       }}
       style={{ touchAction: "manipulation" }}
     >
@@ -394,21 +401,21 @@ function TaskRow({
   moveTargets,
   onMove,
   onToggleDone,
-  onDelete,
+  onEdit,
   tone,
 }: {
   task: Task;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
   onToggleDone: (id: string, nextDone: boolean) => void;
-  onDelete: (id: string) => void;
+  onEdit: (t: Task) => void;
   tone?: "normal" | "overdue";
 }) {
   const isDone = task.status === "done";
   const [showMove, setShowMove] = useState(false);
 
   return (
-    <RowShell tone={tone} onDelete={() => onDelete(task.id)} onTap={() => setShowMove((s) => !s)}>
+    <RowShell tone={tone} onEdit={() => onEdit(task)} onTap={() => setShowMove((s) => !s)}>
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
@@ -442,16 +449,16 @@ function PlanRow({
   plan,
   moveTargets,
   onMove,
-  onDelete,
+  onEdit,
 }: {
   plan: Plan;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
-  onDelete: (id: string) => void;
+  onEdit: (p: Plan) => void;
 }) {
   const [showMove, setShowMove] = useState(false);
   return (
-    <RowShell onDelete={() => onDelete(plan.id)} onTap={() => setShowMove((s) => !s)}>
+    <RowShell onEdit={() => onEdit(plan)} onTap={() => setShowMove((s) => !s)}>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">
           {plan.title}
@@ -470,16 +477,16 @@ function FocusRow({
   focus,
   moveTargets,
   onMove,
-  onDelete,
+  onEdit,
 }: {
   focus: Focus;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
-  onDelete: (id: string) => void;
+  onEdit: (f: Focus) => void;
 }) {
   const [showMove, setShowMove] = useState(false);
   return (
-    <RowShell onDelete={() => onDelete(focus.id)} onTap={() => setShowMove((s) => !s)}>
+    <RowShell onEdit={() => onEdit(focus)} onTap={() => setShowMove((s) => !s)}>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">{focus.title}</div>
       </div>
@@ -495,17 +502,17 @@ function FocusFloat({
   focus,
   moveTargets,
   onMove,
-  onDelete,
+  onEdit,
 }: {
   focus: Focus;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
-  onDelete: (id: string) => void;
+  onEdit: (f: Focus) => void;
 }) {
   const [showMove, setShowMove] = useState(false);
 
   return (
-    <RowShell onDelete={() => onDelete(focus.id)} onTap={() => setShowMove((s) => !s)}>
+    <RowShell onEdit={() => onEdit(focus)} onTap={() => setShowMove((s) => !s)}>
       <div className="min-w-0 flex-1 italic truncate text-sm text-neutral-200/90">{focus.title}</div>
       {showMove && (
         <div className="opacity-80">
@@ -513,6 +520,340 @@ function FocusFloat({
         </div>
       )}
     </RowShell>
+  );
+}
+
+// --- FocusLine and FocusBand for Focus band display in day cards ---
+function FocusLine({
+  focus,
+  moveTargets,
+  onMove,
+  onEdit,
+}: {
+  focus: Focus;
+  moveTargets: MoveTarget[];
+  onMove: (id: string, targetValue: string) => void;
+  onEdit: (f: Focus) => void;
+}) {
+  const [showMove, setShowMove] = useState(false);
+  const timerRef = useRef<number | null>(null);
+  const startRef = useRef<{ x: number; y: number } | null>(null);
+
+  const clear = () => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    startRef.current = null;
+  };
+
+  const isInteractiveTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest("button,select,input,textarea,a,label"));
+  };
+
+  const start = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Long-press edit ONLY on touch. Desktop uses right-click.
+    if (e.pointerType !== "touch") return;
+    if (isInteractiveTarget(e.target)) return;
+
+    clear();
+    startRef.current = { x: e.clientX, y: e.clientY };
+
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      startRef.current = null;
+      onEdit(focus);
+    }, 650);
+  };
+
+  const maybeCancelOnMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "touch") return;
+    if (!timerRef.current) return;
+    if (!startRef.current) return;
+
+    const dx = e.clientX - startRef.current.x;
+    const dy = e.clientY - startRef.current.y;
+    if (dx * dx + dy * dy > 10 * 10) {
+      clear();
+    }
+  };
+
+  return (
+    <div
+      className={clsx(
+        "flex items-start gap-2 px-3 py-2",
+        "rounded-lg",
+        "hover:bg-neutral-950/30"
+      )}
+      onClick={(e) => {
+        if (isInteractiveTarget(e.target)) return;
+        setShowMove((s) => !s);
+      }}
+      onPointerDown={start}
+      onPointerMove={maybeCancelOnMove}
+      onPointerUp={clear}
+      onPointerCancel={clear}
+      onPointerLeave={clear}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onEdit(focus);
+      }}
+      style={{ touchAction: "manipulation" }}
+    >
+      <div className="min-w-0 flex-1 italic text-sm text-neutral-200/90">
+        <div className="truncate">{focus.title}</div>
+      </div>
+      {showMove && (
+        <div className="shrink-0 opacity-85">
+          <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FocusBand({
+  items,
+  moveTargets,
+  onMove,
+  onEdit,
+}: {
+  items: Focus[];
+  moveTargets: MoveTarget[];
+  onMove: (id: string, targetValue: string) => void;
+  onEdit: (f: Focus) => void;
+}) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/25">
+      <div className="divide-y divide-neutral-800/60">
+        {items.map((f) => (
+          <FocusLine
+            key={f.id}
+            focus={f}
+            moveTargets={moveTargets}
+            onMove={onMove}
+            onEdit={onEdit}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+function EditSheet({
+  open,
+  item,
+  itemType,
+  onClose,
+  moveTargets,
+  onSave,
+  onDelete,
+  onArchiveFocus,
+}: {
+  open: boolean;
+  item: Task | Plan | Focus | null;
+  itemType: ItemType;
+  onClose: () => void;
+  moveTargets: MoveTarget[];
+  onSave: (patch: {
+    itemType: ItemType;
+    title: string;
+    notes: string | null;
+    targetValue: string;
+    planStartTime?: string;
+    planEndTime?: string;
+  }) => void;
+  onDelete: () => void;
+  onArchiveFocus: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState("");
+  const [targetValue, setTargetValue] = useState<string>("none");
+  const [planStartTime, setPlanStartTime] = useState("");
+  const [planEndTime, setPlanEndTime] = useState("");
+  const [localType, setLocalType] = useState<ItemType>("task");
+
+  useEffect(() => {
+    if (!open || !item) return;
+    setTitle((item as any).title ?? "");
+    setNotes(((item as any).notes ?? "") as string);
+    setTargetValue(locationValueFor(item as any));
+    setLocalType(itemType);
+    if (itemType === "plan") {
+      const p = item as Plan;
+      setPlanStartTime(isoToTimeInput(p.starts_at));
+      setPlanEndTime(isoToTimeInput(p.ends_at));
+    } else {
+      setPlanStartTime("");
+      setPlanEndTime("");
+    }
+  }, [open, item, itemType]);
+
+  const dayTargets = moveTargets.filter((t) => t.group === "days");
+  const parkingTargets = moveTargets.filter((t) => t.group === "parking");
+  const isDayTarget = targetValue.startsWith("D|");
+
+  if (!open || !item) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70]">
+      <button className="absolute inset-0 bg-black/60" onClick={onClose} aria-label="Close" />
+
+      <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-xl">
+        <div className="rounded-t-2xl border border-neutral-800 bg-neutral-950 p-4 shadow-2xl">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold">Edit</div>
+            <button
+              onClick={onClose}
+              className="rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-3">
+            <div>
+              <div className="mb-1 text-xs text-neutral-400">Type</div>
+              <div className="flex gap-2">
+                {([
+                  ["task", "Task"],
+                  ["plan", "Plan"],
+                  ["focus", "Focus"],
+                ] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={() => setLocalType(k as ItemType)}
+                    className={clsx(
+                      "flex-1 rounded-xl border px-3 py-2 text-sm font-semibold",
+                      localType === k
+                        ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                        : "border-neutral-800 bg-neutral-900 text-neutral-200"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 text-xs text-neutral-400">Title</div>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <div className="mb-1 text-xs text-neutral-400">When</div>
+              <select
+                value={targetValue}
+                onChange={(e) => setTargetValue(e.target.value)}
+                className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
+              >
+                {dayTargets.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+                <option value="__sep" disabled>
+                  ──────────
+                </option>
+                {parkingTargets.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {localType === "plan" && isDayTarget && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="mb-1 text-xs text-neutral-400">Start (optional)</div>
+                  <input
+                    type="time"
+                    value={planStartTime}
+                    onChange={(e) => setPlanStartTime(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 text-xs text-neutral-400">End (optional)</div>
+                  <input
+                    type="time"
+                    value={planEndTime}
+                    onChange={(e) => setPlanEndTime(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="mb-1 text-xs text-neutral-400">Notes</div>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="min-h-[92px] w-full resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() =>
+                  onSave({
+                    itemType: localType,
+                    title: title.trim(),
+                    notes: notes.trim() ? notes.trim() : null,
+                    targetValue,
+                    planStartTime,
+                    planEndTime,
+                  })
+                }
+                className="flex-1 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+              >
+                Save
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-100 active:scale-[0.99]"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              {itemType === "focus" ? (
+                <button
+                  onClick={onArchiveFocus}
+                  className="flex-1 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-100"
+                >
+                  Archive
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (confirm("Delete this item?")) onDelete();
+                  }}
+                  className="flex-1 rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-2 text-sm font-semibold text-red-200"
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -721,6 +1062,9 @@ export default function PlannerPage() {
 
   const [openDayIso, setOpenDayIso] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editType, setEditType] = useState<ItemType>("task");
+  const [editItem, setEditItem] = useState<Task | Plan | Focus | null>(null);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -1112,6 +1456,131 @@ function getWindowValue(which: DrawerWindow) {
 
   const todayIso = toISODate(days[0]);
 
+  function openEdit(type: ItemType, item: Task | Plan | Focus) {
+    setEditType(type);
+    setEditItem(item);
+    setEditOpen(true);
+  }
+
+  async function saveEdit(patch: { itemType: ItemType; title: string; notes: string | null; targetValue: string; planStartTime?: string; planEndTime?: string }) {
+    if (!editItem) return;
+    const id = (editItem as any).id as string;
+
+    let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null };
+
+    const tv = patch.targetValue;
+    if (tv === "none") placement = { scheduled_for: null, window_kind: null, window_start: null };
+    else if (tv.startsWith("D|")) placement = { scheduled_for: tv.split("|")[1], window_kind: null, window_start: null };
+    else if (tv.startsWith("P|")) {
+      const [, kind, start] = tv.split("|");
+      placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start };
+    } else placement = { scheduled_for: null, window_kind: null, window_start: null };
+
+    // If the type changed, convert by creating in the new table and deleting the old row.
+    if (patch.itemType !== editType) {
+      // Compute plan times if the new type is plan and it's scheduled on a day.
+      let starts_at: string | null = null;
+      let ends_at: string | null = null;
+      if (placement.scheduled_for && patch.itemType === "plan") {
+        if (patch.planStartTime) starts_at = new Date(`${placement.scheduled_for}T${patch.planStartTime}:00`).toISOString();
+        if (patch.planEndTime) ends_at = new Date(`${placement.scheduled_for}T${patch.planEndTime}:00`).toISOString();
+      }
+
+      // Create in destination table
+      if (patch.itemType === "task") {
+        const { data, error } = await supabase
+          .from("tasks")
+          .insert({ title: patch.title, notes: patch.notes, status: "open", ...placement })
+          .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+          .single();
+        if (error) return console.error(error);
+        if (data) setTasks((p) => [...p, data as Task]);
+      }
+
+      if (patch.itemType === "focus") {
+        const { data, error } = await supabase
+          .from("focuses")
+          .insert({ title: patch.title, notes: patch.notes, status: "active", ...placement })
+          .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+          .single();
+        if (error) return console.error(error);
+        if (data) setFocuses((p) => [...p, data as Focus]);
+      }
+
+      if (patch.itemType === "plan") {
+        const { data, error } = await supabase
+          .from("plans")
+          .insert({ title: patch.title, notes: patch.notes, status: "open", starts_at, ends_at, ...placement })
+          .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
+          .single();
+        if (error) return console.error(error);
+        if (data) setPlans((p) => [...p, data as Plan]);
+      }
+
+      // Delete from source table + update local state arrays
+      if (editType === "task") await deleteTask(id);
+      if (editType === "plan") await deletePlan(id);
+      if (editType === "focus") await deleteFocus(id);
+
+      setEditOpen(false);
+      return;
+    }
+
+    if (editType === "task") {
+      const { error } = await supabase.from("tasks").update({ title: patch.title, notes: patch.notes, ...placement }).eq("id", id);
+      if (error) return console.error(error);
+      setTasks((p) => p.map((t) => (t.id === id ? ({ ...t, title: patch.title, notes: patch.notes, ...placement } as Task) : t)));
+      setEditOpen(false);
+      return;
+    }
+
+    if (editType === "focus") {
+      const { error } = await supabase.from("focuses").update({ title: patch.title, notes: patch.notes, ...placement }).eq("id", id);
+      if (error) return console.error(error);
+      setFocuses((p) => p.map((f) => (f.id === id ? ({ ...f, title: patch.title, notes: patch.notes, ...placement } as Focus) : f)));
+      setEditOpen(false);
+      return;
+    }
+
+    // plan
+    let starts_at: string | null = null;
+    let ends_at: string | null = null;
+    if (placement.scheduled_for && patch.planStartTime) starts_at = new Date(`${placement.scheduled_for}T${patch.planStartTime}:00`).toISOString();
+    if (placement.scheduled_for && patch.planEndTime) ends_at = new Date(`${placement.scheduled_for}T${patch.planEndTime}:00`).toISOString();
+
+    const { error } = await supabase
+      .from("plans")
+      .update({ title: patch.title, notes: patch.notes, starts_at, ends_at, ...placement })
+      .eq("id", id);
+    if (error) return console.error(error);
+
+    setPlans((p) =>
+      p.map((pl) =>
+        pl.id === id ? ({ ...pl, title: patch.title, notes: patch.notes, starts_at, ends_at, ...placement } as Plan) : pl
+      )
+    );
+
+    setEditOpen(false);
+  }
+
+  async function deleteEditItem() {
+    if (!editItem) return;
+    const id = (editItem as any).id as string;
+    if (editType === "task") await deleteTask(id);
+    if (editType === "plan") await deletePlan(id);
+    if (editType === "focus") await deleteFocus(id);
+    setEditOpen(false);
+  }
+
+  async function archiveEditedFocus() {
+    if (!editItem || editType !== "focus") return;
+    const id = (editItem as any).id as string;
+    const { error } = await supabase.from("focuses").update({ status: "archived" }).eq("id", id);
+    if (error) return console.error(error);
+    setFocuses((p) => p.filter((f) => f.id !== id));
+    setEditOpen(false);
+  }
+
   return (
     <main className="min-h-dvh p-4 pb-20">
       <div className="flex items-end justify-between gap-3">
@@ -1203,12 +1672,12 @@ function getWindowValue(which: DrawerWindow) {
 
           <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
             {drawerLists[drawerWindow].focus.map((f) => (
-              <FocusRow
+              <FocusFloat
                 key={f.id}
                 focus={f}
                 moveTargets={moveTargets}
                 onMove={(id, v) => moveItem("focus", id, v)}
-                onDelete={deleteFocus}
+                onEdit={(f) => openEdit("focus", f)}
               />
             ))}
 
@@ -1218,7 +1687,7 @@ function getWindowValue(which: DrawerWindow) {
                 plan={p}
                 moveTargets={moveTargets}
                 onMove={(id, v) => moveItem("plan", id, v)}
-                onDelete={deletePlan}
+                onEdit={(p) => openEdit("plan", p)}
               />
             ))}
 
@@ -1229,7 +1698,7 @@ function getWindowValue(which: DrawerWindow) {
                 moveTargets={moveTargets}
                 onMove={(id, v) => moveItem("task", id, v)}
                 onToggleDone={toggleTaskDone}
-                onDelete={deleteTask}
+                onEdit={(t) => openEdit("task", t)}
               />
             ))}
 
@@ -1246,13 +1715,17 @@ function getWindowValue(which: DrawerWindow) {
       ) : (
         <>
           {/* Today */}
-          <section className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm">
+          <section
+            className={clsx(
+              "mt-6 rounded-2xl border border-neutral-800 p-4 shadow-sm",
+              (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
+            )}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-lg font-semibold">Today</div>
                 <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
               </div>
-              
             </div>
 
             {/* Inline add */}
@@ -1317,11 +1790,19 @@ function getWindowValue(which: DrawerWindow) {
               </div>
             </div>
 
+            {/* Focus band */}
+            <FocusBand
+              items={focusesByDay[todayIso] ?? []}
+              moveTargets={moveTargets}
+              onMove={(id, v) => moveItem("focus", id, v)}
+              onEdit={(f) => openEdit("focus", f)}
+            />
+
             {/* Plans */}
             <div className="mt-4">
               <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                 {(plansByDay[todayIso] ?? []).map((p) => (
-                  <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onDelete={deletePlan} />
+                  <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
                 ))}
               </div>
             </div>
@@ -1333,23 +1814,14 @@ function getWindowValue(which: DrawerWindow) {
                   <div className="text-xs font-semibold text-red-300">Overdue</div>
                   <div className="mt-2 overflow-hidden rounded-xl border border-red-900/50 bg-red-950/10">
                     {overdueTasks.map((t) => (
-                      <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onDelete={deleteTask} tone="overdue" />
+                      <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} tone="overdue" />
                     ))}
                   </div>
                 </div>
               )}
               <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                 {(tasksByDay[todayIso] ?? []).map((t) => (
-                  <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onDelete={deleteTask} />
-                ))}
-              </div>
-            </div>
-
-            {/* Focus */}
-            <div className="mt-4">
-              <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/10">
-                {(focusesByDay[todayIso] ?? []).map((f) => (
-                  <FocusFloat key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
+                  <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
                 ))}
               </div>
             </div>
@@ -1362,12 +1834,23 @@ function getWindowValue(which: DrawerWindow) {
               const label = fmtDayLabel(d, i + 1);
               const isOpen = openDayIso === iso;
 
+              const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+              const prevDay = days[i];
+              const afterSunday = prevDay.getDay() === 0;
+
               const dayPlans = plansByDay[iso] ?? [];
               const dayTasks = tasksByDay[iso] ?? [];
               const dayFocus = focusesByDay[iso] ?? [];
 
               return (
-                <section key={iso} className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm">
+                <Fragment key={iso}>
+                  {afterSunday && <div className="my-4 h-px w-full bg-neutral-800/70" />}
+                  <section
+                    className={clsx(
+                      "rounded-2xl border border-neutral-800 p-4 shadow-sm",
+                      isWeekend ? "bg-neutral-800/80" : "bg-neutral-900"
+                    )}
+                  >
                   <button
                     onClick={() => {
                       ensureDayDraft(iso);
@@ -1446,10 +1929,18 @@ function getWindowValue(which: DrawerWindow) {
                         </div>
                       </div>
 
+                      {/* Focus band */}
+                      <FocusBand
+                        items={dayFocus}
+                        moveTargets={moveTargets}
+                        onMove={(id, v) => moveItem("focus", id, v)}
+                        onEdit={(f) => openEdit("focus", f)}
+                      />
+
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayPlans.map((p) => (
-                            <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onDelete={deletePlan} />
+                            <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
                           ))}
                         </div>
                       </div>
@@ -1457,54 +1948,46 @@ function getWindowValue(which: DrawerWindow) {
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayTasks.map((t) => (
-                            <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onDelete={deleteTask} />
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="mt-4">
-                        <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/10">
-                          {dayFocus.map((f) => (
-                            <FocusFloat key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
+                            <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
                           ))}
                         </div>
                       </div>
                     </>
                   ) : (
-                    <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                      {dayFocus.map((f) => (
-                        <FocusFloat
-                          key={f.id}
-                          focus={f}
-                          moveTargets={moveTargets}
-                          onMove={(id, v) => moveItem("focus", id, v)}
-                          onDelete={deleteFocus}
-                        />
-                      ))}
+                    <>
+                      <FocusBand
+                        items={dayFocus}
+                        moveTargets={moveTargets}
+                        onMove={(id, v) => moveItem("focus", id, v)}
+                        onEdit={(f) => openEdit("focus", f)}
+                      />
 
-                      {dayPlans.map((p) => (
-                        <PlanRow
-                          key={p.id}
-                          plan={p}
-                          moveTargets={moveTargets}
-                          onMove={(id, v) => moveItem("plan", id, v)}
-                          onDelete={deletePlan}
-                        />
-                      ))}
+                      <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                        {dayPlans.map((p) => (
+                          <PlanRow
+                            key={p.id}
+                            plan={p}
+                            moveTargets={moveTargets}
+                            onMove={(id, v) => moveItem("plan", id, v)}
+                            onEdit={(p) => openEdit("plan", p)}
+                          />
+                        ))}
 
-                      {dayTasks.map((t) => (
-                        <TaskRow
-                          key={t.id}
-                          task={t}
-                          moveTargets={moveTargets}
-                          onMove={(id, v) => moveItem("task", id, v)}
-                          onToggleDone={toggleTaskDone}
-                          onDelete={deleteTask}
-                        />
-                      ))}
-                    </div>
+                        {dayTasks.map((t) => (
+                          <TaskRow
+                            key={t.id}
+                            task={t}
+                            moveTargets={moveTargets}
+                            onMove={(id, v) => moveItem("task", id, v)}
+                            onToggleDone={toggleTaskDone}
+                            onEdit={(t) => openEdit("task", t)}
+                          />
+                        ))}
+                      </div>
+                    </>
                   )}
-                </section>
+                  </section>
+                </Fragment>
               );
             })}
           </div>
@@ -1531,6 +2014,16 @@ function getWindowValue(which: DrawerWindow) {
         }}
         moveTargets={moveTargets}
         defaultTarget={`D|${todayIso}`}
+      />
+      <EditSheet
+        open={editOpen}
+        item={editItem}
+        itemType={editType}
+        onClose={() => setEditOpen(false)}
+        moveTargets={moveTargets}
+        onSave={saveEdit}
+        onDelete={deleteEditItem}
+        onArchiveFocus={archiveEditedFocus}
       />
     </main>
   );
