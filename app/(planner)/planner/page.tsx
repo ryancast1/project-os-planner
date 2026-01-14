@@ -276,11 +276,13 @@ function RowShell({
   children,
   onEdit,
   onTap,
+  compact,
 }: {
   tone?: "normal" | "overdue";
   children: React.ReactNode;
   onEdit?: () => void;
   onTap?: () => void;
+  compact?: boolean;
 }) {
   const timerRef = useRef<number | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
@@ -333,7 +335,8 @@ function RowShell({
   return (
     <div
       className={clsx(
-        "flex items-center gap-2 px-3 py-2 border-b border-neutral-800 last:border-b-0",
+        "flex items-center border-b border-neutral-800 last:border-b-0",
+        compact ? "gap-1 px-2 py-1" : "gap-2 px-3 py-2",
         tone === "overdue" ? "bg-red-950/20" : "bg-transparent"
       )}
       onClick={(e) => {
@@ -362,10 +365,12 @@ function MoveSelect({
   value,
   onChange,
   moveTargets,
+  compact,
 }: {
   value: string;
   onChange: (v: string) => void;
   moveTargets: MoveTarget[];
+  compact?: boolean;
 }) {
   const dayTargets = moveTargets.filter((t) => t.group === "days");
   const parkingTargets = moveTargets.filter((t) => t.group === "parking");
@@ -374,11 +379,14 @@ function MoveSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-8 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950 px-2 text-[16px] text-neutral-200 outline-none sm:text-xs"
+      className={clsx(
+        "shrink-0 rounded-lg border border-neutral-800 bg-neutral-950 px-2 text-neutral-200 outline-none",
+        compact ? "h-6 px-1.5 text-[11px]" : "h-8 text-[16px] sm:text-xs"
+      )}
       aria-label="Move"
       title="Move"
       onPointerDown={(e) => e.stopPropagation()}
-    >{/* removed blank line */}
+    >
       {dayTargets.map((t) => (
         <option key={t.value} value={t.value}>
           {t.label}
@@ -403,6 +411,7 @@ function TaskRow({
   onToggleDone,
   onEdit,
   tone,
+  compact,
 }: {
   task: Task;
   moveTargets: MoveTarget[];
@@ -410,12 +419,13 @@ function TaskRow({
   onToggleDone: (id: string, nextDone: boolean) => void;
   onEdit: (t: Task) => void;
   tone?: "normal" | "overdue";
+  compact?: boolean;
 }) {
   const isDone = task.status === "done";
   const [showMove, setShowMove] = useState(false);
 
   return (
-    <RowShell tone={tone} onEdit={() => onEdit(task)} onTap={() => setShowMove((s) => !s)}>
+    <RowShell tone={tone} compact={compact} onEdit={() => onEdit(task)} onTap={() => setShowMove((s) => !s)}>
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
@@ -423,7 +433,7 @@ function TaskRow({
           onToggleDone(task.id, !isDone);
         }}
         className={clsx(
-          "shrink-0 h-6 w-6 rounded-md border grid place-items-center",
+          compact ? "shrink-0 h-4 w-4 rounded border grid place-items-center" : "shrink-0 h-6 w-6 rounded-md border grid place-items-center",
           isDone ? "border-neutral-500 bg-neutral-200 text-neutral-900" : "border-neutral-700 bg-neutral-950 text-neutral-200"
         )}
         aria-label={isDone ? "Mark not done" : "Mark done"}
@@ -433,13 +443,13 @@ function TaskRow({
       </button>
 
       <div className="min-w-0 flex-1">
-        <div className={clsx("truncate text-sm", isDone && "line-through text-neutral-500")}>
+        <div className={clsx("truncate", compact ? "text-[11px]" : "text-sm", isDone && "line-through text-neutral-500")}>
           {task.title}
         </div>
       </div>
 
       {showMove && (
-        <MoveSelect value={locationValueFor(task)} onChange={(v) => onMove(task.id, v)} moveTargets={moveTargets} />
+        <MoveSelect compact={compact} value={locationValueFor(task)} onChange={(v) => onMove(task.id, v)} moveTargets={moveTargets} />
       )}
     </RowShell>
   );
@@ -450,24 +460,26 @@ function PlanRow({
   moveTargets,
   onMove,
   onEdit,
+  compact,
 }: {
   plan: Plan;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
   onEdit: (p: Plan) => void;
+  compact?: boolean;
 }) {
   const [showMove, setShowMove] = useState(false);
   return (
-    <RowShell onEdit={() => onEdit(plan)} onTap={() => setShowMove((s) => !s)}>
+    <RowShell compact={compact} onEdit={() => onEdit(plan)} onTap={() => setShowMove((s) => !s)}>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm">
+        <div className={clsx("truncate", compact ? "text-[11px]" : "text-sm")}>
           {plan.title}
           <TimePill startsAt={plan.starts_at} endsAt={plan.ends_at} />
         </div>
       </div>
 
       {showMove && (
-        <MoveSelect value={locationValueFor(plan)} onChange={(v) => onMove(plan.id, v)} moveTargets={moveTargets} />
+        <MoveSelect compact={compact} value={locationValueFor(plan)} onChange={(v) => onMove(plan.id, v)} moveTargets={moveTargets} />
       )}
     </RowShell>
   );
@@ -478,21 +490,23 @@ function FocusRow({
   moveTargets,
   onMove,
   onEdit,
+  compact,
 }: {
   focus: Focus;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
   onEdit: (f: Focus) => void;
+  compact?: boolean;
 }) {
   const [showMove, setShowMove] = useState(false);
   return (
-    <RowShell onEdit={() => onEdit(focus)} onTap={() => setShowMove((s) => !s)}>
+    <RowShell compact={compact} onEdit={() => onEdit(focus)} onTap={() => setShowMove((s) => !s)}>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm">{focus.title}</div>
+        <div className={clsx("truncate", compact ? "text-[11px]" : "text-sm")}>{focus.title}</div>
       </div>
 
       {showMove && (
-        <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
+        <MoveSelect compact={compact} value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
       )}
     </RowShell>
   );
@@ -529,11 +543,13 @@ function FocusLine({
   moveTargets,
   onMove,
   onEdit,
+  compact,
 }: {
   focus: Focus;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
   onEdit: (f: Focus) => void;
+  compact?: boolean;
 }) {
   const [showMove, setShowMove] = useState(false);
   const timerRef = useRef<number | null>(null);
@@ -582,9 +598,8 @@ function FocusLine({
   return (
     <div
       className={clsx(
-        "flex items-start gap-2 px-3 py-2",
-        "rounded-lg",
-        "hover:bg-neutral-950/30"
+        "flex items-start rounded-lg hover:bg-neutral-950/30",
+        compact ? "gap-1.5 px-2 py-1.5" : "gap-2 px-3 py-2"
       )}
       onClick={(e) => {
         if (isInteractiveTarget(e.target)) return;
@@ -601,12 +616,12 @@ function FocusLine({
       }}
       style={{ touchAction: "manipulation" }}
     >
-      <div className="min-w-0 flex-1 italic text-sm text-neutral-200/90">
+      <div className={clsx("min-w-0 flex-1 italic text-neutral-200/90", compact ? "text-xs" : "text-sm")}>
         <div className="truncate">{focus.title}</div>
       </div>
       {showMove && (
         <div className="shrink-0 opacity-85">
-          <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
+          <MoveSelect compact={compact} value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
         </div>
       )}
     </div>
@@ -618,15 +633,17 @@ function FocusBand({
   moveTargets,
   onMove,
   onEdit,
+  compact,
 }: {
   items: Focus[];
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
   onEdit: (f: Focus) => void;
+  compact?: boolean;
 }) {
   if (!items || items.length === 0) return null;
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/25">
+    <div className={clsx(compact ? "mt-2" : "mt-3", "overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/25")}>
       <div className="divide-y divide-neutral-800/60">
         {items.map((f) => (
           <FocusLine
@@ -635,6 +652,7 @@ function FocusBand({
             moveTargets={moveTargets}
             onMove={onMove}
             onEdit={onEdit}
+            compact={compact}
           />
         ))}
       </div>
@@ -662,7 +680,6 @@ function EditSheet({
     notes: string | null;
     targetValue: string;
     planStartTime?: string;
-    planEndTime?: string;
   }) => void;
   onDelete: () => void;
   onArchiveFocus: () => void;
@@ -671,8 +688,10 @@ function EditSheet({
   const [notes, setNotes] = useState("");
   const [targetValue, setTargetValue] = useState<string>("none");
   const [planStartTime, setPlanStartTime] = useState("");
-  const [planEndTime, setPlanEndTime] = useState("");
   const [localType, setLocalType] = useState<ItemType>("task");
+  // Date picker state for custom date
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [customDate, setCustomDate] = useState("");
 
   useEffect(() => {
     if (!open || !item) return;
@@ -683,11 +702,19 @@ function EditSheet({
     if (itemType === "plan") {
       const p = item as Plan;
       setPlanStartTime(isoToTimeInput(p.starts_at));
-      setPlanEndTime(isoToTimeInput(p.ends_at));
     } else {
       setPlanStartTime("");
-      setPlanEndTime("");
     }
+    // Custom date logic
+    let initialDate = "";
+    if (locationValueFor(item as any).startsWith("D|")) {
+      initialDate = locationValueFor(item as any).split("|")[1];
+    } else {
+      // Default to today
+      initialDate = toISODate(new Date());
+    }
+    setCustomDate(initialDate);
+    setShowDatePicker(false);
   }, [open, item, itemType]);
 
   const dayTargets = moveTargets.filter((t) => t.group === "days");
@@ -756,7 +783,15 @@ function EditSheet({
               <div className="mb-1 text-xs text-neutral-400">When</div>
               <select
                 value={targetValue}
-                onChange={(e) => setTargetValue(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === "__custom_date__") {
+                    setShowDatePicker(true);
+                    setTargetValue(`D|${customDate}`);
+                  } else {
+                    setShowDatePicker(false);
+                    setTargetValue(e.target.value);
+                  }
+                }}
                 className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
               >
                 {dayTargets.map((t) => (
@@ -772,26 +807,32 @@ function EditSheet({
                     {t.label}
                   </option>
                 ))}
+                <option value="__custom_date__">Pick a date…</option>
               </select>
+              {showDatePicker && (
+                <div className="mt-2">
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setCustomDate(v);
+                      setTargetValue(v ? `D|${v}` : "none");
+                    }}
+                    className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
+                  />
+                </div>
+              )}
             </div>
 
             {localType === "plan" && isDayTarget && (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2">
                 <div>
                   <div className="mb-1 text-xs text-neutral-400">Start (optional)</div>
                   <input
                     type="time"
                     value={planStartTime}
                     onChange={(e) => setPlanStartTime(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
-                  />
-                </div>
-                <div>
-                  <div className="mb-1 text-xs text-neutral-400">End (optional)</div>
-                  <input
-                    type="time"
-                    value={planEndTime}
-                    onChange={(e) => setPlanEndTime(e.target.value)}
                     className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
                   />
                 </div>
@@ -816,7 +857,6 @@ function EditSheet({
                     notes: notes.trim() ? notes.trim() : null,
                     targetValue,
                     planStartTime,
-                    planEndTime,
                   })
                 }
                 className="flex-1 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
@@ -872,7 +912,6 @@ function AddSheet({
     targetValue: string;
     itemType: ItemType;
     planStartTime: string;
-    planEndTime: string;
   }) => void;
   moveTargets: MoveTarget[];
   defaultTarget: string;
@@ -882,7 +921,9 @@ function AddSheet({
   const [notes, setNotes] = useState("");
   const [targetValue, setTargetValue] = useState(defaultTarget);
   const [planStartTime, setPlanStartTime] = useState("");
-  const [planEndTime, setPlanEndTime] = useState("");
+  // Date picker state for custom date
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [customDate, setCustomDate] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -891,7 +932,15 @@ function AddSheet({
     setNotes("");
     setTargetValue(defaultTarget);
     setPlanStartTime("");
-    setPlanEndTime("");
+    // Date picker: set to today or to defaultTarget if D|
+    let initialDate = "";
+    if (defaultTarget.startsWith("D|")) {
+      initialDate = defaultTarget.split("|")[1];
+    } else {
+      initialDate = toISODate(new Date());
+    }
+    setCustomDate(initialDate);
+    setShowDatePicker(false);
   }, [open, defaultTarget]);
 
   useEffect(() => {
@@ -899,12 +948,12 @@ function AddSheet({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndTime });
+        onCreate({ titleRaw, notes, targetValue, itemType, planStartTime });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, onCreate, titleRaw, notes, targetValue, itemType, planStartTime, planEndTime]);
+  }, [open, onClose, onCreate, titleRaw, notes, targetValue, itemType, planStartTime]);
 
   const dayTargets = moveTargets.filter((t) => t.group === "days");
   const parkingTargets = moveTargets.filter((t) => t.group === "parking");
@@ -971,10 +1020,17 @@ function AddSheet({
               <div className="mb-1 text-xs text-neutral-400">When</div>
               <select
                 value={targetValue}
-                onChange={(e) => setTargetValue(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === "__custom_date__") {
+                    setShowDatePicker(true);
+                    setTargetValue(`D|${customDate}`);
+                  } else {
+                    setShowDatePicker(false);
+                    setTargetValue(e.target.value);
+                  }
+                }}
                 className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
               >
-                
                 {dayTargets.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
@@ -988,26 +1044,32 @@ function AddSheet({
                     {t.label}
                   </option>
                 ))}
+                <option value="__custom_date__">Pick a date…</option>
               </select>
+              {showDatePicker && (
+                <div className="mt-2">
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setCustomDate(v);
+                      setTargetValue(v ? `D|${v}` : "none");
+                    }}
+                    className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
+                  />
+                </div>
+              )}
             </div>
 
             {itemType === "plan" && isDayTarget && (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2">
                 <div>
                   <div className="mb-1 text-xs text-neutral-400">Start (optional)</div>
                   <input
                     type="time"
                     value={planStartTime}
                     onChange={(e) => setPlanStartTime(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
-                  />
-                </div>
-                <div>
-                  <div className="mb-1 text-xs text-neutral-400">End (optional)</div>
-                  <input
-                    type="time"
-                    value={planEndTime}
-                    onChange={(e) => setPlanEndTime(e.target.value)}
                     className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
                   />
                 </div>
@@ -1026,7 +1088,7 @@ function AddSheet({
 
             <div className="flex gap-2">
               <button
-                onClick={() => onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndTime })}
+                onClick={() => onCreate({ titleRaw, notes, targetValue, itemType, planStartTime })}
                 className="flex-1 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
               >
                 Add
@@ -1325,7 +1387,6 @@ function getWindowValue(which: DrawerWindow) {
     targetValue: string;
     itemType: ItemType;
     planStartTime?: string;
-    planEndTime?: string;
   }) {
     const parsed = parseHashtags(args.titleRaw, { targetValue: args.targetValue, today, windows, itemType: args.itemType });
     const title = parsed.title.trim();
@@ -1366,14 +1427,11 @@ function getWindowValue(which: DrawerWindow) {
 
     // plan
     let starts_at: string | null = null;
-    let ends_at: string | null = null;
-
     if (placement.scheduled_for && args.planStartTime) starts_at = new Date(`${placement.scheduled_for}T${args.planStartTime}:00`).toISOString();
-    if (placement.scheduled_for && args.planEndTime) ends_at = new Date(`${placement.scheduled_for}T${args.planEndTime}:00`).toISOString();
 
     const { data, error } = await supabase
       .from("plans")
-      .insert({ title, notes: notesVal, status: "open", starts_at, ends_at, ...placement })
+      .insert({ title, notes: notesVal, status: "open", starts_at, ...placement })
       .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
       .single();
     if (error) return console.error(error);
@@ -1455,6 +1513,7 @@ function getWindowValue(which: DrawerWindow) {
   }
 
   const todayIso = toISODate(days[0]);
+  const bottomOpenIso = openDayIso && openDayIso !== todayIso ? openDayIso : null;
 
   function openEdit(type: ItemType, item: Task | Plan | Focus) {
     setEditType(type);
@@ -1462,7 +1521,7 @@ function getWindowValue(which: DrawerWindow) {
     setEditOpen(true);
   }
 
-  async function saveEdit(patch: { itemType: ItemType; title: string; notes: string | null; targetValue: string; planStartTime?: string; planEndTime?: string }) {
+  async function saveEdit(patch: { itemType: ItemType; title: string; notes: string | null; targetValue: string; planStartTime?: string }) {
     if (!editItem) return;
     const id = (editItem as any).id as string;
 
@@ -1480,10 +1539,8 @@ function getWindowValue(which: DrawerWindow) {
     if (patch.itemType !== editType) {
       // Compute plan times if the new type is plan and it's scheduled on a day.
       let starts_at: string | null = null;
-      let ends_at: string | null = null;
       if (placement.scheduled_for && patch.itemType === "plan") {
         if (patch.planStartTime) starts_at = new Date(`${placement.scheduled_for}T${patch.planStartTime}:00`).toISOString();
-        if (patch.planEndTime) ends_at = new Date(`${placement.scheduled_for}T${patch.planEndTime}:00`).toISOString();
       }
 
       // Create in destination table
@@ -1510,7 +1567,7 @@ function getWindowValue(which: DrawerWindow) {
       if (patch.itemType === "plan") {
         const { data, error } = await supabase
           .from("plans")
-          .insert({ title: patch.title, notes: patch.notes, status: "open", starts_at, ends_at, ...placement })
+          .insert({ title: patch.title, notes: patch.notes, status: "open", starts_at, ...placement })
           .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
           .single();
         if (error) return console.error(error);
@@ -1544,19 +1601,17 @@ function getWindowValue(which: DrawerWindow) {
 
     // plan
     let starts_at: string | null = null;
-    let ends_at: string | null = null;
     if (placement.scheduled_for && patch.planStartTime) starts_at = new Date(`${placement.scheduled_for}T${patch.planStartTime}:00`).toISOString();
-    if (placement.scheduled_for && patch.planEndTime) ends_at = new Date(`${placement.scheduled_for}T${patch.planEndTime}:00`).toISOString();
 
     const { error } = await supabase
       .from("plans")
-      .update({ title: patch.title, notes: patch.notes, starts_at, ends_at, ...placement })
+      .update({ title: patch.title, notes: patch.notes, starts_at, ...placement })
       .eq("id", id);
     if (error) return console.error(error);
 
     setPlans((p) =>
       p.map((pl) =>
-        pl.id === id ? ({ ...pl, title: patch.title, notes: patch.notes, starts_at, ends_at, ...placement } as Plan) : pl
+        pl.id === id ? ({ ...pl, title: patch.title, notes: patch.notes, starts_at, ends_at: pl.ends_at, ...placement } as Plan) : pl
       )
     );
 
@@ -1590,121 +1645,8 @@ function getWindowValue(which: DrawerWindow) {
       ) : (
         <>
           <div className="mt-2 grid min-w-0 gap-4 md:grid-cols-2">
-            {/* Today */}
-            <section
-              className={clsx(
-                "min-w-0 rounded-2xl border border-neutral-800 p-4 shadow-sm",
-                (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
-              )}
-            >
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-lg font-semibold">Today</div>
-                <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
-              </div>
-            </div>
-
-            {/* Inline add */}
-            <div className="mt-3 group">
-              <div className="mb-2 hidden gap-2 group-focus-within:flex">
-                {([
-                  ["task", "Task"],
-                  ["plan", "Plan"],
-                  ["focus", "Focus"],
-                ] as const).map(([k, label]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    onClick={() => {
-                      ensureDayDraft(todayIso);
-                      setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
-                    }}
-                    className={clsx(
-                      "rounded-xl border px-3 py-1.5 text-xs font-semibold",
-                      (draftTypeByDay[todayIso] ?? "task") === k
-                        ? "border-neutral-200 bg-neutral-100 text-neutral-900"
-                        : "border-neutral-800 bg-neutral-950 text-neutral-200"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  value={draftByDay[todayIso]?.[(draftTypeByDay[todayIso] ?? "task") as ItemType] ?? ""}
-                  onFocus={() => ensureDayDraft(todayIso)}
-                  onChange={(e) => {
-                    ensureDayDraft(todayIso);
-                    const type = (draftTypeByDay[todayIso] ?? "task") as ItemType;
-                    setDraftByDay((prev) => ({
-                      ...prev,
-                      [todayIso]: { ...(prev[todayIso] ?? { task: "", plan: "", focus: "" }), [type]: e.target.value },
-                    }));
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addInline(todayIso);
-                    }
-                  }}
-                  placeholder="Add…"
-                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
-                />
-
-                <button
-                  onClick={() => addInline(todayIso)}
-                  className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-
-            {/* Focus band */}
-            <FocusBand
-              items={focusesByDay[todayIso] ?? []}
-              moveTargets={moveTargets}
-              onMove={(id, v) => moveItem("focus", id, v)}
-              onEdit={(f) => openEdit("focus", f)}
-            />
-
-            {/* Plans */}
-            <div className="mt-4">
-              <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                {(plansByDay[todayIso] ?? []).map((p) => (
-                  <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
-                ))}
-              </div>
-            </div>
-
-            {/* Tasks */}
-            <div className="mt-4">
-              {overdueTasks.length > 0 && (
-                <div className="mt-2">
-                  <div className="text-xs font-semibold text-red-300">Overdue</div>
-                  <div className="mt-2 overflow-hidden rounded-xl border border-red-900/50 bg-red-950/10">
-                    {overdueTasks.map((t) => (
-                      <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} tone="overdue" />
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                {(tasksByDay[todayIso] ?? []).map((t) => (
-                  <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
-                ))}
-              </div>
-            </div>
-            </section>
-
             {/* Parking */}
-            <section className="min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm">
+            <section className="order-1 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm md:order-none md:col-start-2 md:row-start-1">
               <div className="flex min-w-0 gap-2 overflow-x-auto pb-2">
                 {([
                   ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length})`],
@@ -1819,14 +1761,128 @@ function getWindowValue(which: DrawerWindow) {
                   0 && <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>}
               </div>
             </section>
+
+            {/* Today */}
+            <section
+              className={clsx(
+                "order-2 min-w-0 rounded-2xl border border-neutral-800 p-4 shadow-sm md:order-none md:col-start-1 md:row-start-1",
+                (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
+              )}
+            >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-lg font-semibold">Today</div>
+                <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
+              </div>
+            </div>
+
+            {/* Inline add */}
+            <div className="mt-3 group">
+              <div className="mb-2 hidden gap-2 group-focus-within:flex">
+                {([
+                  ["task", "Task"],
+                  ["plan", "Plan"],
+                  ["focus", "Focus"],
+                ] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={() => {
+                      ensureDayDraft(todayIso);
+                      setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
+                    }}
+                    className={clsx(
+                      "rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                      (draftTypeByDay[todayIso] ?? "task") === k
+                        ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                        : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  value={draftByDay[todayIso]?.[(draftTypeByDay[todayIso] ?? "task") as ItemType] ?? ""}
+                  onFocus={() => ensureDayDraft(todayIso)}
+                  onChange={(e) => {
+                    ensureDayDraft(todayIso);
+                    const type = (draftTypeByDay[todayIso] ?? "task") as ItemType;
+                    setDraftByDay((prev) => ({
+                      ...prev,
+                      [todayIso]: { ...(prev[todayIso] ?? { task: "", plan: "", focus: "" }), [type]: e.target.value },
+                    }));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addInline(todayIso);
+                    }
+                  }}
+                  placeholder="Add…"
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                />
+
+                <button
+                  onClick={() => addInline(todayIso)}
+                  className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {/* Focus band */}
+            <FocusBand
+              items={focusesByDay[todayIso] ?? []}
+              moveTargets={moveTargets}
+              onMove={(id, v) => moveItem("focus", id, v)}
+              onEdit={(f) => openEdit("focus", f)}
+            />
+
+            {/* Plans */}
+            <div className="mt-4">
+              <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                {(plansByDay[todayIso] ?? []).map((p) => (
+                  <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
+                ))}
+              </div>
+            </div>
+
+            {/* Tasks */}
+            <div className="mt-4">
+              {overdueTasks.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-xs font-semibold text-red-300">Overdue</div>
+                  <div className="mt-2 overflow-hidden rounded-xl border border-red-900/50 bg-red-950/10">
+                    {overdueTasks.map((t) => (
+                      <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} tone="overdue" />
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                {(tasksByDay[todayIso] ?? []).map((t) => (
+                  <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
+                ))}
+              </div>
+            </div>
+            </section>
           </div>
 
           {/* Next 6 days */}
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6">
+          <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-nowrap md:items-stretch">
             {days.slice(1).map((d, i) => {
               const iso = toISODate(d);
               const label = fmtDayLabel(d, i + 1);
               const isOpen = openDayIso === iso;
+              const isAnotherOpen = Boolean(bottomOpenIso && bottomOpenIso !== iso);
 
               const isWeekend = d.getDay() === 0 || d.getDay() === 6;
               const prevDay = days[i];
@@ -1840,7 +1896,9 @@ function getWindowValue(which: DrawerWindow) {
                 <Fragment key={iso}>
                   <section
                     className={clsx(
-                      "rounded-2xl border border-neutral-800 p-4 shadow-sm",
+                      "rounded-2xl border border-neutral-800 p-4 shadow-sm md:min-w-0",
+                      // Flex sizing on desktop/iPad: open card grows, others shrink slightly
+                      isOpen ? "md:flex-[2]" : isAnotherOpen ? "md:flex-[0.85]" : "md:flex-1",
                       isWeekend ? "bg-neutral-800/80" : "bg-neutral-900",
                       afterSunday ? "md:ml-4" : ""
                     )}
@@ -1925,6 +1983,7 @@ function getWindowValue(which: DrawerWindow) {
 
                       {/* Focus band */}
                       <FocusBand
+                        compact
                         items={dayFocus}
                         moveTargets={moveTargets}
                         onMove={(id, v) => moveItem("focus", id, v)}
@@ -1934,7 +1993,7 @@ function getWindowValue(which: DrawerWindow) {
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayPlans.map((p) => (
-                            <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
+                            <PlanRow compact key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
                           ))}
                         </div>
                       </div>
@@ -1942,7 +2001,7 @@ function getWindowValue(which: DrawerWindow) {
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayTasks.map((t) => (
-                            <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
+                            <TaskRow compact key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
                           ))}
                         </div>
                       </div>
@@ -1950,6 +2009,7 @@ function getWindowValue(which: DrawerWindow) {
                   ) : (
                     <>
                       <FocusBand
+                        compact
                         items={dayFocus}
                         moveTargets={moveTargets}
                         onMove={(id, v) => moveItem("focus", id, v)}
@@ -1959,6 +2019,7 @@ function getWindowValue(which: DrawerWindow) {
                       <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                         {dayPlans.map((p) => (
                           <PlanRow
+                            compact
                             key={p.id}
                             plan={p}
                             moveTargets={moveTargets}
@@ -1969,6 +2030,7 @@ function getWindowValue(which: DrawerWindow) {
 
                         {dayTasks.map((t) => (
                           <TaskRow
+                            compact
                             key={t.id}
                             task={t}
                             moveTargets={moveTargets}
@@ -2002,8 +2064,8 @@ function getWindowValue(which: DrawerWindow) {
       <AddSheet
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onCreate={async ({ titleRaw, notes, targetValue, itemType, planStartTime, planEndTime }) => {
-          await createItem({ titleRaw, notes, targetValue, itemType, planStartTime, planEndTime });
+        onCreate={async ({ titleRaw, notes, targetValue, itemType, planStartTime }) => {
+          await createItem({ titleRaw, notes, targetValue, itemType, planStartTime });
           setAddOpen(false);
         }}
         moveTargets={moveTargets}
