@@ -168,12 +168,15 @@ export default function CalendarPage() {
   const [openIso, setOpenIso] = useState<string | null>(null);
 
   const [maxPlansPerCell, setMaxPlansPerCell] = useState(3);
+  const [isWide, setIsWide] = useState(false);
 
   useEffect(() => {
     function compute() {
       // Tailwind md breakpoint ~768px. Treat md+ as iPad/Mac: show more.
       const w = window.innerWidth || 0;
-      setMaxPlansPerCell(w >= 768 ? 5 : 3);
+      const wide = w >= 768;
+      setIsWide(wide);
+      setMaxPlansPerCell(wide ? 5 : 3);
     }
     compute();
     window.addEventListener("resize", compute);
@@ -513,19 +516,55 @@ export default function CalendarPage() {
                   </div>
                   {/* Multi-day plan bars */}
                   {spansByWeek[wIdx]?.length ? (
-                    <div className="pointer-events-none absolute inset-0 grid grid-cols-7">
+                    <div
+                      className={clsx(
+                        "pointer-events-none absolute inset-0 grid grid-cols-7",
+                        // On small screens we stack bars near the bottom so they don't cover day numbers / plan text.
+                        isWide ? "items-start" : "items-end"
+                      )}
+                    >
                       {spansByWeek[wIdx].map((s) => {
-                        const top = 18 + s.lane * 14; // pixels below top of cell
+                        // Desktop/iPad landscape: a little lower than before to leave a tiny gap under day numbers.
+                        const top = 22 + s.lane * 16;
+                        // Mobile: stack from the bottom up.
+                        const bottom = 6 + s.lane * 12;
+
                         return (
                           <div
                             key={s.key}
-                            style={{ gridColumn: `${s.startCol + 1} / ${s.endCol + 2}`, marginTop: top }}
+                            style={
+                              isWide
+                                ? { gridColumn: `${s.startCol + 1} / ${s.endCol + 2}`, marginTop: top }
+                                : { gridColumn: `${s.startCol + 1} / ${s.endCol + 2}`, marginBottom: bottom }
+                            }
                             className="z-10 px-1"
                           >
-                            <div className="w-full rounded-md border border-neutral-200/25 bg-neutral-200/15 px-1 py-0.5 text-[9px] leading-none text-neutral-100 backdrop-blur md:landscape:text-xs">
-                              <span className="mr-1 text-neutral-200/80">{s.continuesLeft ? "←" : ""}</span>
-                              <span className="align-middle">{s.title}</span>
-                              <span className="ml-1 text-neutral-200/80">{s.continuesRight ? "→" : ""}</span>
+                            <div
+                              className={clsx(
+                                "w-full rounded-md border border-neutral-200/25 bg-neutral-200/15 px-1 backdrop-blur",
+                                isWide
+                                  ? "py-1 text-[11px] leading-none text-neutral-100"
+                                  : "py-0.5 text-[9px] leading-none text-neutral-100"
+                              )}
+                            >
+                              <div className="flex w-full items-center justify-center gap-1 overflow-hidden">
+                                {s.continuesLeft ? (
+                                  <span className="shrink-0 text-neutral-200/80">←</span>
+                                ) : null}
+                                <span
+                                  className={clsx(
+                                    "min-w-0 truncate text-center",
+                                    // Let it breathe a bit on wide views.
+                                    isWide ? "max-w-full" : "max-w-full"
+                                  )}
+                                  title={s.title}
+                                >
+                                  {s.title}
+                                </span>
+                                {s.continuesRight ? (
+                                  <span className="shrink-0 text-neutral-200/80">→</span>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
                         );
