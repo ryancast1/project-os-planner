@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  width: 100%;
+  overflow-x: hidden;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

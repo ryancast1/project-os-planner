@@ -1582,7 +1582,7 @@ function getWindowValue(which: DrawerWindow) {
   }
 
   return (
-    <main className="min-h-dvh p-4 pb-32 mx-auto max-w-6xl">
+    <main className="min-h-dvh w-full p-4 mx-auto max-w-6xl">
 
 
       {loading ? (
@@ -1992,7 +1992,7 @@ function getWindowValue(which: DrawerWindow) {
       {/* Floating add */}
       <button
         onClick={() => setAddOpen(true)}
-        className="fixed bottom-28 right-4 z-[55] h-12 w-12 rounded-full border border-neutral-800 bg-neutral-100 text-xl font-semibold text-neutral-900 shadow-lg active:scale-[0.98]"
+        className="fixed bottom-[calc(72px+env(safe-area-inset-bottom))] right-4 z-[55] h-12 w-12 rounded-full border border-neutral-800 bg-neutral-100 text-xl font-semibold text-neutral-900 shadow-lg active:scale-[0.98]"
         aria-label="Add"
         title="Add"
       >
