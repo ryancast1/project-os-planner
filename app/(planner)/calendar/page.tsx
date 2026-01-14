@@ -141,6 +141,8 @@ export default function CalendarPage() {
     return { start, end };
   }, [weeks]);
 
+  const todayIso = useMemo(() => toISODate(today), [today]);
+
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [focuses, setFocuses] = useState<Focus[]>([]);
@@ -309,7 +311,7 @@ export default function CalendarPage() {
             <div
               key={w}
               className={clsx(
-                "border border-neutral-800 bg-neutral-950/40 px-1 py-1 text-center text-[11px] font-semibold text-neutral-300 sm:text-xs",
+                "border border-neutral-800 bg-neutral-950/40 px-0.5 py-1 text-center text-[9px] font-semibold leading-none text-neutral-300 sm:text-xs",
                 idx >= 5 ? "bg-neutral-900/40" : ""
               )}
             >
@@ -319,35 +321,23 @@ export default function CalendarPage() {
         </div>
 
         {/* 12-week grid */}
-        <div
-          className={clsx(
-            "border-x border-b border-neutral-800",
-            // iPhone + iPad portrait: fit all 12 weeks in view
-            "h-[calc(100dvh-190px)] md:h-auto",
-            "overflow-hidden md:overflow-visible"
-          )}
-          style={{}}
-        >
-          <div className="grid grid-rows-12" style={{ gridTemplateRows: "repeat(12, minmax(0, 1fr))" }}>
+        <div className="border-x border-b border-neutral-800">
+          <div>
             {weeks.map((row, wIdx) => {
-              const thisMonth = row[0].getMonth();
-              const prevMonth = wIdx === 0 ? thisMonth : weeks[wIdx - 1][0].getMonth();
-              const monthBreak = wIdx !== 0 && thisMonth !== prevMonth;
-
               return (
-                <div
-                  key={`week-${wIdx}`}
-                  className={clsx(
-                    "grid grid-cols-7",
-                    monthBreak ? "border-t-2 border-neutral-500/60" : "border-t border-neutral-800"
-                  )}
-                >
+                <div key={`week-${wIdx}`} className="grid grid-cols-7">
                   {row.map((d, dIdx) => {
                     const iso = toISODate(d);
+                    const isToday = iso === todayIso;
                     const dayPlans = plansByDay[iso] ?? [];
                     const show = dayPlans.slice(0, 2);
                     const extra = Math.max(0, dayPlans.length - show.length);
                     const weekend = isWeekend(d);
+
+                    const monthChangeFromTop =
+                      wIdx > 0 && weeks[wIdx - 1][dIdx].getMonth() !== d.getMonth();
+                    const monthChangeFromLeft =
+                      dIdx > 0 && row[dIdx - 1].getMonth() !== d.getMonth();
 
                     const lp = useLongPress({
                       onLongPress: () => setOpenIso(iso),
@@ -363,10 +353,18 @@ export default function CalendarPage() {
                           setOpenIso(iso);
                         }}
                         className={clsx(
-                          "relative border-r border-neutral-800 p-1",
-                          weekend ? "bg-neutral-900/35" : "bg-neutral-950/25",
-                          dIdx === 6 ? "border-r-0" : "",
-                          "select-none"
+                          "relative p-1 select-none aspect-square",
+                          // grid lines
+                          dIdx === 6 ? "border-r-0" : "border-r border-r-neutral-800",
+                          // top border for every cell; thicker when month changes vs the cell above
+                          monthChangeFromTop ? "border-t-2 border-t-neutral-500/60" : "border-t border-t-neutral-800",
+                          // thicker left border when month changes vs the cell to the left (e.g., Jan 31 -> Feb 1)
+                          monthChangeFromLeft ? "border-l-2 border-l-neutral-500/60" : "",
+                          isToday
+                            ? "bg-neutral-800/35 ring-1 ring-neutral-500/40"
+                            : weekend
+                              ? "bg-neutral-900/55"
+                              : "bg-neutral-950/25"
                         )}
                         style={{ touchAction: "manipulation" }}
                       >
@@ -376,14 +374,14 @@ export default function CalendarPage() {
                           {show.map((p) => (
                             <div
                               key={p.id}
-                              className="truncate text-[10px] leading-tight text-neutral-200 sm:text-[11px]"
+                              className="truncate text-[8px] leading-tight text-neutral-200 sm:text-[11px]"
                               title={p.title}
                             >
                               {p.title}
                             </div>
                           ))}
                           {extra > 0 ? (
-                            <div className="text-[10px] leading-tight text-neutral-400 sm:text-[11px]">+{extra}</div>
+                            <div className="text-[8px] leading-tight text-neutral-400 sm:text-[11px]">+{extra}</div>
                           ) : null}
                         </div>
                       </div>
