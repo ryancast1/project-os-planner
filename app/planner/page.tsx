@@ -681,76 +681,87 @@ export default function PlannerPage() {
     const start = toISODate(days[0]);
     const end = toISODate(days[6]);
 
-    const tasksScheduledRes = await supabase
-      .from("tasks")
-      .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
-      .eq("status", "open")
-      .not("scheduled_for", "is", null)
-      .gte("scheduled_for", start)
-      .lte("scheduled_for", end)
-      .order("scheduled_for", { ascending: true })
-      .order("created_at", { ascending: true });
-
-    const tasksOverdueRes = await supabase
-      .from("tasks")
-      .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
-      .eq("status", "open")
-      .not("scheduled_for", "is", null)
-      .lt("scheduled_for", start)
-      .order("scheduled_for", { ascending: true })
-      .order("created_at", { ascending: true });
-
     const parkingOr = [
-      `and(window_kind.eq.workweek,window_start.eq.${windows.thisWeekStart})`,
-      `and(window_kind.eq.weekend,window_start.eq.${windows.thisWeekendStart})`,
-      `and(window_kind.eq.workweek,window_start.eq.${windows.nextWeekStart})`,
-      `and(window_kind.eq.weekend,window_start.eq.${windows.nextWeekendStart})`,
-    ].join(",");
+  `and(window_kind.eq.workweek,window_start.eq.${windows.thisWeekStart})`,
+  `and(window_kind.eq.weekend,window_start.eq.${windows.thisWeekendStart})`,
+  `and(window_kind.eq.workweek,window_start.eq.${windows.nextWeekStart})`,
+  `and(window_kind.eq.weekend,window_start.eq.${windows.nextWeekendStart})`,
+].join(",");
 
-    const tasksParkingRes = await supabase
-      .from("tasks")
-      .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
-      .eq("status", "open")
-      .is("scheduled_for", null)
-      .or(parkingOr)
-      .order("created_at", { ascending: true });
+const [
+  tasksScheduledRes,
+  tasksOverdueRes,
+  tasksParkingRes,
+  plansScheduledRes,
+  plansParkingRes,
+  focusesScheduledRes,
+  focusesParkingRes,
+] = await Promise.all([
+  supabase
+    .from("tasks")
+    .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+    .eq("status", "open")
+    .not("scheduled_for", "is", null)
+    .gte("scheduled_for", start)
+    .lte("scheduled_for", end)
+    .order("scheduled_for", { ascending: true })
+    .order("created_at", { ascending: true }),
 
-    const plansScheduledRes = await supabase
-      .from("plans")
-      .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
-      .eq("status", "open")
-      .not("scheduled_for", "is", null)
-      .gte("scheduled_for", start)
-      .lte("scheduled_for", end)
-      .order("scheduled_for", { ascending: true })
-      .order("starts_at", { ascending: true, nullsFirst: true })
-      .order("created_at", { ascending: true });
+  supabase
+    .from("tasks")
+    .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+    .eq("status", "open")
+    .not("scheduled_for", "is", null)
+    .lt("scheduled_for", start)
+    .order("scheduled_for", { ascending: true })
+    .order("created_at", { ascending: true }),
 
-    const plansParkingRes = await supabase
-      .from("plans")
-      .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
-      .eq("status", "open")
-      .is("scheduled_for", null)
-      .or(parkingOr)
-      .order("created_at", { ascending: true });
+  supabase
+    .from("tasks")
+    .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+    .eq("status", "open")
+    .is("scheduled_for", null)
+    .or(parkingOr)
+    .order("created_at", { ascending: true }),
 
-    const focusesScheduledRes = await supabase
-      .from("focuses")
-      .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
-      .eq("status", "active")
-      .not("scheduled_for", "is", null)
-      .gte("scheduled_for", start)
-      .lte("scheduled_for", end)
-      .order("scheduled_for", { ascending: true })
-      .order("created_at", { ascending: true });
+  supabase
+    .from("plans")
+    .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
+    .eq("status", "open")
+    .not("scheduled_for", "is", null)
+    .gte("scheduled_for", start)
+    .lte("scheduled_for", end)
+    .order("scheduled_for", { ascending: true })
+    .order("starts_at", { ascending: true, nullsFirst: true })
+    .order("created_at", { ascending: true }),
 
-    const focusesParkingRes = await supabase
-      .from("focuses")
-      .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
-      .eq("status", "active")
-      .is("scheduled_for", null)
-      .or(parkingOr)
-      .order("created_at", { ascending: true });
+  supabase
+    .from("plans")
+    .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
+    .eq("status", "open")
+    .is("scheduled_for", null)
+    .or(parkingOr)
+    .order("created_at", { ascending: true }),
+
+  supabase
+    .from("focuses")
+    .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+    .eq("status", "active")
+    .not("scheduled_for", "is", null)
+    .gte("scheduled_for", start)
+    .lte("scheduled_for", end)
+    .order("scheduled_for", { ascending: true })
+    .order("created_at", { ascending: true }),
+
+  supabase
+    .from("focuses")
+    .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+    .eq("status", "active")
+    .is("scheduled_for", null)
+    .or(parkingOr)
+    .order("created_at", { ascending: true }),
+]);
+
 
     if (tasksScheduledRes.error) console.error(tasksScheduledRes.error);
     if (tasksOverdueRes.error) console.error(tasksOverdueRes.error);
