@@ -1582,18 +1582,18 @@ function getWindowValue(which: DrawerWindow) {
   }
 
   return (
-    <main className="min-h-dvh w-full p-4 mx-auto max-w-6xl">
+    <main className="min-h-dvh w-full max-w-full overflow-x-hidden px-4 py-4 sm:mx-auto sm:max-w-6xl">
 
 
       {loading ? (
         <div className="mt-6 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-2 grid gap-4 md:grid-cols-2">
+          <div className="mt-2 grid min-w-0 gap-4 md:grid-cols-2">
             {/* Today */}
             <section
               className={clsx(
-                "rounded-2xl border border-neutral-800 p-4 shadow-sm",
+                "min-w-0 rounded-2xl border border-neutral-800 p-4 shadow-sm",
                 (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
               )}
             >
@@ -1704,8 +1704,8 @@ function getWindowValue(which: DrawerWindow) {
             </section>
 
             {/* Parking */}
-            <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm">
-              <div className="flex gap-2 overflow-x-auto pb-2">
+            <section className="min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm">
+              <div className="flex min-w-0 gap-2 overflow-x-auto pb-2">
                 {([
                   ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length})`],
                   ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length})`],
