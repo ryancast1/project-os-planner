@@ -1,3 +1,4 @@
+// FULL OVERWRITE
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -20,8 +21,11 @@ function fmtDayLabel(d: Date, index: number) {
   return d.toLocaleDateString(undefined, { weekday: "short" });
 }
 
+function fmtMonthDay(d: Date) {
+  return d.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+}
+
 function toISODate(d: Date) {
-  // local date -> YYYY-MM-DD
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
@@ -104,6 +108,9 @@ function TaskRow({
   currentValue: string;
   tone?: "normal" | "overdue";
 }) {
+  const dayTargets = moveTargets.filter((t) => t.group === "days");
+  const parkingTargets = moveTargets.filter((t) => t.group === "parking");
+
   return (
     <div
       className={clsx(
@@ -119,6 +126,7 @@ function TaskRow({
         aria-label="Mark done"
         title="Done"
       />
+
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">{task.title}</div>
       </div>
@@ -131,24 +139,20 @@ function TaskRow({
         title="Move"
       >
         <option value="none">No date</option>
-        <optgroup label="Days">
-          {moveTargets
-            .filter((t) => t.group === "days")
-            .map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-        </optgroup>
-        <optgroup label="Parking">
-          {moveTargets
-            .filter((t) => t.group === "parking")
-            .map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-        </optgroup>
+        {dayTargets.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
+        {/* separator */}
+        <option value="__sep" disabled>
+          ──────────
+        </option>
+        {parkingTargets.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
       </select>
 
       <button
@@ -195,14 +199,30 @@ export default function PlannerPage() {
     });
   }, [today]);
 
+  const windows = useMemo(() => computePlanningWindows(days[0]), [days]);
+
+  const moveTargets = useMemo<MoveTarget[]>(() => {
+    const dayTargets: MoveTarget[] = days.map((d, idx) => ({
+      label: fmtDayLabel(d, idx),
+      value: `D|${toISODate(d)}`,
+      group: "days",
+    }));
+
+    const parkingTargets: MoveTarget[] = [
+      { label: "This Week", value: `P|workweek|${windows.thisWeekStart}`, group: "parking" },
+      { label: "This Weekend", value: `P|weekend|${windows.thisWeekendStart}`, group: "parking" },
+      { label: "Next Week", value: `P|workweek|${windows.nextWeekStart}`, group: "parking" },
+      { label: "Next Weekend", value: `P|weekend|${windows.nextWeekendStart}`, group: "parking" },
+    ];
+
+    return [...dayTargets, ...parkingTargets];
+  }, [days, windows]);
+
   async function fetchTasks() {
     setLoading(true);
     const start = toISODate(days[0]);
     const end = toISODate(days[6]);
 
-    const windows = computePlanningWindows(days[0]);
-
-    // 1) Dated tasks in the 7-day window + overdue
     const scheduledRes = await supabase
       .from("tasks")
       .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
@@ -213,7 +233,6 @@ export default function PlannerPage() {
       .order("scheduled_for", { ascending: true })
       .order("created_at", { ascending: true });
 
-    // 2) Parking lot tasks (undated) for the 4 window anchors
     const parkingOr = [
       `and(window_kind.eq.workweek,window_start.eq.${windows.thisWeekStart})`,
       `and(window_kind.eq.weekend,window_start.eq.${windows.thisWeekendStart})`,
@@ -262,10 +281,8 @@ export default function PlannerPage() {
     return map;
   }, [tasks, days]);
 
-  const windows = useMemo(() => computePlanningWindows(days[0]), [days]);
-
   const parkingLists = useMemo(() => {
-    const empty = {
+    const out = {
       thisWeek: [] as Task[],
       thisWeekend: [] as Task[],
       nextWeek: [] as Task[],
@@ -277,46 +294,34 @@ export default function PlannerPage() {
       if (!t.window_kind || !t.window_start) continue;
 
       if (t.window_kind === "workweek" && t.window_start === windows.thisWeekStart)
-        empty.thisWeek.push(t);
+        out.thisWeek.push(t);
       if (t.window_kind === "weekend" && t.window_start === windows.thisWeekendStart)
-        empty.thisWeekend.push(t);
+        out.thisWeekend.push(t);
       if (t.window_kind === "workweek" && t.window_start === windows.nextWeekStart)
-        empty.nextWeek.push(t);
+        out.nextWeek.push(t);
       if (t.window_kind === "weekend" && t.window_start === windows.nextWeekendStart)
-        empty.nextWeekend.push(t);
+        out.nextWeekend.push(t);
     }
-    return empty;
+
+    return out;
   }, [tasks, windows]);
-
-  const moveTargets = useMemo<MoveTarget[]>(() => {
-    const dayTargets: MoveTarget[] = days.map((d, idx) => ({
-      label: fmtDayLabel(d, idx),
-      value: `D|${toISODate(d)}`,
-      group: "days",
-    }));
-
-    const parkingTargets: MoveTarget[] = [
-      { label: "This Week", value: `P|workweek|${windows.thisWeekStart}`, group: "parking" },
-      { label: "This Weekend", value: `P|weekend|${windows.thisWeekendStart}`, group: "parking" },
-      { label: "Next Week", value: `P|workweek|${windows.nextWeekStart}`, group: "parking" },
-      { label: "Next Weekend", value: `P|weekend|${windows.nextWeekendStart}`, group: "parking" },
-    ];
-
-    return [...dayTargets, ...parkingTargets];
-  }, [days, windows]);
 
   async function addTaskForDate(isoDate: string) {
     const raw = draftByDate[isoDate] ?? "";
     const title = raw.trim();
     if (!title) return;
 
-    const { error } = await supabase.from("tasks").insert({
-      title,
-      status: "open",
-      scheduled_for: isoDate,
-      window_kind: null,
-      window_start: null,
-    });
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert({
+        title,
+        status: "open",
+        scheduled_for: isoDate,
+        window_kind: null,
+        window_start: null,
+      })
+      .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+      .single();
 
     if (error) {
       console.error(error);
@@ -324,7 +329,7 @@ export default function PlannerPage() {
     }
 
     setDraftByDate((prev) => ({ ...prev, [isoDate]: "" }));
-    fetchTasks();
+    if (data) setTasks((prev) => [...prev, data as Task]);
   }
 
   async function addTaskToParking(tab: "thisWeek" | "thisWeekend" | "nextWeek" | "nextWeekend") {
@@ -341,13 +346,17 @@ export default function PlannerPage() {
             ? windows.nextWeekStart
             : windows.nextWeekendStart;
 
-    const { error } = await supabase.from("tasks").insert({
-      title,
-      status: "open",
-      scheduled_for: null,
-      window_kind: kind,
-      window_start: start,
-    });
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert({
+        title,
+        status: "open",
+        scheduled_for: null,
+        window_kind: kind,
+        window_start: start,
+      })
+      .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+      .single();
 
     if (error) {
       console.error(error);
@@ -355,7 +364,7 @@ export default function PlannerPage() {
     }
 
     setParkingDraft((p) => ({ ...p, [tab]: "" }));
-    fetchTasks();
+    if (data) setTasks((prev) => [...prev, data as Task]);
   }
 
   async function markDone(taskId: string) {
@@ -364,11 +373,18 @@ export default function PlannerPage() {
       .update({ status: "done", completed_at: new Date().toISOString() })
       .eq("id", taskId);
 
-    if (error) console.error(error);
-    fetchTasks();
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
   }
 
   async function moveTask(taskId: string, targetValue: string) {
+    // Ignore separator selection (should be disabled anyway)
+    if (targetValue === "__sep") return;
+
     let payload: Record<string, any>;
 
     if (targetValue === "none") {
@@ -384,9 +400,15 @@ export default function PlannerPage() {
     }
 
     const { error } = await supabase.from("tasks").update(payload).eq("id", taskId);
-    if (error) console.error(error);
-    fetchTasks();
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? ({ ...t, ...payload } as Task) : t)));
   }
+
+  const todayIso = toISODate(days[0]);
 
   return (
     <main className="min-h-dvh p-4 pb-28">
@@ -408,18 +430,18 @@ export default function PlannerPage() {
       {/* Quick add (today) */}
       <div className="mt-4 flex gap-2">
         <input
-          value={draftByDate[toISODate(days[0])] ?? ""}
+          value={draftByDate[todayIso] ?? ""}
           onChange={(e) =>
             setDraftByDate((prev) => ({
               ...prev,
-              [toISODate(days[0])]: e.target.value,
+              [todayIso]: e.target.value,
             }))
           }
           placeholder="Add a task for Today…"
           className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
         />
         <button
-          onClick={() => addTaskForDate(toISODate(days[0]))}
+          onClick={() => addTaskForDate(todayIso)}
           className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
         >
           Add
@@ -430,13 +452,13 @@ export default function PlannerPage() {
         <div className="mt-6 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          {/* Today card (expanded) */}
+          {/* Today card */}
           <section className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-lg font-semibold">Today</div>
                 <div className="mt-0.5 text-xs text-neutral-400">
-                  {toISODate(days[0])} • {(tasksByDay[toISODate(days[0])] ?? []).length} open
+                  {fmtMonthDay(days[0])} • {(tasksByDay[todayIso] ?? []).length} open
                 </div>
               </div>
               <div className="rounded-xl border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs text-neutral-300">
@@ -464,7 +486,7 @@ export default function PlannerPage() {
             )}
 
             <div className="mt-4 space-y-2">
-              {(tasksByDay[toISODate(days[0])] ?? []).map((t) => (
+              {(tasksByDay[todayIso] ?? []).map((t) => (
                 <TaskRow
                   key={t.id}
                   task={t}
@@ -474,13 +496,13 @@ export default function PlannerPage() {
                   currentValue={taskLocationValue(t)}
                 />
               ))}
-              {(tasksByDay[toISODate(days[0])] ?? []).length === 0 && (
+              {(tasksByDay[todayIso] ?? []).length === 0 && (
                 <div className="text-sm text-neutral-400">No tasks today.</div>
               )}
             </div>
           </section>
 
-          {/* Next 6 days (collapsible cards) */}
+          {/* Next 6 days (collapsible) */}
           <div className="mt-4 space-y-3">
             {days.slice(1).map((d, i) => {
               const iso = toISODate(d);
@@ -500,7 +522,7 @@ export default function PlannerPage() {
                     <div>
                       <div className="font-semibold">{label}</div>
                       <div className="mt-0.5 text-xs text-neutral-400">
-                        {iso} • {list.length} open
+                        {fmtMonthDay(d)} • {list.length} open
                       </div>
                     </div>
                     <div className="text-sm text-neutral-400">{isOpen ? "–" : "+"}</div>
@@ -571,26 +593,25 @@ export default function PlannerPage() {
         </>
       )}
 
-      {/* Parking Lot Drawer */}
+      {/* Bottom drawer (no label) */}
       <div className="fixed bottom-0 left-0 right-0 z-50">
         <div className="mx-auto max-w-xl">
           {!parkingOpen ? (
             <button
               onClick={() => setParkingOpen(true)}
-              className="w-full rounded-t-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-left"
+              className="w-full rounded-t-2xl border border-neutral-800 bg-neutral-950 px-4 py-2 text-left"
             >
               <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold">Parking Lot</div>
-                <div className="text-xs text-neutral-400">Tap to open</div>
-              </div>
-              <div className="mt-1 text-xs text-neutral-400">
-                Week {parkingLists.thisWeek.length} • Weekend {parkingLists.thisWeekend.length} • Next {parkingLists.nextWeek.length} • Next Wknd {parkingLists.nextWeekend.length}
+                <div className="text-xs text-neutral-400">
+                  Week {parkingLists.thisWeek.length} • Weekend {parkingLists.thisWeekend.length} • Next {parkingLists.nextWeek.length} • Next Wknd {parkingLists.nextWeekend.length}
+                </div>
+                <div className="text-sm text-neutral-400">▲</div>
               </div>
             </button>
           ) : (
             <div className="rounded-t-2xl border border-neutral-800 bg-neutral-950">
-              <div className="flex items-center justify-between px-4 py-3">
-                <div className="text-sm font-semibold">Parking Lot</div>
+              <div className="flex items-center justify-between px-4 py-2">
+                <div />
                 <button
                   onClick={() => setParkingOpen(false)}
                   className="rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
@@ -599,7 +620,7 @@ export default function PlannerPage() {
                 </button>
               </div>
 
-              <div className="flex gap-2 overflow-x-auto px-4 pb-3">
+              <div className="flex gap-2 overflow-x-auto px-4 pb-2">
                 {([
                   ["thisWeek", `This Week (${parkingLists.thisWeek.length})`],
                   ["thisWeekend", `This Weekend (${parkingLists.thisWeekend.length})`],
@@ -625,8 +646,10 @@ export default function PlannerPage() {
                 <div className="flex gap-2">
                   <input
                     value={parkingDraft[parkingTab] ?? ""}
-                    onChange={(e) => setParkingDraft((p) => ({ ...p, [parkingTab]: e.target.value }))}
-                    placeholder="Add to parking lot…"
+                    onChange={(e) =>
+                      setParkingDraft((p) => ({ ...p, [parkingTab]: e.target.value }))
+                    }
+                    placeholder="Add…"
                     className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
                   />
                   <button
@@ -655,16 +678,17 @@ export default function PlannerPage() {
                       currentValue={taskLocationValue(t)}
                     />
                   ))}
-                  {(parkingTab === "thisWeek" && parkingLists.thisWeek.length === 0) && (
+
+                  {parkingTab === "thisWeek" && parkingLists.thisWeek.length === 0 && (
                     <div className="text-sm text-neutral-500">Empty.</div>
                   )}
-                  {(parkingTab === "thisWeekend" && parkingLists.thisWeekend.length === 0) && (
+                  {parkingTab === "thisWeekend" && parkingLists.thisWeekend.length === 0 && (
                     <div className="text-sm text-neutral-500">Empty.</div>
                   )}
-                  {(parkingTab === "nextWeek" && parkingLists.nextWeek.length === 0) && (
+                  {parkingTab === "nextWeek" && parkingLists.nextWeek.length === 0 && (
                     <div className="text-sm text-neutral-500">Empty.</div>
                   )}
-                  {(parkingTab === "nextWeekend" && parkingLists.nextWeekend.length === 0) && (
+                  {parkingTab === "nextWeekend" && parkingLists.nextWeekend.length === 0 && (
                     <div className="text-sm text-neutral-500">Empty.</div>
                   )}
                 </div>
