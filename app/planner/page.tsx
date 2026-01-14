@@ -44,6 +44,8 @@ type Focus = {
 
 type ItemType = "task" | "plan" | "focus";
 
+type DrawerWindow = "thisWeek" | "thisWeekend" | "nextWeek" | "nextWeekend" | "open";
+
 type MoveTarget = { label: string; value: string; group: "days" | "parking" };
 
 type PlanningWindows = {
@@ -271,21 +273,52 @@ function RowShell({
   onDelete?: () => void;
 }) {
   const timerRef = useRef<number | null>(null);
+  const startRef = useRef<{ x: number; y: number } | null>(null);
 
   const clear = () => {
     if (timerRef.current) {
       window.clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    startRef.current = null;
   };
 
-  const start = () => {
+  const isInteractiveTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest("button,select,input,textarea,a,label"));
+  };
+
+  const start = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!onDelete) return;
+
+    // Long-press delete ONLY on touch. Desktop uses right-click.
+    if (e.pointerType !== "touch") return;
+
+    // If they pressed on a control inside the row (checkbox/move select), do not arm delete.
+    if (isInteractiveTarget(e.target)) return;
+
     clear();
+    startRef.current = { x: e.clientX, y: e.clientY };
+
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
+      startRef.current = null;
+      // On iOS, this is effectively the long-press action.
       if (confirm("Delete this item?")) onDelete();
-    }, 650);
+    }, 750);
+  };
+
+  const maybeCancelOnMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "touch") return;
+    if (!timerRef.current) return;
+    if (!startRef.current) return;
+
+    const dx = e.clientX - startRef.current.x;
+    const dy = e.clientY - startRef.current.y;
+    if (dx * dx + dy * dy > 10 * 10) {
+      // user is scrolling/dragging
+      clear();
+    }
   };
 
   return (
@@ -295,6 +328,7 @@ function RowShell({
         tone === "overdue" ? "border-red-900/60 bg-red-950/30" : "border-neutral-800 bg-neutral-900"
       )}
       onPointerDown={start}
+      onPointerMove={maybeCancelOnMove}
       onPointerUp={clear}
       onPointerCancel={clear}
       onPointerLeave={clear}
@@ -303,8 +337,7 @@ function RowShell({
         e.preventDefault();
         if (confirm("Delete this item?")) onDelete();
       }}
-      role={onDelete ? "button" : undefined}
-      tabIndex={onDelete ? 0 : undefined}
+      style={{ touchAction: "manipulation" }}
     >
       {children}
     </div>
@@ -330,8 +363,9 @@ function MoveSelect({
       className="h-8 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950 px-2 text-xs text-neutral-200 outline-none"
       aria-label="Move"
       title="Move"
+      onPointerDown={(e) => e.stopPropagation()}
     >
-      <option value="none">No date</option>
+     
       {dayTargets.map((t) => (
         <option key={t.value} value={t.value}>
           {t.label}
@@ -369,6 +403,7 @@ function TaskRow({
   return (
     <RowShell tone={tone} onDelete={() => onDelete(task.id)}>
       <button
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
           onToggleDone(task.id, !isDone);
@@ -588,7 +623,7 @@ function AddSheet({
                 onChange={(e) => setTargetValue(e.target.value)}
                 className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 outline-none"
               >
-                <option value="none">No date</option>
+                
                 {dayTargets.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
@@ -671,7 +706,7 @@ export default function PlannerPage() {
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerWindow, setDrawerWindow] = useState<"thisWeek" | "thisWeekend" | "nextWeek" | "nextWeekend">("thisWeek");
+  const [drawerWindow, setDrawerWindow] = useState<DrawerWindow>("thisWeek");
   const [drawerDraft, setDrawerDraft] = useState("");
 
   const [openDayIso, setOpenDayIso] = useState<string | null>(null);
@@ -705,12 +740,14 @@ export default function PlannerPage() {
       { label: "This Weekend", value: `P|weekend|${windows.thisWeekendStart}`, group: "parking" },
       { label: "Next Week", value: `P|workweek|${windows.nextWeekStart}`, group: "parking" },
       { label: "Next Weekend", value: `P|weekend|${windows.nextWeekendStart}`, group: "parking" },
+      { label: "Open", value: "none", group: "parking" },
     ];
 
     return [...dayTargets, ...parkingTargets];
   }, [days, windows]);
 
-  function getWindowValue(which: "thisWeek" | "thisWeekend" | "nextWeek" | "nextWeekend") {
+function getWindowValue(which: DrawerWindow) {
+  if (which === "open") return "none";
     if (which === "thisWeek") return `P|workweek|${windows.thisWeekStart}`;
     if (which === "thisWeekend") return `P|weekend|${windows.thisWeekendStart}`;
     if (which === "nextWeek") return `P|workweek|${windows.nextWeekStart}`;
@@ -763,7 +800,7 @@ export default function PlannerPage() {
         .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
         .eq("status", "open")
         .is("scheduled_for", null)
-        .or(parkingOr)
+        .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
         .order("created_at", { ascending: true }),
 
       supabase
@@ -782,7 +819,7 @@ export default function PlannerPage() {
         .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
         .eq("status", "open")
         .is("scheduled_for", null)
-        .or(parkingOr)
+        .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
         .order("created_at", { ascending: true }),
 
       supabase
@@ -800,7 +837,7 @@ export default function PlannerPage() {
         .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
         .eq("status", "active")
         .is("scheduled_for", null)
-        .or(parkingOr)
+        .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
         .order("created_at", { ascending: true }),
     ]);
 
@@ -888,6 +925,7 @@ export default function PlannerPage() {
       thisWeekend: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[] },
       nextWeek: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[] },
       nextWeekend: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[] },
+      open: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[] },
     };
 
     const matchWindow = (kind: WindowKind | null, start: string | null) => {
@@ -903,16 +941,19 @@ export default function PlannerPage() {
       if (t.scheduled_for) continue;
       const which = matchWindow(t.window_kind, t.window_start);
       if (which) out[which].task.push(t);
+      else if (!t.window_kind && !t.window_start) out.open.task.push(t);
     }
     for (const p of plans) {
       if (p.scheduled_for) continue;
       const which = matchWindow(p.window_kind, p.window_start);
       if (which) out[which].plan.push(p);
+      else if (!p.window_kind && !p.window_start) out.open.plan.push(p);
     }
     for (const f of focuses) {
       if (f.scheduled_for) continue;
       const which = matchWindow(f.window_kind, f.window_start);
       if (which) out[which].focus.push(f);
+      else if (!f.window_kind && !f.window_start) out.open.focus.push(f);
     }
 
     return out;
@@ -1118,9 +1159,17 @@ export default function PlannerPage() {
                     [todayIso]: { ...(prev[todayIso] ?? { task: "", plan: "", focus: "" }), [type]: e.target.value },
                   }));
                 }}
+                onKeyDown={(e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    addInline(todayIso);
+  }
+}}
                 placeholder="Add…"
                 className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
               />
+
+              
 
               <button
                 onClick={() => addInline(todayIso)}
@@ -1224,6 +1273,12 @@ export default function PlannerPage() {
                             }));
                           }}
                           placeholder="Add…"
+                          onKeyDown={(e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    addInline(iso);
+  }
+}}
                           className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
                         />
 
@@ -1318,6 +1373,7 @@ export default function PlannerPage() {
                   {drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length} • Next{" "}
                   {drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length} • Next Wknd{" "}
                   {drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length}
+                  • Open {drawerLists.open.task.length + drawerLists.open.plan.length + drawerLists.open.focus.length}
                 </div>
                 <div className="text-sm text-neutral-400">▲</div>
               </div>
@@ -1340,10 +1396,11 @@ export default function PlannerPage() {
                   ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length})`],
                   ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length})`],
                   ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length})`],
+                  ["open", `Open (${drawerLists.open.task.length + drawerLists.open.plan.length + drawerLists.open.focus.length})`],
                 ] as const).map(([k, label]) => (
                   <button
                     key={k}
-                    onClick={() => setDrawerWindow(k)}
+                    onClick={() => setDrawerWindow(k as DrawerWindow)}
                     className={clsx(
                       "whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold",
                       drawerWindow === k ? "border-neutral-200 bg-neutral-100 text-neutral-900" : "border-neutral-800 bg-neutral-900 text-neutral-200"
@@ -1359,6 +1416,12 @@ export default function PlannerPage() {
                   <input
                     value={drawerDraft}
                     onChange={(e) => setDrawerDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addDrawer();
+                      }
+                    }}
                     placeholder="Add…"
                     className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
                   />
