@@ -360,7 +360,7 @@ function MoveSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-8 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950 px-2 text-xs text-neutral-200 outline-none"
+      className="h-8 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950 px-2 text-[16px] text-neutral-200 outline-none sm:text-xs"
       aria-label="Move"
       title="Move"
       onPointerDown={(e) => e.stopPropagation()}
@@ -608,7 +608,7 @@ function AddSheet({
                 value={titleRaw}
                 onChange={(e) => setTitleRaw(e.target.value)}
                 placeholder="e.g. Call Papa #sun"
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                 autoFocus
               />
               <div className="mt-1 text-[11px] text-neutral-500">
@@ -621,7 +621,7 @@ function AddSheet({
               <select
                 value={targetValue}
                 onChange={(e) => setTargetValue(e.target.value)}
-                className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 outline-none"
+                className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
               >
                 
                 {dayTargets.map((t) => (
@@ -648,7 +648,7 @@ function AddSheet({
                     type="time"
                     value={planStartTime}
                     onChange={(e) => setPlanStartTime(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 outline-none"
+                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
                   />
                 </div>
                 <div>
@@ -657,7 +657,7 @@ function AddSheet({
                     type="time"
                     value={planEndTime}
                     onChange={(e) => setPlanEndTime(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 outline-none"
+                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
                   />
                 </div>
               </div>
@@ -669,7 +669,7 @@ function AddSheet({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Optional"
-                className="min-h-[92px] w-full resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
+                className="min-h-[92px] w-full resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
               />
             </div>
 
@@ -705,7 +705,6 @@ export default function PlannerPage() {
   const [draftByDay, setDraftByDay] = useState<Record<string, Record<ItemType, string>>>({});
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
 
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerWindow, setDrawerWindow] = useState<DrawerWindow>("thisWeek");
   const [drawerDraft, setDrawerDraft] = useState("");
 
@@ -1110,7 +1109,7 @@ function getWindowValue(which: DrawerWindow) {
   const todayIso = toISODate(days[0]);
 
   return (
-    <main className="min-h-dvh p-4 pb-28">
+    <main className="min-h-dvh p-4 pb-20">
       <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Planner</h1>
@@ -1118,6 +1117,93 @@ function getWindowValue(which: DrawerWindow) {
       </div>
 
       <div className="mt-4 h-px w-full bg-neutral-800" />
+
+      {/* Parking (formerly bottom drawer) */}
+      {!loading && (
+        <section className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm">
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {([
+              ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length})`],
+              ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length})`],
+              ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length})`],
+              ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length})`],
+              ["open", `Open (${drawerLists.open.task.length + drawerLists.open.plan.length + drawerLists.open.focus.length})`],
+            ] as const).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setDrawerWindow(k as DrawerWindow)}
+                className={clsx(
+                  "whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                  drawerWindow === k
+                    ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                    : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-2 flex gap-2">
+            <input
+              value={drawerDraft}
+              onChange={(e) => setDrawerDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addDrawer();
+                }
+              }}
+              placeholder="Add…"
+              className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+            />
+            <button
+              onClick={addDrawer}
+              className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+            >
+              Add
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {drawerLists[drawerWindow].focus.map((f) => (
+              <FocusRow
+                key={f.id}
+                focus={f}
+                moveTargets={moveTargets}
+                onMove={(id, v) => moveItem("focus", id, v)}
+                onDelete={deleteFocus}
+              />
+            ))}
+
+            {drawerLists[drawerWindow].plan.map((p) => (
+              <PlanRow
+                key={p.id}
+                plan={p}
+                moveTargets={moveTargets}
+                onMove={(id, v) => moveItem("plan", id, v)}
+                onDelete={deletePlan}
+              />
+            ))}
+
+            {drawerLists[drawerWindow].task.map((t) => (
+              <TaskRow
+                key={t.id}
+                task={t}
+                moveTargets={moveTargets}
+                onMove={(id, v) => moveItem("task", id, v)}
+                onToggleDone={toggleTaskDone}
+                onDelete={deleteTask}
+              />
+            ))}
+
+            {drawerLists[drawerWindow].focus.length +
+              drawerLists[drawerWindow].plan.length +
+              drawerLists[drawerWindow].task.length ===
+              0 && <div className="text-sm text-neutral-500">Empty.</div>}
+          </div>
+        </section>
+      )}
 
       {loading ? (
         <div className="mt-6 text-sm text-neutral-400">Loading…</div>
@@ -1141,7 +1227,7 @@ function getWindowValue(which: DrawerWindow) {
                   ensureDayDraft(todayIso);
                   setDraftTypeByDay((p) => ({ ...p, [todayIso]: e.target.value as ItemType }));
                 }}
-                className="h-10 w-[92px] rounded-xl border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 outline-none"
+                className="h-10 w-[92px] rounded-xl border border-neutral-800 bg-neutral-950 px-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
               >
                 <option value="task">Task</option>
                 <option value="plan">Plan</option>
@@ -1166,7 +1252,7 @@ function getWindowValue(which: DrawerWindow) {
   }
 }}
                 placeholder="Add…"
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
               />
 
               
@@ -1256,7 +1342,7 @@ function getWindowValue(which: DrawerWindow) {
                         <select
                           value={draftTypeByDay[iso] ?? "task"}
                           onChange={(e) => setDraftTypeByDay((p) => ({ ...p, [iso]: e.target.value as ItemType }))}
-                          className="h-10 w-[92px] rounded-xl border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 outline-none"
+                          className="h-10 w-[92px] rounded-xl border border-neutral-800 bg-neutral-950 px-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
                         >
                           <option value="task">Task</option>
                           <option value="plan">Plan</option>
@@ -1279,7 +1365,7 @@ function getWindowValue(which: DrawerWindow) {
     addInline(iso);
   }
 }}
-                          className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
+                          className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                         />
 
                         <button
@@ -1359,121 +1445,6 @@ function getWindowValue(which: DrawerWindow) {
         </>
       )}
 
-      {/* Bottom drawer */}
-      <div className="fixed bottom-0 left-0 right-0 z-50">
-        <div className="mx-auto max-w-xl">
-          {!drawerOpen ? (
-            <button
-              onClick={() => setDrawerOpen(true)}
-              className="w-full rounded-t-2xl border border-neutral-800 bg-neutral-950 px-4 py-2 text-left"
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-xs text-neutral-400">
-                  Week {drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length} • Weekend{" "}
-                  {drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length} • Next{" "}
-                  {drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length} • Next Wknd{" "}
-                  {drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length}
-                  • Open {drawerLists.open.task.length + drawerLists.open.plan.length + drawerLists.open.focus.length}
-                </div>
-                <div className="text-sm text-neutral-400">▲</div>
-              </div>
-            </button>
-          ) : (
-            <div className="rounded-t-2xl border border-neutral-800 bg-neutral-950">
-              <div className="flex items-center justify-between px-4 py-2">
-                <div />
-                <button
-                  onClick={() => setDrawerOpen(false)}
-                  className="rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="flex gap-2 overflow-x-auto px-4 pb-2">
-                {([
-                  ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length})`],
-                  ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length})`],
-                  ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length})`],
-                  ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length})`],
-                  ["open", `Open (${drawerLists.open.task.length + drawerLists.open.plan.length + drawerLists.open.focus.length})`],
-                ] as const).map(([k, label]) => (
-                  <button
-                    key={k}
-                    onClick={() => setDrawerWindow(k as DrawerWindow)}
-                    className={clsx(
-                      "whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold",
-                      drawerWindow === k ? "border-neutral-200 bg-neutral-100 text-neutral-900" : "border-neutral-800 bg-neutral-900 text-neutral-200"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="max-h-[55vh] overflow-y-auto px-4 pb-4">
-                <div className="flex gap-2">
-                  <input
-                    value={drawerDraft}
-                    onChange={(e) => setDrawerDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addDrawer();
-                      }
-                    }}
-                    placeholder="Add…"
-                    className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
-                  />
-                  <button
-                    onClick={addDrawer}
-                    className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
-                  >
-                    Add
-                  </button>
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  {drawerLists[drawerWindow].focus.map((f) => (
-                    <FocusRow
-                      key={f.id}
-                      focus={f}
-                      moveTargets={moveTargets}
-                      onMove={(id, v) => moveItem("focus", id, v)}
-                      onDelete={deleteFocus}
-                    />
-                  ))}
-
-                  {drawerLists[drawerWindow].plan.map((p) => (
-                    <PlanRow
-                      key={p.id}
-                      plan={p}
-                      moveTargets={moveTargets}
-                      onMove={(id, v) => moveItem("plan", id, v)}
-                      onDelete={deletePlan}
-                    />
-                  ))}
-
-                  {drawerLists[drawerWindow].task.map((t) => (
-                    <TaskRow
-                      key={t.id}
-                      task={t}
-                      moveTargets={moveTargets}
-                      onMove={(id, v) => moveItem("task", id, v)}
-                      onToggleDone={toggleTaskDone}
-                      onDelete={deleteTask}
-                    />
-                  ))}
-
-                  {drawerLists[drawerWindow].focus.length + drawerLists[drawerWindow].plan.length + drawerLists[drawerWindow].task.length === 0 && (
-                    <div className="text-sm text-neutral-500">Empty.</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* Floating add */}
       <button
