@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type WindowKind = "workweek" | "weekend";
@@ -261,13 +261,50 @@ function TimePill({ startsAt, endsAt }: { startsAt: string | null; endsAt: strin
   );
 }
 
-function RowShell({ tone, children }: { tone?: "normal" | "overdue"; children: React.ReactNode }) {
+function RowShell({
+  tone,
+  children,
+  onDelete,
+}: {
+  tone?: "normal" | "overdue";
+  children: React.ReactNode;
+  onDelete?: () => void;
+}) {
+  const timerRef = useRef<number | null>(null);
+
+  const clear = () => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const start = () => {
+    if (!onDelete) return;
+    clear();
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      if (confirm("Delete this item?")) onDelete();
+    }, 650);
+  };
+
   return (
     <div
       className={clsx(
         "flex items-center gap-2 rounded-xl border px-3 py-2",
         tone === "overdue" ? "border-red-900/60 bg-red-950/30" : "border-neutral-800 bg-neutral-900"
       )}
+      onPointerDown={start}
+      onPointerUp={clear}
+      onPointerCancel={clear}
+      onPointerLeave={clear}
+      onContextMenu={(e) => {
+        if (!onDelete) return;
+        e.preventDefault();
+        if (confirm("Delete this item?")) onDelete();
+      }}
+      role={onDelete ? "button" : undefined}
+      tabIndex={onDelete ? 0 : undefined}
     >
       {children}
     </div>
@@ -316,37 +353,43 @@ function TaskRow({
   task,
   moveTargets,
   onMove,
-  onDone,
+  onToggleDone,
+  onDelete,
   tone,
 }: {
   task: Task;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
-  onDone: (id: string) => void;
+  onToggleDone: (id: string, nextDone: boolean) => void;
+  onDelete: (id: string) => void;
   tone?: "normal" | "overdue";
 }) {
+  const isDone = task.status === "done";
+
   return (
-    <RowShell tone={tone}>
-      <div className="rounded-md border border-neutral-700 bg-neutral-950/40 px-1.5 py-0.5 text-[11px] text-neutral-300">
-        Task
-      </div>
+    <RowShell tone={tone} onDelete={() => onDelete(task.id)}>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleDone(task.id, !isDone);
+        }}
+        className={clsx(
+          "shrink-0 h-6 w-6 rounded-md border grid place-items-center",
+          isDone ? "border-neutral-500 bg-neutral-200 text-neutral-900" : "border-neutral-700 bg-neutral-950 text-neutral-200"
+        )}
+        aria-label={isDone ? "Mark not done" : "Mark done"}
+        title={isDone ? "Mark not done" : "Mark done"}
+      >
+        {isDone ? "✓" : ""}
+      </button>
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm">{task.title}</div>
+        <div className={clsx("truncate text-sm", isDone && "line-through text-neutral-500")}>
+          {task.title}
+        </div>
       </div>
 
-      <MoveSelect
-        value={locationValueFor(task)}
-        onChange={(v) => onMove(task.id, v)}
-        moveTargets={moveTargets}
-      />
-
-      <button
-        onClick={() => onDone(task.id)}
-        className="shrink-0 rounded-lg bg-neutral-100 px-2.5 py-1 text-xs font-semibold text-neutral-900 active:scale-[0.98]"
-      >
-        Done
-      </button>
+      <MoveSelect value={locationValueFor(task)} onChange={(v) => onMove(task.id, v)} moveTargets={moveTargets} />
     </RowShell>
   );
 }
@@ -355,19 +398,15 @@ function PlanRow({
   plan,
   moveTargets,
   onMove,
-  onDone,
+  onDelete,
 }: {
   plan: Plan;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
-  onDone: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   return (
-    <RowShell>
-      <div className="rounded-md border border-neutral-700 bg-neutral-950/40 px-1.5 py-0.5 text-[11px] text-neutral-300">
-        Plan
-      </div>
-
+    <RowShell onDelete={() => onDelete(plan.id)}>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">
           {plan.title}
@@ -375,18 +414,7 @@ function PlanRow({
         </div>
       </div>
 
-      <MoveSelect
-        value={locationValueFor(plan)}
-        onChange={(v) => onMove(plan.id, v)}
-        moveTargets={moveTargets}
-      />
-
-      <button
-        onClick={() => onDone(plan.id)}
-        className="shrink-0 rounded-lg bg-neutral-100 px-2.5 py-1 text-xs font-semibold text-neutral-900 active:scale-[0.98]"
-      >
-        Done
-      </button>
+      <MoveSelect value={locationValueFor(plan)} onChange={(v) => onMove(plan.id, v)} moveTargets={moveTargets} />
     </RowShell>
   );
 }
@@ -395,36 +423,51 @@ function FocusRow({
   focus,
   moveTargets,
   onMove,
-  onArchive,
+  onDelete,
 }: {
   focus: Focus;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
-  onArchive: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   return (
-    <RowShell>
-      <div className="rounded-md border border-neutral-700 bg-neutral-950/40 px-1.5 py-0.5 text-[11px] text-neutral-300">
-        Focus
-      </div>
-
+    <RowShell onDelete={() => onDelete(focus.id)}>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">{focus.title}</div>
       </div>
 
-      <MoveSelect
-        value={locationValueFor(focus)}
-        onChange={(v) => onMove(focus.id, v)}
-        moveTargets={moveTargets}
-      />
-
-      <button
-        onClick={() => onArchive(focus.id)}
-        className="shrink-0 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1 text-xs font-semibold text-neutral-100 active:scale-[0.98]"
-      >
-        Archive
-      </button>
+      <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
     </RowShell>
+  );
+}
+
+function FocusFloat({
+  focus,
+  moveTargets,
+  onMove,
+  onDelete,
+}: {
+  focus: Focus;
+  moveTargets: MoveTarget[];
+  onMove: (id: string, targetValue: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-neutral-200/90"
+      onPointerDown={() => {
+        // no-op; long press handled by RowShell style below
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        if (confirm("Delete this item?")) onDelete(focus.id);
+      }}
+    >
+      <div className="min-w-0 flex-1 italic truncate">{focus.title}</div>
+      <div className="opacity-70">
+        <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
+      </div>
+    </div>
   );
 }
 
@@ -629,7 +672,6 @@ export default function PlannerPage() {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerWindow, setDrawerWindow] = useState<"thisWeek" | "thisWeekend" | "nextWeek" | "nextWeekend">("thisWeek");
-  const [drawerType, setDrawerType] = useState<ItemType>("task");
   const [drawerDraft, setDrawerDraft] = useState("");
 
   const [openDayIso, setOpenDayIso] = useState<string | null>(null);
@@ -682,86 +724,85 @@ export default function PlannerPage() {
     const end = toISODate(days[6]);
 
     const parkingOr = [
-  `and(window_kind.eq.workweek,window_start.eq.${windows.thisWeekStart})`,
-  `and(window_kind.eq.weekend,window_start.eq.${windows.thisWeekendStart})`,
-  `and(window_kind.eq.workweek,window_start.eq.${windows.nextWeekStart})`,
-  `and(window_kind.eq.weekend,window_start.eq.${windows.nextWeekendStart})`,
-].join(",");
+      `and(window_kind.eq.workweek,window_start.eq.${windows.thisWeekStart})`,
+      `and(window_kind.eq.weekend,window_start.eq.${windows.thisWeekendStart})`,
+      `and(window_kind.eq.workweek,window_start.eq.${windows.nextWeekStart})`,
+      `and(window_kind.eq.weekend,window_start.eq.${windows.nextWeekendStart})`,
+    ].join(",");
 
-const [
-  tasksScheduledRes,
-  tasksOverdueRes,
-  tasksParkingRes,
-  plansScheduledRes,
-  plansParkingRes,
-  focusesScheduledRes,
-  focusesParkingRes,
-] = await Promise.all([
-  supabase
-    .from("tasks")
-    .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
-    .eq("status", "open")
-    .not("scheduled_for", "is", null)
-    .gte("scheduled_for", start)
-    .lte("scheduled_for", end)
-    .order("scheduled_for", { ascending: true })
-    .order("created_at", { ascending: true }),
+    const [
+      tasksScheduledRes,
+      tasksOverdueRes,
+      tasksParkingRes,
+      plansScheduledRes,
+      plansParkingRes,
+      focusesScheduledRes,
+      focusesParkingRes,
+    ] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .in("status", ["open", "done"])
+        .not("scheduled_for", "is", null)
+        .gte("scheduled_for", start)
+        .lte("scheduled_for", end)
+        .order("scheduled_for", { ascending: true })
+        .order("created_at", { ascending: true }),
 
-  supabase
-    .from("tasks")
-    .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
-    .eq("status", "open")
-    .not("scheduled_for", "is", null)
-    .lt("scheduled_for", start)
-    .order("scheduled_for", { ascending: true })
-    .order("created_at", { ascending: true }),
+      supabase
+        .from("tasks")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .eq("status", "open")
+        .not("scheduled_for", "is", null)
+        .lt("scheduled_for", start)
+        .order("scheduled_for", { ascending: true })
+        .order("created_at", { ascending: true }),
 
-  supabase
-    .from("tasks")
-    .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
-    .eq("status", "open")
-    .is("scheduled_for", null)
-    .or(parkingOr)
-    .order("created_at", { ascending: true }),
+      supabase
+        .from("tasks")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .eq("status", "open")
+        .is("scheduled_for", null)
+        .or(parkingOr)
+        .order("created_at", { ascending: true }),
 
-  supabase
-    .from("plans")
-    .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
-    .eq("status", "open")
-    .not("scheduled_for", "is", null)
-    .gte("scheduled_for", start)
-    .lte("scheduled_for", end)
-    .order("scheduled_for", { ascending: true })
-    .order("starts_at", { ascending: true, nullsFirst: true })
-    .order("created_at", { ascending: true }),
+      supabase
+        .from("plans")
+        .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
+        .eq("status", "open")
+        .not("scheduled_for", "is", null)
+        .gte("scheduled_for", start)
+        .lte("scheduled_for", end)
+        .order("scheduled_for", { ascending: true })
+        .order("starts_at", { ascending: true, nullsFirst: true })
+        .order("created_at", { ascending: true }),
 
-  supabase
-    .from("plans")
-    .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
-    .eq("status", "open")
-    .is("scheduled_for", null)
-    .or(parkingOr)
-    .order("created_at", { ascending: true }),
+      supabase
+        .from("plans")
+        .select("id,title,notes,starts_at,ends_at,status,scheduled_for,window_kind,window_start,created_at")
+        .eq("status", "open")
+        .is("scheduled_for", null)
+        .or(parkingOr)
+        .order("created_at", { ascending: true }),
 
-  supabase
-    .from("focuses")
-    .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
-    .eq("status", "active")
-    .not("scheduled_for", "is", null)
-    .gte("scheduled_for", start)
-    .lte("scheduled_for", end)
-    .order("scheduled_for", { ascending: true })
-    .order("created_at", { ascending: true }),
+      supabase
+        .from("focuses")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .eq("status", "active")
+        .not("scheduled_for", "is", null)
+        .gte("scheduled_for", start)
+        .lte("scheduled_for", end)
+        .order("scheduled_for", { ascending: true })
+        .order("created_at", { ascending: true }),
 
-  supabase
-    .from("focuses")
-    .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
-    .eq("status", "active")
-    .is("scheduled_for", null)
-    .or(parkingOr)
-    .order("created_at", { ascending: true }),
-]);
-
+      supabase
+        .from("focuses")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .eq("status", "active")
+        .is("scheduled_for", null)
+        .or(parkingOr)
+        .order("created_at", { ascending: true }),
+    ]);
 
     if (tasksScheduledRes.error) console.error(tasksScheduledRes.error);
     if (tasksOverdueRes.error) console.error(tasksOverdueRes.error);
@@ -799,7 +840,7 @@ const [
   const dayRangeStart = useMemo(() => toISODate(days[0]), [days]);
 
   const overdueTasks = useMemo(() => {
-    return tasks.filter((t) => t.scheduled_for && t.scheduled_for < dayRangeStart);
+    return tasks.filter((t) => t.status === "open" && t.scheduled_for && t.scheduled_for < dayRangeStart);
   }, [tasks, dayRangeStart]);
 
   const tasksByDay = useMemo(() => {
@@ -972,20 +1013,33 @@ const [
     if (type === "focus") setFocuses((p) => p.map((x) => (x.id === id ? ({ ...x, ...placement } as Focus) : x)));
   }
 
-  async function doneTask(id: string) {
-    const { error } = await supabase.from("tasks").update({ status: "done", completed_at: new Date().toISOString() }).eq("id", id);
+  async function toggleTaskDone(id: string, nextDone: boolean) {
+    const nextStatus = nextDone ? "done" : "open";
+    const patch: any = { status: nextStatus };
+    patch.completed_at = nextDone ? new Date().toISOString() : null;
+
+    const { error } = await supabase.from("tasks").update(patch).eq("id", id);
+    if (error) return console.error(error);
+
+    setTasks((p) =>
+      p.map((t) => (t.id === id ? ({ ...t, status: nextStatus, completed_at: patch.completed_at } as Task) : t))
+    );
+  }
+
+  async function deleteTask(id: string) {
+    const { error } = await supabase.from("tasks").delete().eq("id", id);
     if (error) return console.error(error);
     setTasks((p) => p.filter((t) => t.id !== id));
   }
 
-  async function donePlan(id: string) {
-    const { error } = await supabase.from("plans").update({ status: "done", completed_at: new Date().toISOString() }).eq("id", id);
+  async function deletePlan(id: string) {
+    const { error } = await supabase.from("plans").delete().eq("id", id);
     if (error) return console.error(error);
     setPlans((p) => p.filter((t) => t.id !== id));
   }
 
-  async function archiveFocus(id: string) {
-    const { error } = await supabase.from("focuses").update({ status: "archived" }).eq("id", id);
+  async function deleteFocus(id: string) {
+    const { error } = await supabase.from("focuses").delete().eq("id", id);
     if (error) return console.error(error);
     setFocuses((p) => p.filter((t) => t.id !== id));
   }
@@ -1008,7 +1062,7 @@ const [
     const raw = drawerDraft.trim();
     if (!raw) return;
 
-    await createItem({ titleRaw: raw, notes: "", targetValue: getWindowValue(drawerWindow), itemType: drawerType });
+    await createItem({ titleRaw: raw, notes: "", targetValue: getWindowValue(drawerWindow), itemType: "task" });
     setDrawerDraft("");
   }
 
@@ -1018,16 +1072,8 @@ const [
     <main className="min-h-dvh p-4 pb-28">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Planner</h1>
-          <p className="mt-1 text-sm text-neutral-400">v0.3 — tasks / plans / focus</p>
+          <h1 className="text-xl font-semibold">Planner</h1>
         </div>
-
-        <button
-          onClick={fetchAll}
-          className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm font-medium text-neutral-100 shadow-sm active:scale-[0.99]"
-        >
-          Refresh
-        </button>
       </div>
 
       <div className="mt-4 h-px w-full bg-neutral-800" />
@@ -1043,9 +1089,7 @@ const [
                 <div className="text-lg font-semibold">Today</div>
                 <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
               </div>
-              <div className="rounded-xl border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs text-neutral-300">
-                {overdueTasks.length > 0 ? `${overdueTasks.length} overdue` : "on track"}
-              </div>
+              
             </div>
 
             {/* Inline add */}
@@ -1074,7 +1118,7 @@ const [
                     [todayIso]: { ...(prev[todayIso] ?? { task: "", plan: "", focus: "" }), [type]: e.target.value },
                   }));
                 }}
-                placeholder="Add… (supports hashtags)"
+                placeholder="Add…"
                 className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
               />
 
@@ -1088,55 +1132,42 @@ const [
 
             {/* Plans */}
             <div className="mt-4">
-              <div className="text-xs font-semibold text-neutral-300">Plans</div>
               <div className="mt-2 space-y-2">
                 {(plansByDay[todayIso] ?? []).map((p) => (
-                  <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onDone={donePlan} />
+                  <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onDelete={deletePlan} />
                 ))}
-                {(plansByDay[todayIso] ?? []).length === 0 && <div className="text-sm text-neutral-500">None.</div>}
               </div>
             </div>
 
             {/* Tasks */}
             <div className="mt-4">
-              <div className="text-xs font-semibold text-neutral-300">Tasks</div>
-
               {overdueTasks.length > 0 && (
                 <div className="mt-2">
                   <div className="text-xs font-semibold text-red-300">Overdue</div>
                   <div className="mt-2 space-y-2">
                     {overdueTasks.map((t) => (
-                      <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onDone={doneTask} tone="overdue" />
+                      <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onDelete={deleteTask} tone="overdue" />
                     ))}
                   </div>
                 </div>
               )}
-
               <div className="mt-2 space-y-2">
                 {(tasksByDay[todayIso] ?? []).map((t) => (
-                  <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onDone={doneTask} />
+                  <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onDelete={deleteTask} />
                 ))}
-                {(tasksByDay[todayIso] ?? []).length === 0 && <div className="text-sm text-neutral-500">None.</div>}
               </div>
             </div>
 
             {/* Focus */}
             <div className="mt-4">
-              <div className="text-xs font-semibold text-neutral-300">Focus</div>
               <div className="mt-2 space-y-2">
                 {todayIso >= thisWeekFocusOverlay.startIso && todayIso <= thisWeekFocusOverlay.endIso &&
                   thisWeekFocusOverlay.overlay.map((f) => (
-                    <FocusRow key={`ov-${f.id}`} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onArchive={archiveFocus} />
+                    <FocusFloat key={`ov-${f.id}`} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
                   ))}
-
                 {(focusesByDay[todayIso] ?? []).map((f) => (
-                  <FocusRow key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onArchive={archiveFocus} />
+                  <FocusFloat key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
                 ))}
-
-                {(focusesByDay[todayIso] ?? []).length === 0 &&
-                  !(todayIso >= thisWeekFocusOverlay.startIso && todayIso <= thisWeekFocusOverlay.endIso && thisWeekFocusOverlay.overlay.length > 0) && (
-                    <div className="text-sm text-neutral-500">None.</div>
-                  )}
               </div>
             </div>
           </section>
@@ -1164,7 +1195,7 @@ const [
                     <div>
                       <div className="font-semibold">{label}</div>
                       <div className="mt-0.5 text-xs text-neutral-400">
-                        {fmtMonthDay(d)} • {dayPlans.length + dayTasks.length + dayFocus.length} items
+                        {fmtMonthDay(d)}
                       </div>
                     </div>
                     <div className="text-sm text-neutral-400">{isOpen ? "–" : "+"}</div>
@@ -1192,7 +1223,7 @@ const [
                               [iso]: { ...(prev[iso] ?? { task: "", plan: "", focus: "" }), [type]: e.target.value },
                             }));
                           }}
-                          placeholder="Add… (supports hashtags)"
+                          placeholder="Add…"
                           className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
                         />
 
@@ -1205,56 +1236,65 @@ const [
                       </div>
 
                       <div className="mt-4">
-                        <div className="text-xs font-semibold text-neutral-300">Plans</div>
                         <div className="mt-2 space-y-2">
                           {dayPlans.map((p) => (
-                            <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onDone={donePlan} />
+                            <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onDelete={deletePlan} />
                           ))}
-                          {dayPlans.length === 0 && <div className="text-sm text-neutral-500">None.</div>}
                         </div>
                       </div>
 
                       <div className="mt-4">
-                        <div className="text-xs font-semibold text-neutral-300">Tasks</div>
                         <div className="mt-2 space-y-2">
                           {dayTasks.map((t) => (
-                            <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onDone={doneTask} />
+                            <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onDelete={deleteTask} />
                           ))}
-                          {dayTasks.length === 0 && <div className="text-sm text-neutral-500">None.</div>}
                         </div>
                       </div>
 
                       <div className="mt-4">
-                        <div className="text-xs font-semibold text-neutral-300">Focus</div>
                         <div className="mt-2 space-y-2">
                           {iso >= thisWeekFocusOverlay.startIso && iso <= thisWeekFocusOverlay.endIso &&
                             thisWeekFocusOverlay.overlay.map((f) => (
-                              <FocusRow key={`ov-${iso}-${f.id}`} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onArchive={archiveFocus} />
+                              <FocusFloat key={`ov-${iso}-${f.id}`} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
                             ))}
-
                           {dayFocus.map((f) => (
-                            <FocusRow key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onArchive={archiveFocus} />
+                            <FocusFloat key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onDelete={deleteFocus} />
                           ))}
-
-                          {dayFocus.length === 0 &&
-                            !(iso >= thisWeekFocusOverlay.startIso && iso <= thisWeekFocusOverlay.endIso && thisWeekFocusOverlay.overlay.length > 0) && (
-                              <div className="text-sm text-neutral-500">None.</div>
-                            )}
                         </div>
                       </div>
                     </>
                   ) : (
                     <div className="mt-3 space-y-2">
-                      {dayPlans.slice(0, 1).map((p) => (
-                        <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onDone={donePlan} />
+                      {dayFocus.map((f) => (
+                        <FocusFloat
+                          key={f.id}
+                          focus={f}
+                          moveTargets={moveTargets}
+                          onMove={(id, v) => moveItem("focus", id, v)}
+                          onDelete={deleteFocus}
+                        />
                       ))}
-                      {dayTasks.slice(0, 1).map((t) => (
-                        <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onDone={doneTask} />
+
+                      {dayPlans.map((p) => (
+                        <PlanRow
+                          key={p.id}
+                          plan={p}
+                          moveTargets={moveTargets}
+                          onMove={(id, v) => moveItem("plan", id, v)}
+                          onDelete={deletePlan}
+                        />
                       ))}
-                      {dayFocus.slice(0, 1).map((f) => (
-                        <FocusRow key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onArchive={archiveFocus} />
+
+                      {dayTasks.map((t) => (
+                        <TaskRow
+                          key={t.id}
+                          task={t}
+                          moveTargets={moveTargets}
+                          onMove={(id, v) => moveItem("task", id, v)}
+                          onToggleDone={toggleTaskDone}
+                          onDelete={deleteTask}
+                        />
                       ))}
-                      {dayPlans.length + dayTasks.length + dayFocus.length === 0 && <div className="text-sm text-neutral-500">Tap to open.</div>}
                     </div>
                   )}
                 </section>
@@ -1296,29 +1336,10 @@ const [
 
               <div className="flex gap-2 overflow-x-auto px-4 pb-2">
                 {([
-                  ["task", "Tasks"],
-                  ["plan", "Plans"],
-                  ["focus", "Focus"],
-                ] as const).map(([k, label]) => (
-                  <button
-                    key={k}
-                    onClick={() => setDrawerType(k)}
-                    className={clsx(
-                      "whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold",
-                      drawerType === k ? "border-neutral-200 bg-neutral-100 text-neutral-900" : "border-neutral-800 bg-neutral-900 text-neutral-200"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex gap-2 overflow-x-auto px-4 pb-2">
-                {([
-                  ["thisWeek", `This Week (${drawerLists.thisWeek[drawerType].length})`],
-                  ["thisWeekend", `This Weekend (${drawerLists.thisWeekend[drawerType].length})`],
-                  ["nextWeek", `Next Week (${drawerLists.nextWeek[drawerType].length})`],
-                  ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend[drawerType].length})`],
+                  ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length})`],
+                  ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length})`],
+                  ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length})`],
+                  ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length})`],
                 ] as const).map(([k, label]) => (
                   <button
                     key={k}
@@ -1338,7 +1359,7 @@ const [
                   <input
                     value={drawerDraft}
                     onChange={(e) => setDrawerDraft(e.target.value)}
-                    placeholder="Add… (supports hashtags)"
+                    placeholder="Add…"
                     className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none"
                   />
                   <button
@@ -1350,22 +1371,40 @@ const [
                 </div>
 
                 <div className="mt-3 space-y-2">
-                  {drawerType === "task" &&
-                    drawerLists[drawerWindow].task.map((t) => (
-                      <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onDone={doneTask} />
-                    ))}
+                  {drawerLists[drawerWindow].focus.map((f) => (
+                    <FocusRow
+                      key={f.id}
+                      focus={f}
+                      moveTargets={moveTargets}
+                      onMove={(id, v) => moveItem("focus", id, v)}
+                      onDelete={deleteFocus}
+                    />
+                  ))}
 
-                  {drawerType === "plan" &&
-                    drawerLists[drawerWindow].plan.map((p) => (
-                      <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onDone={donePlan} />
-                    ))}
+                  {drawerLists[drawerWindow].plan.map((p) => (
+                    <PlanRow
+                      key={p.id}
+                      plan={p}
+                      moveTargets={moveTargets}
+                      onMove={(id, v) => moveItem("plan", id, v)}
+                      onDelete={deletePlan}
+                    />
+                  ))}
 
-                  {drawerType === "focus" &&
-                    drawerLists[drawerWindow].focus.map((f) => (
-                      <FocusRow key={f.id} focus={f} moveTargets={moveTargets} onMove={(id, v) => moveItem("focus", id, v)} onArchive={archiveFocus} />
-                    ))}
+                  {drawerLists[drawerWindow].task.map((t) => (
+                    <TaskRow
+                      key={t.id}
+                      task={t}
+                      moveTargets={moveTargets}
+                      onMove={(id, v) => moveItem("task", id, v)}
+                      onToggleDone={toggleTaskDone}
+                      onDelete={deleteTask}
+                    />
+                  ))}
 
-                  {drawerLists[drawerWindow][drawerType].length === 0 && <div className="text-sm text-neutral-500">Empty.</div>}
+                  {drawerLists[drawerWindow].focus.length + drawerLists[drawerWindow].plan.length + drawerLists[drawerWindow].task.length === 0 && (
+                    <div className="text-sm text-neutral-500">Empty.</div>
+                  )}
                 </div>
               </div>
             </div>
