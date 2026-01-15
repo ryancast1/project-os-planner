@@ -1184,6 +1184,7 @@ export default function PlannerPage() {
   const [focuses, setFocuses] = useState<Focus[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [habitDoneIds, setHabitDoneIds] = useState<Set<string>>(new Set());
+  const [gymDoneToday, setGymDoneToday] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [draftByDay, setDraftByDay] = useState<Record<string, Record<ItemType, string>>>({});
@@ -1299,6 +1300,7 @@ function getWindowValue(which: DrawerWindow) {
       focusesParkingRes,
       habitsRes,
       habitLogsTodayRes,
+      workoutSessionsTodayRes,
     ] = await Promise.all([
       supabase
         .from("tasks")
@@ -1374,6 +1376,11 @@ function getWindowValue(which: DrawerWindow) {
         .from("habit_logs")
         .select("habit_id,done_on")
         .eq("done_on", toISODate(days[0])),
+      supabase
+        .from("workout_sessions")
+        .select("id")
+        .eq("performed_on", toISODate(days[0]))
+        .limit(1),
     ]);
 
     if (tasksScheduledRes.error) console.warn("tasksScheduledRes", tasksScheduledRes.error);
@@ -1385,6 +1392,7 @@ function getWindowValue(which: DrawerWindow) {
     if (focusesParkingRes.error) console.warn("focusesParkingRes", focusesParkingRes.error);
     if (habitsRes.error) console.warn("habitsRes", habitsRes.error);
     if (habitLogsTodayRes.error) console.warn("habitLogsTodayRes", habitLogsTodayRes.error);
+    if (workoutSessionsTodayRes.error) console.warn("workoutSessionsTodayRes", workoutSessionsTodayRes.error);
 
     setTasks([
       ...((tasksOverdueRes.data ?? []) as Task[]),
@@ -1443,6 +1451,8 @@ function getWindowValue(which: DrawerWindow) {
     const doneRows = (habitLogsTodayRes.error ? [] : (habitLogsTodayRes.data ?? [])) as HabitLog[];
     const doneSet = new Set<string>(doneRows.map((r) => r.habit_id));
     setHabitDoneIds(doneSet);
+    const gymDone = !workoutSessionsTodayRes.error && ((workoutSessionsTodayRes.data ?? []) as any[]).length > 0;
+    setGymDoneToday(gymDone);
 
     setLoading(false);
   }
@@ -2082,16 +2092,36 @@ const { error } = await supabase
               )}
             >
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="shrink-0">
                 <div className="text-lg font-semibold">Today</div>
                 <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
               </div>
 
               {/* Habit chips (Today only) */}
-              <div className="flex max-w-[60%] flex-wrap justify-end gap-2 pt-0.5">
+              <div className="flex flex-1 flex-wrap justify-end gap-2 pt-0.5">
                 {habits.map((h) => {
                   const label = (h.short_label && h.short_label.trim()) ? h.short_label.trim() : h.name.slice(0, 3).toUpperCase();
-                  const done = habitDoneIds.has(h.id);
+                  const isGym = label === "GYM";
+                  const done = isGym ? gymDoneToday : habitDoneIds.has(h.id);
+
+                  if (isGym) {
+                    return (
+                      <div
+                        key={h.id}
+                        className={clsx(
+                          "grid h-9 min-w-[34px] place-items-center rounded-xl border px-2.5 text-xs font-semibold tracking-wide sm:px-3",
+                          done
+                            ? "border-emerald-400/70 bg-emerald-300 text-neutral-900"
+                            : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                        )}
+                        aria-label={h.name}
+                        title={h.name}
+                      >
+                        {label}
+                      </div>
+                    );
+                  }
+
                   return (
                     <button
                       key={h.id}
@@ -2102,7 +2132,7 @@ const { error } = await supabase
                       }}
                       onClick={() => toggleHabitDone(h.id)}
                       className={clsx(
-                        "grid h-9 min-w-[36px] place-items-center rounded-xl border px-3 text-xs font-semibold tracking-wide",
+                        "grid h-9 min-w-[34px] place-items-center rounded-xl border px-2.5 text-xs font-semibold tracking-wide sm:px-3",
                         done
                           ? "border-emerald-400/70 bg-emerald-300 text-neutral-900"
                           : "border-neutral-800 bg-neutral-950 text-neutral-200"
