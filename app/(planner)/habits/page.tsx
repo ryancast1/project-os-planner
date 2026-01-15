@@ -23,6 +23,54 @@ function clampLabel(s: string) {
   return v.slice(0, 3);
 }
 
+function toISODate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function fmtMD(iso: string) {
+  // iso: YYYY-MM-DD
+  const m = Number(iso.slice(5, 7));
+  const d = Number(iso.slice(8, 10));
+  return `${m}/${d}`;
+}
+
+function guessISODateFromRow(row: any): string | null {
+  if (!row || typeof row !== "object") return null;
+  const keys = [
+    "done_on",
+    "workout_on",
+    "worked_on",
+    "workout_date",
+    "session_date",
+    "performed_on",
+    "date",
+    "scheduled_for",
+    "created_at",
+  ];
+
+  for (const k of keys) {
+    const v = (row as any)[k];
+    if (!v) continue;
+
+    if (typeof v === "string") {
+      // allow YYYY-MM-DD or timestamptz
+      const iso = v.slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+      const dt = new Date(v);
+      if (!isNaN(dt.getTime())) return toISODate(dt);
+    }
+
+    if (v instanceof Date) {
+      return toISODate(v);
+    }
+  }
+
+  return null;
+}
+
 function Modal({
   open,
   onClose,
@@ -78,6 +126,15 @@ export default function HabitsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
+  const START_ISO = "2026-01-01";
+  const todayIso = useMemo(() => toISODate(new Date()), []);
+
+  // Consistency grid
+  const [gridErr, setGridErr] = useState<string | null>(null);
+  const [gridLoading, setGridLoading] = useState(false);
+  const [doneByDate, setDoneByDate] = useState<Record<string, Record<string, true>>>({});
+  const [gymDoneByDate, setGymDoneByDate] = useState<Record<string, true>>({});
+
   // Add bar
   const [draftLabel, setDraftLabel] = useState("");
   const [draftName, setDraftName] = useState("");
@@ -94,6 +151,97 @@ export default function HabitsPage() {
 
   const activeHabits = useMemo(() => habits.filter((h) => h.is_active), [habits]);
 
+  const gymHabitId = useMemo(() => {
+    const h = activeHabits.find((x) => (x.short_label ?? "").toUpperCase() === "GYM") ??
+      activeHabits.find((x) => /\bgym\b/i.test(x.name));
+    return h?.id ?? null;
+  }, [activeHabits]);
+
+  const dateRows = useMemo(() => {
+    const out: string[] = [];
+    const d = new Date();
+    while (true) {
+      const iso = toISODate(d);
+      out.push(iso);
+      if (iso <= START_ISO) break;
+      d.setDate(d.getDate() - 1);
+    }
+    // Ensure we stop exactly at START_ISO (and not below due to timezone edge cases)
+    while (out.length && out[out.length - 1] < START_ISO) out.pop();
+    return out;
+  }, []);
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      if (activeHabits.length === 0) {
+        setDoneByDate({});
+        setGymDoneByDate({});
+        return;
+      }
+
+      setGridLoading(true);
+      setGridErr(null);
+
+      const habitIds = activeHabits.map((h) => h.id);
+
+      // 1) habit_logs for all active habits
+      const logsRes = await supabase
+        .from("habit_logs")
+        .select("habit_id,done_on")
+        .in("habit_id", habitIds)
+        .gte("done_on", START_ISO)
+        .lte("done_on", todayIso);
+
+      // 2) workout_sessions for GYM column (best-effort)
+      // Now select only performed_on and filter by performed_on date.
+      const workoutsRes = await supabase
+        .from("workout_sessions")
+        .select("performed_on")
+        .gte("performed_on", START_ISO)
+        .lte("performed_on", todayIso);
+
+      if (!alive) return;
+
+      if (logsRes.error) {
+        console.warn(logsRes.error);
+        setGridErr(logsRes.error.message);
+      }
+
+      if (workoutsRes.error) {
+        console.warn(workoutsRes.error);
+        // don't fail the whole grid for this
+      }
+
+      const nextDoneByDate: Record<string, Record<string, true>> = {};
+      for (const r of (logsRes.data ?? []) as any[]) {
+        const date = typeof r.done_on === "string" ? r.done_on : null;
+        const hid = r.habit_id as string | undefined;
+        if (!date || !hid) continue;
+        if (!nextDoneByDate[date]) nextDoneByDate[date] = {};
+        nextDoneByDate[date][hid] = true;
+      }
+
+      const nextGymDone: Record<string, true> = {};
+      if (!workoutsRes.error) {
+        for (const r of (workoutsRes.data ?? []) as any[]) {
+          const iso = typeof r.performed_on === "string" ? r.performed_on : null;
+          if (!iso) continue;
+          if (iso < START_ISO || iso > todayIso) continue;
+          nextGymDone[iso] = true;
+        }
+      }
+
+      setDoneByDate(nextDoneByDate);
+      setGymDoneByDate(nextGymDone);
+      setGridLoading(false);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [activeHabits, START_ISO, todayIso]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -107,7 +255,7 @@ export default function HabitsPage() {
 
       if (!alive) return;
       if (error) {
-        console.error(error);
+        console.warn(error);
         setErr(error.message);
         setHabits([]);
         setLoading(false);
@@ -167,7 +315,7 @@ export default function HabitsPage() {
       .single();
 
     if (error) {
-      console.error(error);
+      console.warn(error);
       setHabits((p) => p.filter((h) => h.id !== tmp.id));
       setErr(error.message);
       return;
@@ -210,7 +358,7 @@ export default function HabitsPage() {
     setEditBusy(false);
 
     if (error) {
-      console.error(error);
+      console.warn(error);
       setErr(error.message);
       return;
     }
@@ -231,7 +379,7 @@ export default function HabitsPage() {
     setEditBusy(false);
 
     if (error) {
-      console.error(error);
+      console.warn(error);
       setErr(error.message);
       // revert
       setHabits((p) => p.map((h) => (h.id === id ? { ...h, is_active: true } : h)));
@@ -369,6 +517,83 @@ export default function HabitsPage() {
               </button>
             ))
           )}
+        </div>
+
+        {/* Consistency grid */}
+        <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/20">
+
+          {gridErr ? (
+            <div className="px-3 py-2 text-xs text-red-200">{gridErr}</div>
+          ) : null}
+
+          <div className="overflow-x-auto px-3 py-3">
+            <div className="flex justify-center">
+              <div className="min-w-max">
+                <div
+                  className="grid gap-0"
+                  style={{
+                    gridTemplateColumns: `56px repeat(${activeHabits.length}, 28px)`,
+                  }}
+                >
+                  {/* Header */}
+                  <div className="text-[11px] font-semibold text-neutral-400">Date</div>
+                  {activeHabits.map((h) => (
+                    <div
+                      key={h.id}
+                      className="text-center text-[11px] font-semibold text-neutral-400"
+                    >
+                      {(h.short_label ?? "").toUpperCase() || clampLabel(h.name)}
+                    </div>
+                  ))}
+
+                  {/* Rows */}
+                  {dateRows.map((iso) => {
+                    const dt = new Date(`${iso}T00:00:00`);
+                    // dateRows are rendered from today downward (descending). Week breaks should appear
+                    // between Sunday and Monday, which in descending order means inserting a gap after Monday.
+                    const isMonday = dt.getDay() === 1;
+
+                    return (
+                      <div key={iso} className="contents">
+                        <div className="pt-[2px] text-[11px] font-semibold text-neutral-400">
+                          {fmtMD(iso)}
+                        </div>
+
+                        {activeHabits.map((h) => {
+                          const isGym = gymHabitId && h.id === gymHabitId;
+                          const done = isGym ? !!gymDoneByDate[iso] : !!doneByDate[iso]?.[h.id];
+
+                          return (
+                            <div
+                              key={h.id + iso}
+                              className={clsx(
+                                "h-7 w-7 rounded-lg border",
+                                "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
+                                done
+                                  ? "border-emerald-200/30 bg-emerald-400/75"
+                                  : "border-neutral-800 bg-neutral-950/60"
+                              )}
+                            />
+                          );
+                        })}
+
+                        {/* Gap between weeks (between Sunday and Monday). Since we're rendering descending,
+                            insert the gap after Monday so it appears between Monday (above) and Sunday (below). */}
+                        {isMonday && iso !== dateRows[dateRows.length - 1] ? (
+                          <>
+                            <div className="h-2" />
+                            {activeHabits.map((h) => (
+                              <div key={`gap-${iso}-${h.id}`} className="h-2" />
+                            ))}
+                          </>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Edit modal */}

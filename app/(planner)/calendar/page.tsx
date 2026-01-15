@@ -144,7 +144,7 @@ export default function CalendarPage() {
 
   const weeks = useMemo(() => {
     const out: Date[][] = [];
-    for (let w = 0; w < 12; w++) {
+    for (let w = 0; w < 13; w++) {
       const row: Date[] = [];
       const start = addDays(week0, w * 7);
       for (let i = 0; i < 7; i++) row.push(addDays(start, i));
@@ -155,7 +155,7 @@ export default function CalendarPage() {
 
   const range = useMemo(() => {
     const start = toISODate(weeks[0][0]);
-    const end = toISODate(weeks[11][6]);
+    const end = toISODate(weeks[12][6]);
     return { start, end };
   }, [weeks]);
 
@@ -464,7 +464,7 @@ export default function CalendarPage() {
           ))}
         </div>
 
-        {/* 12-week grid */}
+        {/* 13-week grid */}
         <div className="border-x border-b border-neutral-800">
           <div>
             {weeks.map((row, wIdx) => {

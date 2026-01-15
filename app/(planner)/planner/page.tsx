@@ -26,6 +26,7 @@ type Plan = {
   starts_at: string | null; // ISO (optional time)
   ends_at: string | null; // ISO (optional time)  <-- keep, but NOT used for multi-day
   end_date: string | null; // YYYY-MM-DD (multi-day end)
+  day_off: boolean | null; // day off flag (calendar shading)
   status: "open" | "done" | "canceled";
   scheduled_for: string | null; // YYYY-MM-DD
   window_kind: WindowKind | null;
@@ -954,13 +955,14 @@ function AddSheet({
   open: boolean;
   onClose: () => void;
   onCreate: (args: {
-    titleRaw: string;
-    notes: string;
-    targetValue: string;
-    itemType: ItemType;
-    planStartTime: string;
-    planEndDate: string;
-  }) => void;
+  titleRaw: string;
+  notes: string;
+  targetValue: string;
+  itemType: ItemType;
+  planStartTime: string;
+  planEndDate: string;
+  planDayOff: boolean;
+}) => void;
   moveTargets: MoveTarget[];
   defaultTarget: string;
 }) {
@@ -970,6 +972,7 @@ function AddSheet({
   const [targetValue, setTargetValue] = useState(defaultTarget);
   const [planStartTime, setPlanStartTime] = useState("");
   const [planEndDate, setPlanEndDate] = useState("");
+  const [planDayOff, setPlanDayOff] = useState(false);
   // Date picker state for custom date
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [customDate, setCustomDate] = useState("");
@@ -982,6 +985,7 @@ function AddSheet({
     setTargetValue(defaultTarget);
     setPlanStartTime("");
     setPlanEndDate("");
+    setPlanDayOff(false);
     // Date picker: set to today or to defaultTarget if D|
     let initialDate = "";
     if (defaultTarget.startsWith("D|")) {
@@ -998,7 +1002,7 @@ function AddSheet({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate });
+        onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1022,7 +1026,7 @@ function AddSheet({
             <button
               onClick={() => {
                 if (!titleRaw.trim()) return;
-                onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate });
+                onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff });
                 onClose();
               }}
               className="rounded-lg border border-neutral-800 bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-900 active:scale-[0.99]"
@@ -1129,18 +1133,28 @@ function AddSheet({
             </div>
 
             {itemType === "plan" && isDayTarget && (
-              <div className="grid grid-cols-1 gap-2">
-                <div>
-                  <div className="mb-1 text-xs text-neutral-400">Start (optional)</div>
-                  <input
-                    type="time"
-                    value={planStartTime}
-                    onChange={(e) => setPlanStartTime(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
-                  />
-                </div>
-              </div>
-            )}
+  <div className="grid grid-cols-1 gap-2">
+    <div>
+      <div className="mb-1 text-xs text-neutral-400">Start (optional)</div>
+      <input
+        type="time"
+        value={planStartTime}
+        onChange={(e) => setPlanStartTime(e.target.value)}
+        className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
+      />
+    </div>
+
+    <label className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100">
+      <span className="text-[13px] text-neutral-200">Day off?</span>
+      <input
+        type="checkbox"
+        checked={planDayOff}
+        onChange={(e) => setPlanDayOff(e.target.checked)}
+        className="h-5 w-5 accent-neutral-100"
+      />
+    </label>
+  </div>
+)}
 
             <div>
               <div className="mb-1 text-xs text-neutral-400">Notes</div>
@@ -1156,7 +1170,7 @@ function AddSheet({
               <button
                 onClick={() => {
                   if (!titleRaw.trim()) return;
-                  onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate });
+                  onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff });
                   onClose();
                 }}
                 className="flex-1 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
@@ -1356,7 +1370,7 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("plans")
-        .select("id,title,notes,starts_at,ends_at,end_date,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,starts_at,ends_at,end_date,day_off,status,scheduled_for,window_kind,window_start,created_at")
         .eq("status", "open")
         .not("scheduled_for", "is", null)
         .gte("scheduled_for", start)
@@ -1367,7 +1381,7 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("plans")
-        .select("id,title,notes,starts_at,ends_at,end_date,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,starts_at,ends_at,end_date,day_off,status,scheduled_for,window_kind,window_start,created_at")
         .eq("status", "open")
         .is("scheduled_for", null)
         .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
@@ -1768,6 +1782,7 @@ function getWindowValue(which: DrawerWindow) {
     itemType: ItemType;
     planStartTime?: string;
     planEndDate?: string;
+    planDayOff?: boolean;
   }) {
     const parsed = parseHashtags(args.titleRaw, { targetValue: args.targetValue, today, windows, itemType: args.itemType });
     const title = parsed.title.trim();
@@ -1824,8 +1839,16 @@ if (args.planEndDate && args.planEndDate.trim()) {
 
 const { data, error } = await supabase
   .from("plans")
-  .insert({ title, notes: notesVal, status: "open", starts_at, end_date, ...placement })
-  .select("id,title,notes,starts_at,ends_at,end_date,status,scheduled_for,window_kind,window_start,created_at")
+  .insert({
+    title,
+    notes: notesVal,
+    status: "open",
+    day_off: Boolean(args.planDayOff),
+    starts_at,
+    end_date,
+    ...placement
+  })
+  .select("id,title,notes,starts_at,ends_at,end_date,day_off,status,scheduled_for,window_kind,window_start,created_at")
   .single();
     if (error) return console.error(error);
     if (data) setPlans((p) => [...p, data as Plan]);
@@ -2593,6 +2616,7 @@ const { error } = await supabase
             itemType: args.itemType,
             planStartTime: args.planStartTime,
             planEndDate: args.planEndDate,
+            planDayOff: args.planDayOff,
           });
         }}
       />
