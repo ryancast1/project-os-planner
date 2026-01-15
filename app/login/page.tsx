@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -8,7 +8,7 @@ function clsx(...p: Array<string | false | null | undefined>) {
   return p.filter(Boolean).join(" ");
 }
 
-export default function LoginPage() {
+function LoginInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/planner";
@@ -152,5 +152,21 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-dvh w-full px-4 py-6 sm:mx-auto sm:max-w-md">
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5 shadow-sm">
+            <div className="text-sm text-neutral-400">Loading…</div>
+          </div>
+        </main>
+      }
+    >
+      <LoginInner />
+    </Suspense>
   );
 }
