@@ -3,8 +3,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Project OS",
-    short_name: "Project OS",
+    name: "Planner",
+    short_name: "Planner",
     start_url: "/planner",
     scope: "/",
     display: "standalone",
