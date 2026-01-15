@@ -1196,6 +1196,7 @@ export default function PlannerPage() {
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
 
   const [drawerWindow, setDrawerWindow] = useState<DrawerWindow>("thisWeek");
+  const [parkingOpen, setParkingOpen] = useState(true);
   const [drawerDraft, setDrawerDraft] = useState("");
   const [drawerType, setDrawerType] = useState<ItemType>("task");
 
@@ -2068,7 +2069,17 @@ const { error } = await supabase
                 ] as const).map(([k, label]) => (
                   <button
                     key={k}
-                    onClick={() => setDrawerWindow(k as DrawerWindow)}
+                    onClick={() => {
+                      const next = k as DrawerWindow;
+                      // If already open and they tap the same tab, collapse.
+                      if (parkingOpen && drawerWindow === next) {
+                        setParkingOpen(false);
+                        return;
+                      }
+                      // Otherwise ensure it's open and switch to the tapped tab.
+                      setParkingOpen(true);
+                      setDrawerWindow(next);
+                    }}
                     className={clsx(
                       "whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold",
                       drawerWindow === k
@@ -2081,96 +2092,115 @@ const { error } = await supabase
                 ))}
               </div>
 
-              <div className="mt-2">
-                <div className="mb-2 hidden gap-2 sm:mb-2 sm:gap-2 group-focus-within:flex" />
-                <div className="group">
-                  <div className="mb-2 hidden gap-2 group-focus-within:flex">
-                    {([
-                      ["task", "Task"],
-                      ["plan", "Plan"],
-                      ["focus", "Focus"],
-                    ] as const).map(([k, label]) => (
-                      <button
-                        key={k}
-                        type="button"
-                        onPointerDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onClick={() => setDrawerType(k as ItemType)}
-                        className={clsx(
-                          "rounded-xl border px-3 py-1.5 text-xs font-semibold",
-                          drawerType === k
-                            ? "border-neutral-200 bg-neutral-100 text-neutral-900"
-                            : "border-neutral-800 bg-neutral-950 text-neutral-200"
-                        )}
-                      >
-                        {label}
-                      </button>
+              {parkingOpen && (
+                <>
+                  <div className="mt-2">
+                    <div className="mb-2 hidden gap-2 sm:mb-2 sm:gap-2 group-focus-within:flex" />
+                    <div className="group">
+                      <div className="mb-2 hidden gap-2 group-focus-within:flex">
+                        {([
+                          ["task", "Task"],
+                          ["plan", "Plan"],
+                          ["focus", "Focus"],
+                        ] as const).map(([k, label]) => (
+                          <button
+                            key={k}
+                            type="button"
+                            onPointerDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onClick={() => setDrawerType(k as ItemType)}
+                            className={clsx(
+                              "rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                              drawerType === k
+                                ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                                : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex gap-2">
+                        <input
+                          value={drawerDraft}
+                          onChange={(e) => setDrawerDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addDrawer();
+                            }
+                          }}
+                          placeholder="Add…"
+                          className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                        />
+
+                        <button
+                          type="button"
+                          onPointerDown={(e) => {
+                            // Prevent the input from blurring first (which collapses the type chips)
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onMouseDown={(e) => {
+                            // Extra safety for desktop browsers
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            addDrawer();
+                          }}
+                          className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                    {drawerLists[drawerWindow].focus.map((f) => (
+                      <FocusFloat
+                        key={f.id}
+                        focus={f}
+                        moveTargets={moveTargets}
+                        onMove={(id, v) => moveItem("focus", id, v)}
+                        onEdit={(f) => openEdit("focus", f)}
+                      />
                     ))}
+
+                    {drawerLists[drawerWindow].plan.map((p) => (
+                      <PlanRow
+                        key={p.id}
+                        plan={p}
+                        moveTargets={moveTargets}
+                        onMove={(id, v) => moveItem("plan", id, v)}
+                        onEdit={(p) => openEdit("plan", p)}
+                      />
+                    ))}
+
+                    {drawerLists[drawerWindow].task.map((t) => (
+                      <TaskRow
+                        key={t.id}
+                        task={t}
+                        moveTargets={moveTargets}
+                        onMove={(id, v) => moveItem("task", id, v)}
+                        onToggleDone={toggleTaskDone}
+                        onEdit={(t) => openEdit("task", t)}
+                      />
+                    ))}
+
+                    {drawerLists[drawerWindow].focus.length +
+                      drawerLists[drawerWindow].plan.length +
+                      drawerLists[drawerWindow].task.length ===
+                      0 && <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>}
                   </div>
-
-                  <div className="flex gap-2">
-                    <input
-                      value={drawerDraft}
-                      onChange={(e) => setDrawerDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          addDrawer();
-                        }
-                      }}
-                      placeholder="Add…"
-                      className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
-                    />
-
-                    <button
-                      onClick={addDrawer}
-                      className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                {drawerLists[drawerWindow].focus.map((f) => (
-                  <FocusFloat
-                    key={f.id}
-                    focus={f}
-                    moveTargets={moveTargets}
-                    onMove={(id, v) => moveItem("focus", id, v)}
-                    onEdit={(f) => openEdit("focus", f)}
-                  />
-                ))}
-
-                {drawerLists[drawerWindow].plan.map((p) => (
-                  <PlanRow
-                    key={p.id}
-                    plan={p}
-                    moveTargets={moveTargets}
-                    onMove={(id, v) => moveItem("plan", id, v)}
-                    onEdit={(p) => openEdit("plan", p)}
-                  />
-                ))}
-
-                {drawerLists[drawerWindow].task.map((t) => (
-                  <TaskRow
-                    key={t.id}
-                    task={t}
-                    moveTargets={moveTargets}
-                    onMove={(id, v) => moveItem("task", id, v)}
-                    onToggleDone={toggleTaskDone}
-                    onEdit={(t) => openEdit("task", t)}
-                  />
-                ))}
-
-                {drawerLists[drawerWindow].focus.length +
-                  drawerLists[drawerWindow].plan.length +
-                  drawerLists[drawerWindow].task.length ===
-                  0 && <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>}
-              </div>
+                </>
+              )}
             </section>
 
             {/* Today */}
@@ -2290,7 +2320,22 @@ const { error } = await supabase
                 />
 
                 <button
-                  onClick={() => addInline(todayIso)}
+                  type="button"
+                  onPointerDown={(e) => {
+                    // Prevent the input from blurring first (which collapses the type chips)
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onMouseDown={(e) => {
+                    // Extra safety for desktop browsers
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    addInline(todayIso);
+                  }}
                   className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
                 >
                   Add
@@ -2433,7 +2478,22 @@ const { error } = await supabase
                           />
 
                           <button
-                            onClick={() => addInline(iso)}
+                            type="button"
+                            onPointerDown={(e) => {
+                              // Prevent the input from blurring first (which collapses the type chips)
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onMouseDown={(e) => {
+                              // Extra safety for desktop browsers
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              addInline(iso);
+                            }}
                             className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
                           >
                             Add
