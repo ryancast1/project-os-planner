@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 type WindowKind = "workweek" | "weekend";
@@ -1186,6 +1187,8 @@ export default function PlannerPage() {
   const [habitDoneIds, setHabitDoneIds] = useState<Set<string>>(new Set());
   const [gymDoneToday, setGymDoneToday] = useState(false);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const [authReady, setAuthReady] = useState(false);
 
   const [draftByDay, setDraftByDay] = useState<Record<string, Record<ItemType, string>>>({});
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
@@ -1506,12 +1509,50 @@ function getWindowValue(which: DrawerWindow) {
   }
 
   useEffect(() => {
-    fetchAll();
-    setOpenDayIso(toISODate(days[0]));
+    let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
+
+    const init = async () => {
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
+
+      if (error) {
+        console.warn("auth getSession", error);
+      }
+
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      setAuthReady(true);
+      setOpenDayIso(toISODate(days[0]));
+      fetchAll();
+
+      unsub = supabase.auth.onAuthStateChange((_event, nextSession) => {
+        if (!nextSession) {
+          setAuthReady(false);
+          router.replace("/login");
+        }
+      });
+    };
+
+    init();
+
+    return () => {
+      try {
+        unsub?.data?.subscription?.unsubscribe?.();
+      } catch {
+        // no-op
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    if (!authReady) return;
+
     const refetchIfVisible = () => {
       if (document.visibilityState === "visible") {
         fetchAll();
@@ -1526,7 +1567,7 @@ function getWindowValue(which: DrawerWindow) {
       document.removeEventListener("visibilitychange", refetchIfVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authReady]);
 
   const dayRangeStart = useMemo(() => toISODate(days[0]), [days]);
 
@@ -1980,7 +2021,7 @@ const { error } = await supabase
     <main className="min-h-dvh w-full max-w-full overflow-x-hidden px-4 py-4 sm:mx-auto sm:max-w-6xl">
 
 
-      {loading ? (
+      {!authReady || loading ? (
         <div className="mt-6 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
