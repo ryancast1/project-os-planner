@@ -10,6 +10,7 @@ type Plan = {
   end_date?: string | null; // YYYY-MM-DD
   starts_at?: string | null;
   status?: string | null;
+  day_off?: boolean | null;
 };
 
 type Task = {
@@ -190,7 +191,7 @@ export default function CalendarPage() {
       const [plansRes, tasksRes, focusRes] = await Promise.all([
         supabase
           .from("plans")
-          .select("id,title,scheduled_for,end_date,starts_at,status")
+          .select("id,title,scheduled_for,end_date,starts_at,status,day_off")
           .gte("scheduled_for", range.start)
           .lte("scheduled_for", range.end)
           .order("scheduled_for", { ascending: true })
@@ -235,6 +236,24 @@ export default function CalendarPage() {
       // Only show single-day plans inside cells; multi-day plans render as bars.
       if (endIso !== p.scheduled_for) continue;
       (m[p.scheduled_for] ||= []).push(p);
+    }
+    return m;
+  }, [plans]);
+
+  const dayOffByDay = useMemo(() => {
+    const m: Record<string, boolean> = {};
+    for (const p of plans) {
+      if (!p.scheduled_for) continue;
+      if (!p.day_off) continue;
+      const start = p.scheduled_for;
+      const end = planEndIso(p);
+      let cur = start;
+      while (cur <= end) {
+        m[cur] = true;
+        const d = new Date(cur + "T00:00:00");
+        d.setDate(d.getDate() + 1);
+        cur = toISODate(d);
+      }
     }
     return m;
   }, [plans]);
@@ -459,6 +478,7 @@ export default function CalendarPage() {
                       const show = dayPlans.slice(0, maxPlansPerCell);
                       const extra = Math.max(0, dayPlans.length - show.length);
                       const weekend = isWeekend(d);
+                      const dayOff = !!dayOffByDay[iso];
 
                       const monthChangeFromTop =
                         wIdx > 0 && weeks[wIdx - 1][dIdx].getMonth() !== d.getMonth();
@@ -488,7 +508,7 @@ export default function CalendarPage() {
                             monthChangeFromLeft ? "border-l-2 border-l-neutral-500/60" : "",
                             isToday
                               ? "bg-neutral-600/55 ring-2 ring-neutral-200/35"
-                              : weekend
+                              : (weekend || dayOff)
                                 ? "bg-neutral-800/55"
                                 : "bg-neutral-950/25"
                           )}
