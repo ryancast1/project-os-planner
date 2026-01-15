@@ -32,6 +32,7 @@ type Plan = {
   completed_at?: string | null;
 };
 
+
 type Focus = {
   id: string;
   title: string;
@@ -41,6 +42,20 @@ type Focus = {
   window_kind: WindowKind | null;
   window_start: string | null; // YYYY-MM-DD
   created_at: string;
+};
+
+type Habit = {
+  id: string;
+  name: string;
+  short_label: string | null;
+  notes?: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+type HabitLog = {
+  habit_id: string;
+  done_on: string; // YYYY-MM-DD
 };
 
 type ItemType = "task" | "plan" | "focus";
@@ -1167,6 +1182,8 @@ export default function PlannerPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [focuses, setFocuses] = useState<Focus[]>([]);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [habitDoneIds, setHabitDoneIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const [draftByDay, setDraftByDay] = useState<Record<string, Record<ItemType, string>>>({});
@@ -1280,6 +1297,8 @@ function getWindowValue(which: DrawerWindow) {
       plansParkingRes,
       focusesScheduledRes,
       focusesParkingRes,
+      habitsRes,
+      habitLogsTodayRes,
     ] = await Promise.all([
       supabase
         .from("tasks")
@@ -1344,15 +1363,28 @@ function getWindowValue(which: DrawerWindow) {
         .is("scheduled_for", null)
         .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
         .order("created_at", { ascending: true }),
+
+      supabase
+        .from("habits")
+        .select("id,name,short_label,is_active,created_at")
+        .eq("is_active", true)
+        .order("created_at", { ascending: true }),
+
+      supabase
+        .from("habit_logs")
+        .select("habit_id,done_on")
+        .eq("done_on", toISODate(days[0])),
     ]);
 
-    if (tasksScheduledRes.error) console.error(tasksScheduledRes.error);
-    if (tasksOverdueRes.error) console.error(tasksOverdueRes.error);
-    if (tasksParkingRes.error) console.error(tasksParkingRes.error);
-    if (plansScheduledRes.error) console.error(plansScheduledRes.error);
-    if (plansParkingRes.error) console.error(plansParkingRes.error);
-    if (focusesScheduledRes.error) console.error(focusesScheduledRes.error);
-    if (focusesParkingRes.error) console.error(focusesParkingRes.error);
+    if (tasksScheduledRes.error) console.warn("tasksScheduledRes", tasksScheduledRes.error);
+    if (tasksOverdueRes.error) console.warn("tasksOverdueRes", tasksOverdueRes.error);
+    if (tasksParkingRes.error) console.warn("tasksParkingRes", tasksParkingRes.error);
+    if (plansScheduledRes.error) console.warn("plansScheduledRes", plansScheduledRes.error);
+    if (plansParkingRes.error) console.warn("plansParkingRes", plansParkingRes.error);
+    if (focusesScheduledRes.error) console.warn("focusesScheduledRes", focusesScheduledRes.error);
+    if (focusesParkingRes.error) console.warn("focusesParkingRes", focusesParkingRes.error);
+    if (habitsRes.error) console.warn("habitsRes", habitsRes.error);
+    if (habitLogsTodayRes.error) console.warn("habitLogsTodayRes", habitLogsTodayRes.error);
 
     setTasks([
       ...((tasksOverdueRes.data ?? []) as Task[]),
@@ -1370,7 +1402,96 @@ function getWindowValue(which: DrawerWindow) {
       ...((focusesParkingRes.data ?? []) as Focus[]),
     ]);
 
+    let habitsData = (habitsRes.data ?? []) as any[];
+    if (habitsRes.error) {
+      // Fallback: try a minimal select in case the schema is missing newer columns (e.g., short_label)
+      const alt = await supabase
+        .from("habits")
+        .select("id,name,short_label,is_active,created_at")
+        .eq("is_active", true)
+        .order("created_at", { ascending: true });
+      if (!alt.error) habitsData = (alt.data ?? []) as any[];
+      else console.warn("habitsRes fallback", alt.error);
+    }
+
+    // If short_label was not returned (or is null), try to hydrate it with a lightweight follow-up query.
+    // This prevents the Today chips from falling back to the first 3 letters of the name.
+    const needsShortLabel = habitsData.some((h) => !(h?.short_label && String(h.short_label).trim()));
+    if (needsShortLabel) {
+      const labelsRes = await supabase
+        .from("habits")
+        .select("id,short_label")
+        .eq("is_active", true);
+
+      if (!labelsRes.error && labelsRes.data) {
+        const labelById = new Map<string, string | null>(
+          (labelsRes.data as any[]).map((r) => [String(r.id), (r.short_label ?? null) as string | null])
+        );
+
+        habitsData = habitsData.map((h) => {
+          const current = h?.short_label && String(h.short_label).trim() ? String(h.short_label) : null;
+          const hydrated = labelById.get(String(h.id)) ?? null;
+          return { ...h, short_label: current ?? hydrated };
+        });
+      } else if (labelsRes.error) {
+        console.warn("habits short_label hydration", labelsRes.error);
+      }
+    }
+
+    setHabits(habitsData as Habit[]);
+
+    const doneRows = (habitLogsTodayRes.error ? [] : (habitLogsTodayRes.data ?? [])) as HabitLog[];
+    const doneSet = new Set<string>(doneRows.map((r) => r.habit_id));
+    setHabitDoneIds(doneSet);
+
     setLoading(false);
+  }
+  async function toggleHabitDone(habitId: string) {
+    const todayIso = toISODate(days[0]);
+    const isDone = habitDoneIds.has(habitId);
+
+    // Optimistic update
+    setHabitDoneIds((prev) => {
+      const next = new Set(prev);
+      if (isDone) next.delete(habitId);
+      else next.add(habitId);
+      return next;
+    });
+
+    if (isDone) {
+      const { error } = await supabase
+        .from("habit_logs")
+        .delete()
+        .eq("habit_id", habitId)
+        .eq("done_on", todayIso);
+      if (error) {
+        console.warn("habit toggle", error);
+        // revert
+        setHabitDoneIds((prev) => {
+          const next = new Set(prev);
+          next.add(habitId);
+          return next;
+        });
+      }
+      return;
+    }
+
+    const { error } = await supabase
+      .from("habit_logs")
+      .insert({ habit_id: habitId, done_on: todayIso });
+    if (error) {
+      // If unique constraint hit (already logged), keep UI green.
+      // Otherwise revert.
+      const code = (error as any)?.code;
+      if (code !== "23505") {
+        console.warn("habit toggle", error);
+        setHabitDoneIds((prev) => {
+          const next = new Set(prev);
+          next.delete(habitId);
+          return next;
+        });
+      }
+    }
   }
 
   useEffect(() => {
@@ -1960,10 +2081,39 @@ const { error } = await supabase
                 (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
               )}
             >
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold">Today</div>
                 <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
+              </div>
+
+              {/* Habit chips (Today only) */}
+              <div className="flex max-w-[60%] flex-wrap justify-end gap-2 pt-0.5">
+                {habits.map((h) => {
+                  const label = (h.short_label && h.short_label.trim()) ? h.short_label.trim() : h.name.slice(0, 3).toUpperCase();
+                  const done = habitDoneIds.has(h.id);
+                  return (
+                    <button
+                      key={h.id}
+                      type="button"
+                      onPointerDown={(e) => {
+                        // prevent text selection on long press
+                        e.preventDefault();
+                      }}
+                      onClick={() => toggleHabitDone(h.id)}
+                      className={clsx(
+                        "grid h-9 min-w-[36px] place-items-center rounded-xl border px-3 text-xs font-semibold tracking-wide",
+                        done
+                          ? "border-emerald-400/70 bg-emerald-300 text-neutral-900"
+                          : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                      )}
+                      aria-label={h.name}
+                      title={h.name}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
