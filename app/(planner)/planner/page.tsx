@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
+
 type WindowKind = "workweek" | "weekend";
 
 type Task = {
@@ -1189,6 +1190,7 @@ export default function PlannerPage() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const [authReady, setAuthReady] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   const [draftByDay, setDraftByDay] = useState<Record<string, Record<ItemType, string>>>({});
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
@@ -1265,6 +1267,24 @@ function getWindowValue(which: DrawerWindow) {
 
   async function fetchAll() {
     setLoading(true);
+
+    // Auth guard: if session is missing, bounce to /login and stop.
+    const {
+      data: { session },
+      error: sessionErr,
+    } = await supabase.auth.getSession();
+
+    if (sessionErr) {
+      console.warn("auth getSession (fetchAll)", sessionErr);
+    }
+
+    if (!session) {
+      setAuthReady(false);
+      setAuthChecked(true);
+      setLoading(false);
+      router.replace("/login");
+      return;
+    }
 
     const todayIso = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
     const start = toISODate(days[0]);
@@ -1520,19 +1540,25 @@ function getWindowValue(which: DrawerWindow) {
       if (error) {
         console.warn("auth getSession", error);
       }
+      setAuthChecked(true);
 
       if (!session) {
+        setAuthReady(false);
+        setLoading(false);
         router.replace("/login");
         return;
       }
 
       setAuthReady(true);
       setOpenDayIso(toISODate(days[0]));
+      setAuthChecked(true);
       fetchAll();
 
       unsub = supabase.auth.onAuthStateChange((_event, nextSession) => {
         if (!nextSession) {
           setAuthReady(false);
+          setAuthChecked(true);
+          setLoading(false);
           router.replace("/login");
         }
       });
@@ -2021,7 +2047,11 @@ const { error } = await supabase
     <main className="min-h-dvh w-full max-w-full overflow-x-hidden px-4 py-4 sm:mx-auto sm:max-w-6xl">
 
 
-      {!authReady || loading ? (
+      {!authChecked ? (
+        <div className="mt-6 text-sm text-neutral-400">Loading…</div>
+      ) : !authReady ? (
+        <div className="mt-6 text-sm text-neutral-400">Redirecting…</div>
+      ) : loading ? (
         <div className="mt-6 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
