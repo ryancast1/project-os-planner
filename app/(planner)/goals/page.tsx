@@ -16,7 +16,7 @@ type GoalRow = {
   archived: boolean;
 };
 
-const DEFAULT_BUCKET_ORDER = ["Project", "Baseline", "Growth", "Progress"];
+const DEFAULT_BUCKET_ORDER = ["Baseline", "Growth", "Progress", "Project"];
 
 function clampRating(v: number) {
   if (Number.isNaN(v)) return v;
@@ -536,7 +536,7 @@ export default function GoalsPage() {
                   <div className="flex flex-col items-end gap-2">
                     <button
                       className={clsx(
-                        "w-[64px] rounded-xl border px-2 py-2 text-xs font-semibold",
+                        "w-[84px] rounded-xl border px-2 py-2 text-xs font-semibold",
                         g.archived
                           ? "border-neutral-700 bg-neutral-950/40 text-neutral-300"
                           : "border-neutral-800 bg-neutral-950/20 text-neutral-200"
@@ -544,11 +544,11 @@ export default function GoalsPage() {
                       onClick={() => patchGoal(g.id, { archived: !g.archived })}
                       title={g.archived ? "Unarchive" : "Archive"}
                     >
-                      {g.archived ? "Unarch" : "Arch"}
+                      {g.archived ? "Unarchive" : "Archive"}
                     </button>
 
                     <button
-                      className="w-[64px] rounded-xl border border-red-900/40 bg-red-950/20 px-2 py-2 text-xs font-semibold text-red-200"
+                      className="w-[84px] rounded-xl border border-red-900/40 bg-red-950/20 px-2 py-2 text-xs font-semibold text-red-200"
                       onClick={async () => {
                         const ok = confirm("Delete this goal? This cannot be undone.");
                         if (!ok) return;
@@ -556,10 +556,8 @@ export default function GoalsPage() {
                       }}
                       title="Delete"
                     >
-                      Del
+                      Delete
                     </button>
-
-                   
                   </div>
                 </div>
               ))}
