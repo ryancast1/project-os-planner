@@ -1263,6 +1263,7 @@ function getWindowValue(which: DrawerWindow) {
   async function fetchAll() {
     setLoading(true);
 
+    const todayIso = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
     const start = toISODate(days[0]);
 
     // We normally show 7 days (today + next 6). But we ALSO want future-dated items that fall into
@@ -1375,11 +1376,11 @@ function getWindowValue(which: DrawerWindow) {
       supabase
         .from("habit_logs")
         .select("habit_id,done_on")
-        .eq("done_on", toISODate(days[0])),
+        .eq("done_on", todayIso),
       supabase
         .from("workout_sessions")
         .select("id")
-        .eq("performed_on", toISODate(days[0]))
+        .eq("performed_on", todayIso)
         .limit(1),
     ]);
 
@@ -1507,6 +1508,23 @@ function getWindowValue(which: DrawerWindow) {
   useEffect(() => {
     fetchAll();
     setOpenDayIso(toISODate(days[0]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const refetchIfVisible = () => {
+      if (document.visibilityState === "visible") {
+        fetchAll();
+      }
+    };
+
+    window.addEventListener("focus", refetchIfVisible);
+    document.addEventListener("visibilitychange", refetchIfVisible);
+
+    return () => {
+      window.removeEventListener("focus", refetchIfVisible);
+      document.removeEventListener("visibilitychange", refetchIfVisible);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
