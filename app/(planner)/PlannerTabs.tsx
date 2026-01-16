@@ -8,6 +8,7 @@ export default function PlannerTabs() {
   const pathname = usePathname();
 
   const tabs = [
+    { href: "/", label: "Home" },
     { href: "/planner", label: "Planner" },
     { href: "/goals", label: "Projects/Goals" },
     { href: "/habits", label: "Habits" },
