@@ -112,7 +112,7 @@ function Modal({
               Close
             </button>
           </div>
-          <div className="px-4 py-4 pb-[calc(16px+env(safe-area-inset-bottom))]">
+          <div className="px-4 py-4 pb-[calc(96px+env(safe-area-inset-bottom))] sm:pb-[calc(16px+env(safe-area-inset-bottom))]">
             {children}
           </div>
         </div>

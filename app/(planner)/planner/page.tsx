@@ -768,10 +768,19 @@ function EditSheet({
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Edit</div>
             <button
-              onClick={onClose}
-              className="rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+              onClick={() =>
+                onSave({
+                  itemType: localType,
+                  title: title.trim(),
+                  notes: notes.trim() ? notes.trim() : null,
+                  targetValue,
+                  planStartTime,
+                  planEndDate,
+                })
+              }
+              className="rounded-lg border border-neutral-800 bg-neutral-100 px-2 py-1 text-xs font-semibold text-neutral-900 active:scale-[0.99]"
             >
-              Close
+              Save
             </button>
           </div>
 
@@ -1201,6 +1210,7 @@ export default function PlannerPage() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [habitDoneIds, setHabitDoneIds] = useState<Set<string>>(new Set());
   const [gymDoneToday, setGymDoneToday] = useState(false);
+  const [trichLoggedToday, setTrichLoggedToday] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const [authReady, setAuthReady] = useState(false);
@@ -1340,6 +1350,7 @@ function getWindowValue(which: DrawerWindow) {
       habitsRes,
       habitLogsTodayRes,
       workoutSessionsTodayRes,
+      trichEventsTodayRes,
     ] = await Promise.all([
       supabase
         .from("tasks")
@@ -1420,6 +1431,11 @@ function getWindowValue(which: DrawerWindow) {
         .select("id")
         .eq("performed_on", todayIso)
         .limit(1),
+      supabase
+        .from("trich_events")
+        .select("id")
+        .eq("occurred_on", todayIso)
+        .limit(1),
     ]);
 
     if (tasksScheduledRes.error) console.warn("tasksScheduledRes", tasksScheduledRes.error);
@@ -1432,6 +1448,7 @@ function getWindowValue(which: DrawerWindow) {
     if (habitsRes.error) console.warn("habitsRes", habitsRes.error);
     if (habitLogsTodayRes.error) console.warn("habitLogsTodayRes", habitLogsTodayRes.error);
     if (workoutSessionsTodayRes.error) console.warn("workoutSessionsTodayRes", workoutSessionsTodayRes.error);
+    if (trichEventsTodayRes.error) console.warn("trichEventsTodayRes", trichEventsTodayRes.error);
 
     setTasks([
       ...((tasksOverdueRes.data ?? []) as Task[]),
@@ -1492,6 +1509,12 @@ function getWindowValue(which: DrawerWindow) {
     setHabitDoneIds(doneSet);
     const gymDone = !workoutSessionsTodayRes.error && ((workoutSessionsTodayRes.data ?? []) as any[]).length > 0;
     setGymDoneToday(gymDone);
+    if (trichEventsTodayRes.error) {
+      setTrichLoggedToday(null);
+    } else {
+      const trichLogged = ((trichEventsTodayRes.data ?? []) as any[]).length > 0;
+      setTrichLoggedToday(trichLogged);
+    }
 
     setLoading(false);
   }
@@ -2241,6 +2264,15 @@ const { error } = await supabase
 
               {/* Habit chips (Today only) */}
               <div className="flex flex-1 flex-wrap justify-end gap-2 pt-0.5">
+                {trichLoggedToday === false && (
+                  <div
+                    aria-label="Trich check"
+                    title="Trich check"
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-emerald-400/70 bg-emerald-300 text-sm font-semibold text-neutral-900"
+                  >
+                    T
+                  </div>
+                )}
                 {habits.map((h) => {
                   const label = (h.short_label && h.short_label.trim()) ? h.short_label.trim() : h.name.slice(0, 3).toUpperCase();
                   const isGym = label === "GYM";
