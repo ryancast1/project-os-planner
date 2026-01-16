@@ -23,7 +23,7 @@ export default function PlannerTabs() {
       )}
       aria-label="Planner tabs"
     >
-      <div className="mx-auto flex max-w-6xl items-stretch justify-between px-2 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
+            <div className="mx-auto grid max-w-6xl grid-cols-[0.8fr_1fr_1fr_1fr_1fr] items-stretch gap-1 px-2 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
         {tabs.map((t) => {
           const active = pathname === t.href;
           return (
@@ -31,7 +31,7 @@ export default function PlannerTabs() {
               key={t.href}
               href={t.href}
               className={clsx(
-                "flex flex-1 flex-col items-center justify-center py-4 min-h-[56px] rounded-xl",
+                "flex flex-col items-center justify-center py-4 min-h-[56px] rounded-xl",
                 active ? "text-neutral-50" : "text-neutral-400"
               )}
               aria-current={active ? "page" : undefined}

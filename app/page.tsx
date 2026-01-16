@@ -1,7 +1,12 @@
 import Link from "next/link";
 
 export default function HomePage() {
-  const tiles = [{ href: "/planner", title: "Planner" }];
+  const tiles = [
+    { href: "/planner", title: "Planner" },
+    { href: "/workout-tracker", title: "Workout Tracker" },
+    { href: "/movie-tracker", title: "Movie Tracker" },
+    { href: "/trich", title: "Trich Tracker" },
+  ];
 
   return (
     <main className="min-h-dvh p-6">
