@@ -1,12 +1,7 @@
 import Link from "next/link";
 
 export default function HomePage() {
-  const tiles = [
-    { href: "/planner", title: "Planner", desc: "Today + runway + parking lot" },
-    { href: "/projects", title: "Projects", desc: "Initiatives + linked tasks" },
-    { href: "/goals", title: "Goals", desc: "Periodic review + notes" },
-    { href: "/habits", title: "Habits", desc: "Habits + streaks + charts (later)" },
-  ];
+  const tiles = [{ href: "/planner", title: "Planner" }];
 
   return (
     <main className="min-h-dvh p-6">
@@ -21,13 +16,9 @@ export default function HomePage() {
             <Link
               key={t.href}
               href={t.href}
-              className="rounded-2xl border bg-white p-4 shadow-sm transition active:scale-[0.99]"
+              className="grid h-20 place-items-center rounded-3xl border border-neutral-200 bg-neutral-900 text-white shadow-sm transition active:scale-[0.99]"
             >
-              <div className="flex items-center justify-between">
-                <div className="text-lg font-medium">{t.title}</div>
-                <div className="text-neutral-400">›</div>
-              </div>
-              <div className="mt-1 text-sm text-neutral-600">{t.desc}</div>
+              <div className="text-xl font-semibold tracking-tight">{t.title}</div>
             </Link>
           ))}
         </div>
