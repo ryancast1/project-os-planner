@@ -22,13 +22,13 @@ const WORKOUT_GROUPS = [
     { label: "Row", slug: "row" },
 
     { label: "Rear Delt Fly", slug: "rear-delt-fly" },
-    { label: "Other", slug: "other" },
   ],
 
   // Day C
   [
     { label: "Leg Press", slug: "leg-press" },
     { label: "Leg Curl", slug: "leg-curl" },
+    { label: "Leg Ext.", slug: "leg-extension" },
   ],
 ] as const;
 
@@ -49,7 +49,7 @@ export default function Home() {
                 key={gi}
                 className="rounded-2xl border border-white/10 bg-white/5 p-3"
               >
-                <div className="grid grid-cols-2 gap-3">
+                <div className={`grid ${gi === 2 || gi === 3 ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
                   {group.map((w) => (
                     <Link
                       key={w.slug}
@@ -62,6 +62,12 @@ export default function Home() {
                 </div>
               </div>
             ))}
+            <Link
+              href="/workout-tracker/workout/other"
+              className="flex h-12 w-full items-center justify-center rounded-xl border border-white/10 bg-black/30 px-3 text-center text-xs font-semibold text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] active:scale-[0.99]"
+            >
+              Other
+            </Link>
           </div>
 
           <div className="mt-3 space-y-2">

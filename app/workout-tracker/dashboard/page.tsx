@@ -10,7 +10,7 @@ type WorkoutCol = { kind: "workout"; slug: string; label: string };
 type MatrixCol = { kind: "date" } | { kind: "spacer" } | WorkoutCol;
 
 // We insert blank spacer columns between your training-day groupings:
-// [PU, BC] | [SP, CP, LR, TE] | [LP, RW, RD] | [LG, LC]
+// [PU, BC] | [SP, CP, LR, TE] | [LP, RW, RD] | [LP, LC, LE]
 const MATRIX_COLS: MatrixCol[] = [
   { kind: "date" },
 
@@ -29,8 +29,9 @@ const MATRIX_COLS: MatrixCol[] = [
   { kind: "workout", slug: "rear-delt-fly", label: "RD" },
   { kind: "spacer" },
 
-  { kind: "workout", slug: "leg-press", label: "LG" },
+  { kind: "workout", slug: "leg-press", label: "LP" },
   { kind: "workout", slug: "leg-curl", label: "LC" },
+  { kind: "workout", slug: "leg-extension", label: "LE" },
 ];
 
 const WORKOUTS = MATRIX_COLS.filter((c): c is WorkoutCol => c.kind === "workout");
@@ -45,7 +46,7 @@ const GROUPS: { id: string; items: WorkoutCol[] }[] = [
     ),
   },
   { id: "g2", items: WORKOUTS.filter((w) => ["lat-pulldown", "row", "rear-delt-fly"].includes(w.slug)) },
-  { id: "g3", items: WORKOUTS.filter((w) => ["leg-press", "leg-curl"].includes(w.slug)) },
+  { id: "g3", items: WORKOUTS.filter((w) => ["leg-press", "leg-curl", "leg-extension"].includes(w.slug)) },
 ];
 
 function isoFromUTCDate(d: Date) {
