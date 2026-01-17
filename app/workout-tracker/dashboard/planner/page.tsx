@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
@@ -45,7 +46,72 @@ const MATRIX_COLS: MatrixCol[] = [
   { kind: "workout", slug: "leg-extension", label: "LE" },
 ];
 
+
 const WORKOUTS = MATRIX_COLS.filter((c): c is WorkoutCol => c.kind === "workout");
+
+const TASK_PREFIX = "Gym - ";
+
+// Title logic groups
+const GROUP_DAY_A = ["shoulder-press", "chest-press", "lateral-raise", "tricep-extension"] as const;
+const GROUP_DAY_B = ["lat-pulldown", "row", "rear-delt-fly"] as const;
+const GROUP_LEG = ["leg-press", "leg-curl", "leg-extension"] as const;
+
+const SHORT_LABEL: Record<string, string> = {
+  "push-ups": "PU",
+  "bicep-curls": "BC",
+  "shoulder-press": "SP",
+  "chest-press": "CP",
+  "lateral-raise": "LR",
+  "tricep-extension": "TE",
+  "lat-pulldown": "LP",
+  "row": "RW",
+  "rear-delt-fly": "RD",
+  // Note: UI uses LP for both; keeping LP here too unless you want a distinct code.
+  "leg-press": "LP",
+  "leg-curl": "LC",
+  "leg-extension": "LE",
+};
+
+function hasAll(slugs: Set<string>, group: readonly string[]) {
+  return group.every((g) => slugs.has(g));
+}
+
+function buildWorkoutTitle(slugs: Set<string>) {
+  const remaining = new Set(slugs);
+  const groups: string[] = [];
+
+  if (hasAll(remaining, GROUP_DAY_A)) {
+    groups.push("Push Day");
+    GROUP_DAY_A.forEach((g) => remaining.delete(g));
+  }
+  if (hasAll(remaining, GROUP_DAY_B)) {
+    groups.push("Pull Day");
+    GROUP_DAY_B.forEach((g) => remaining.delete(g));
+  }
+  if (hasAll(remaining, GROUP_LEG)) {
+    groups.push("Leg Day");
+    GROUP_LEG.forEach((g) => remaining.delete(g));
+  }
+
+  // Remaining items in UI order
+  const ordered = WORKOUTS.map((w) => w.slug).filter((s) => remaining.has(s));
+  const remCodes = ordered.map((s) => SHORT_LABEL[s] ?? s);
+
+  if (groups.length === 0 && remCodes.length === 0) return null;
+
+  const groupPart = groups.join(" + ");
+  const remPart = remCodes.join("/");
+
+  if (groupPart && remPart) return `${TASK_PREFIX}${groupPart} + ${remPart}`;
+  if (groupPart) return `${TASK_PREFIX}${groupPart}`;
+  return `${TASK_PREFIX}${remPart}`;
+}
+
+function keyOf(iso: string, slug: string) {
+  return `${iso}|${slug}`;
+}
+
+const DRAFT_STORAGE_KEY = "workout_planner_draft_v1";
 
 function isoFromUTCDate(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -97,11 +163,13 @@ type SessionPair = { performed_on: string; workout_slug: string };
 type PlanRow = { planned_on: string; workout_slug: string };
 
 export default function WorkoutPlannerPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [pairs, setPairs] = useState<SessionPair[]>([]);
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [draftKeys, setDraftKeys] = useState<Set<string>>(new Set());
+  const [savingAll, setSavingAll] = useState(false);
 
   const [isPhone, setIsPhone] = useState(false);
 
@@ -161,6 +229,21 @@ export default function WorkoutPlannerPage() {
     return s;
   }, [plans]);
 
+  const savedSelectablePlanSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of plans) {
+      if (!selectableDays.has(r.planned_on)) continue;
+      s.add(keyOf(r.planned_on, r.workout_slug));
+    }
+    return s;
+  }, [plans, selectableDays]);
+
+  const isDirty = useMemo(() => {
+    if (draftKeys.size !== savedSelectablePlanSet.size) return true;
+    for (const k of draftKeys) if (!savedSelectablePlanSet.has(k)) return true;
+    return false;
+  }, [draftKeys, savedSelectablePlanSet]);
+
   async function loadSessions() {
     // Try a few common table names to avoid breaking if your schema differs.
     // Prefer: workout_sessions (performed_on, workout_slug)
@@ -198,6 +281,36 @@ export default function WorkoutPlannerPage() {
       const [sess, pls] = await Promise.all([loadSessions(), loadPlans()]);
       setPairs(sess);
       setPlans(pls);
+      // Initialize draft from saved plans for today..+7 (or restore draft from localStorage)
+      const freshSaved = new Set<string>();
+      for (const r of pls) {
+        if (!selectableDays.has(r.planned_on)) continue;
+        freshSaved.add(keyOf(r.planned_on, r.workout_slug));
+      }
+      try {
+        const raw = typeof window !== "undefined" ? window.localStorage.getItem(DRAFT_STORAGE_KEY) : null;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const restored = new Set<string>();
+            for (const v of parsed) {
+              if (typeof v === "string") restored.add(v);
+            }
+            const filtered = new Set<string>();
+            for (const k of restored) {
+              const d = k.split("|")[0];
+              if (selectableDays.has(d)) filtered.add(k);
+            }
+            setDraftKeys(filtered);
+          } else {
+            setDraftKeys(new Set(freshSaved));
+          }
+        } else {
+          setDraftKeys(new Set(freshSaved));
+        }
+      } catch {
+        setDraftKeys(new Set(freshSaved));
+      }
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -211,9 +324,35 @@ export default function WorkoutPlannerPage() {
     // realtime: plans + sessions (best effort)
     const chan = supabase
       .channel("workout_planner_live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "workout_plans" }, () => void loadPlans().then(setPlans).catch(() => {}))
-      // If your sessions table isn't "workout_sessions", this doesn't hurt; it just won't fire.
-      .on("postgres_changes", { event: "*", schema: "public", table: "workout_sessions" }, () => void loadSessions().then(setPairs).catch(() => {}))
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "workout_plans" },
+        () =>
+          void loadPlans()
+            .then((p) => {
+              setPlans(p);
+              // If user hasn't started editing, keep draft in sync with saved plans
+              setDraftKeys((cur) => {
+                // Only auto-sync when draft matches prior saved state (best-effort)
+                // If user is mid-edit, don't clobber.
+                // We'll detect "dirty" by comparing here.
+                const saved = new Set<string>();
+                for (const r of p) {
+                  if (!selectableDays.has(r.planned_on)) continue;
+                  saved.add(keyOf(r.planned_on, r.workout_slug));
+                }
+                if (cur.size !== saved.size) return cur;
+                for (const k of cur) if (!saved.has(k)) return cur;
+                return new Set(saved);
+              });
+            })
+            .catch(() => {})
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "workout_sessions" },
+        () => void loadSessions().then(setPairs).catch(() => {})
+      )
       .subscribe();
 
     return () => {
@@ -222,44 +361,165 @@ export default function WorkoutPlannerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function togglePlan(iso: string, slug: string) {
-    const key = `${iso}|${slug}`;
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(Array.from(draftKeys)));
+    } catch {
+      // ignore
+    }
+  }, [draftKeys]);
+
+  function toggleDraft(iso: string, slug: string) {
+    const k = keyOf(iso, slug);
 
     // If actually logged, do nothing
-    if (doneSet.has(key)) return;
+    if (doneSet.has(k)) return;
 
-    setSavingKey(key);
+    // Only selectable window is clickable
+    if (!selectableDays.has(iso)) return;
+
+    setDraftKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }
+
+  const getUserId = useCallback(async () => {
+    const { data } = await supabase.auth.getUser();
+    return data.user?.id ?? "605f4c7b-4d2d-4f7d-b215-1461cf1a5779";
+  }, []);
+
+  const saveAll = useCallback(async () => {
     setErr(null);
+    setSavingAll(true);
 
     try {
-      if (planSet.has(key)) {
-        // delete
-        const { error } = await supabase
-          .from("workout_plans")
-          .delete()
-          .eq("planned_on", iso)
-          .eq("workout_slug", slug);
+      // 1) Sync workout_plans for selectable days
+      const desired = new Set<string>(draftKeys);
+      const existing = new Set<string>();
+      for (const r of plans) {
+        if (!selectableDays.has(r.planned_on)) continue;
+        existing.add(keyOf(r.planned_on, r.workout_slug));
+      }
 
-        if (error) throw new Error(error.message);
-      } else {
-        // insert
-        const { error } = await supabase.from("workout_plans").insert({
-          planned_on: iso,
-          workout_slug: slug,
-        });
+      const toInsert: { planned_on: string; workout_slug: string }[] = [];
+      const toDelete: { planned_on: string; workout_slug: string }[] = [];
 
+      for (const k of desired) {
+        if (!existing.has(k)) {
+          const [planned_on, workout_slug] = k.split("|");
+          if (planned_on && workout_slug) toInsert.push({ planned_on, workout_slug });
+        }
+      }
+      for (const k of existing) {
+        if (!desired.has(k)) {
+          const [planned_on, workout_slug] = k.split("|");
+          if (planned_on && workout_slug) toDelete.push({ planned_on, workout_slug });
+        }
+      }
+
+      if (toInsert.length) {
+        const { error } = await supabase.from("workout_plans").insert(toInsert);
         if (error) throw new Error(error.message);
       }
 
-      // optimistic reload (realtime may lag)
-      const pls = await loadPlans();
-      setPlans(pls);
+      // Deletes must be per-row to avoid cross-product .in() issues
+      for (const row of toDelete) {
+        const { error } = await supabase
+          .from("workout_plans")
+          .delete()
+          .eq("planned_on", row.planned_on)
+          .eq("workout_slug", row.workout_slug);
+        if (error) throw new Error(error.message);
+      }
+
+      // Refresh plans after sync
+      const freshPlans = await loadPlans();
+      setPlans(freshPlans);
+
+      // 2) Create/update/delete one task per day (today..+7)
+      const userId = await getUserId();
+
+      // Build per-day slug sets
+      const perDay = new Map<string, Set<string>>();
+      for (const d of selectableDays) perDay.set(d, new Set());
+      for (const k of desired) {
+        const [d, slug] = k.split("|");
+        if (!d || !slug) continue;
+        if (!selectableDays.has(d)) continue;
+        perDay.get(d)?.add(slug);
+      }
+
+      // Fetch existing workout tasks for these days
+      const dayList = Array.from(selectableDays);
+      const { data: existingTasks, error: taskLoadErr } = await supabase
+        .from("tasks")
+        .select("id,title,status,scheduled_for")
+        .in("scheduled_for", dayList)
+        .ilike("title", `${TASK_PREFIX}%`);
+
+      if (taskLoadErr) throw new Error(taskLoadErr.message);
+
+      const byDay = new Map<string, any>();
+      for (const t of existingTasks ?? []) {
+        if (t?.scheduled_for && !byDay.has(t.scheduled_for)) byDay.set(t.scheduled_for, t);
+      }
+
+      for (const day of dayList) {
+        const slugs = perDay.get(day) ?? new Set<string>();
+        const title = buildWorkoutTitle(slugs);
+        const existingTask = byDay.get(day);
+
+        if (!title) {
+          if (existingTask?.id) {
+            const { error } = await supabase.from("tasks").delete().eq("id", existingTask.id);
+            if (error) throw new Error(error.message);
+          }
+          continue;
+        }
+
+        if (existingTask?.id) {
+          const { error } = await supabase
+            .from("tasks")
+            .update({ title })
+            .eq("id", existingTask.id);
+          if (error) throw new Error(error.message);
+        } else {
+          // Insert new
+          const payload: any = {
+            title,
+            status: "open",
+            scheduled_for: day,
+          };
+          // Include user_id if your schema requires it.
+          payload.user_id = userId;
+
+          const { error } = await supabase.from("tasks").insert(payload);
+          if (error) throw new Error(error.message);
+        }
+      }
+
+      // Clear draft cache and re-sync draft to saved
+      try {
+        if (typeof window !== "undefined") window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+      const freshSaved = new Set<string>();
+      for (const r of freshPlans) {
+        if (!selectableDays.has(r.planned_on)) continue;
+        freshSaved.add(keyOf(r.planned_on, r.workout_slug));
+      }
+      setDraftKeys(new Set(freshSaved));
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
-      setSavingKey(null);
+      setSavingAll(false);
     }
-  }
+  }, [draftKeys, plans, selectableDays, getUserId]);
 
   const MatrixGrid = (days: string[]) => (
     <div className="mt-1">
@@ -291,10 +551,8 @@ export default function WorkoutPlannerPage() {
 
                 const k = `${iso}|${c.slug}`;
                 const logged = doneSet.has(k);
-                const planned = planSet.has(k);
-
-                const filled = logged || planned;
-                const isSaving = savingKey === k;
+                const planned = selectableDays.has(iso) ? draftKeys.has(k) : planSet.has(k);
+                const isSaving = false;
 
                 const cls = logged
                   ? "bg-emerald-500/80 border-emerald-400/60"
@@ -308,7 +566,7 @@ export default function WorkoutPlannerPage() {
                   <button
                     key={k}
                     type="button"
-                    onClick={() => clickable && void togglePlan(iso, c.slug)}
+                    onClick={() => clickable && toggleDraft(iso, c.slug)}
                     disabled={!clickable || isSaving}
                     className={[
                       "h-[22px] border rounded-sm",
@@ -351,8 +609,31 @@ export default function WorkoutPlannerPage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-2 sm:px-4 py-8 text-white">
       <div className="mx-auto w-full max-w-md md:max-w-4xl">
-        <div className="relative">
+        <div className="relative flex items-center justify-center">
+          <button
+            type="button"
+            onClick={() => router.push("/")}
+            className="absolute left-0 rounded-lg px-3 py-1.5 text-sm font-semibold bg-white/10 text-white hover:bg-white/15"
+          >
+            Home
+          </button>
           <h1 className="text-3xl font-semibold tracking-tight text-center">Workout Planner</h1>
+          <div className="absolute right-0 flex items-center gap-2">
+            {isDirty ? <span className="text-[11px] text-white/50 hidden sm:inline">Unsaved</span> : null}
+            <button
+              type="button"
+              onClick={() => void saveAll()}
+              disabled={!isDirty || savingAll || loading}
+              className={[
+                "rounded-lg px-3 py-1.5 text-sm font-semibold",
+                !isDirty || savingAll || loading
+                  ? "bg-white/10 text-white/40 cursor-not-allowed"
+                  : "bg-white text-black hover:bg-white/90",
+              ].join(" ")}
+            >
+              {savingAll ? "Saving…" : "Save"}
+            </button>
+          </div>
         </div>
 
         {err ? (
