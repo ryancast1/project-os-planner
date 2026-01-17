@@ -88,6 +88,11 @@ function isMondayISO(iso: string) {
   return utcDateFromISO(iso).getUTCDay() === 1; // Mon
 }
 
+function dowLetterISO(iso: string) {
+  const d = utcDateFromISO(iso).getUTCDay(); // 0=Sun
+  return ["S", "M", "T", "W", "T", "F", "S"][d] ?? "";
+}
+
 type SessionPair = { performed_on: string; workout_slug: string };
 type PlanRow = { planned_on: string; workout_slug: string };
 
@@ -102,9 +107,12 @@ export default function WorkoutPlannerPage() {
   const DATE_COL = 42;
   const CELL = 23;
   const SPACER = 8;
-  const matrixCols = MATRIX_COLS.map((c) =>
-    c.kind === "date" ? `${DATE_COL}px` : c.kind === "spacer" ? `${SPACER}px` : `${CELL}px`
-  ).join(" ");
+  const DOW_COL = 18;
+  const matrixCols = (
+    MATRIX_COLS.map((c) =>
+      c.kind === "date" ? `${DATE_COL}px` : c.kind === "spacer" ? `${SPACER}px` : `${CELL}px`
+    ).join(" ") + ` ${DOW_COL}px`
+  );
 
   const todayISO = isoTodayInTZ(DASH_TZ);
 
@@ -313,6 +321,14 @@ export default function WorkoutPlannerPage() {
                   />
                 );
               })}
+              <div
+                className={[
+                  "h-[22px] flex items-center justify-center pl-[2px] text-[11px]",
+                  iso === todayISO ? "text-white font-semibold" : "text-white/35",
+                ].join(" ")}
+              >
+                {dowLetterISO(iso)}
+              </div>
             </div>
             {isMonday ? <div className="h-3" /> : null}
           </div>
@@ -361,6 +377,7 @@ export default function WorkoutPlannerPage() {
                 </div>
               );
             })}
+            <div className="h-[22px] pl-[2px]" />
           </div>
 
           {loading ? (

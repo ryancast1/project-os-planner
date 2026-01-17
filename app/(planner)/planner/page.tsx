@@ -1351,7 +1351,13 @@ export default function PlannerPage() {
   const [draftByDay, setDraftByDay] = useState<Record<string, Record<ItemType, string>>>({});
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
 
-  const [drawerWindow, setDrawerWindow] = useState<DrawerWindow>("thisWeek");
+  const PARKING_TAB_KEY = "planner.parkingTab";
+  const [drawerWindow, setDrawerWindow] = useState<DrawerWindow>(() => {
+    if (typeof window === "undefined") return "thisWeek";
+    const raw = window.localStorage.getItem(PARKING_TAB_KEY);
+    const allowed: DrawerWindow[] = ["thisWeek", "thisWeekend", "nextWeek", "nextWeekend", "open"];
+    return allowed.includes(raw as DrawerWindow) ? (raw as DrawerWindow) : "thisWeek";
+  });
   const [parkingOpen, setParkingOpen] = useState(true);
   const [drawerDraft, setDrawerDraft] = useState("");
   const [drawerType, setDrawerType] = useState<ItemType>("task");
@@ -1361,6 +1367,11 @@ export default function PlannerPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editType, setEditType] = useState<ItemType>("task");
   const [editItem, setEditItem] = useState<Task | Plan | Focus | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(PARKING_TAB_KEY, drawerWindow);
+  }, [drawerWindow]);
 
   // Responsive flag for md (768px+) and up
   const [isMdUp, setIsMdUp] = useState(false);

@@ -25,7 +25,7 @@ export default function PlannerTabs() {
       )}
       aria-label="Planner tabs"
     >
-      <div className="mx-auto grid max-w-6xl grid-cols-[0.85fr_12px_1fr_1fr_1fr_1fr] items-stretch gap-1 px-2 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
+      <div className="mx-auto grid max-w-6xl grid-cols-[0.85fr_12px_1fr_1fr_1fr_1fr] items-stretch gap-1 px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
         {/* Home: distinct button */}
         {(() => {
           const active = pathname === homeTab.href;
@@ -33,7 +33,7 @@ export default function PlannerTabs() {
             <Link
               href={homeTab.href}
               className={clsx(
-                "flex flex-col items-center justify-center min-h-[56px] rounded-xl px-2",
+                "w-full h-full flex flex-col items-center justify-center min-h-[56px] rounded-lg px-2",
                 "border",
                 active
                   ? "bg-neutral-50 text-neutral-950 border-neutral-50"

@@ -408,10 +408,12 @@ export default function CocktailChatterPage() {
                           <button
                             type="button"
                             onClick={() => startEdit(e)}
-                            className="mt-1 w-full text-left whitespace-pre-wrap break-words rounded-xl px-1 py-1 text-[15px] leading-6 text-neutral-100 hover:bg-neutral-950/40"
+                            className="mt-1 w-full text-left rounded-xl px-1 py-1 text-[15px] leading-6 text-neutral-100 hover:bg-neutral-950/40"
                             title="Click to edit"
                           >
-                            {linkify(e.note)}
+                            <span className="block truncate">
+                              {e.note?.split("\n")[0] ?? ""}
+                            </span>
                           </button>
                         )}
                       </div>
