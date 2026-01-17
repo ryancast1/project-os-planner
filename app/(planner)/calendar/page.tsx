@@ -391,7 +391,7 @@ export default function CalendarPage() {
         <div className="mt-4 space-y-4">
           {dayFocus.length > 0 ? (
             <div>
-              <div className="mb-2 text-xs text-neutral-400">Focus</div>
+              <div className="mb-2 text-xs text-neutral-400">Intentions</div>
               <div className="space-y-1">
                 {dayFocus.map((f) => (
                   <div key={f.id} className="truncate italic text-sm text-neutral-200">

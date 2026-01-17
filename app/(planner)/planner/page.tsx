@@ -559,7 +559,7 @@ function FocusFloat({
 
   return (
     <RowShell onEdit={() => onEdit(focus)} onTap={() => setShowMove((s) => !s)}>
-      <div className="min-w-0 flex-1 italic truncate text-sm text-neutral-200/90">{focus.title}</div>
+      <div className="min-w-0 flex-1 truncate text-sm text-neutral-200">{focus.title}</div>
       {showMove && (
         <div className="opacity-80">
           <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
@@ -691,6 +691,138 @@ function FocusBand({
     </div>
   );
 }
+// --- PlanLine and PlanBand for italic Plan band display in day cards ---
+function PlanLine({
+  plan,
+  moveTargets,
+  onMove,
+  onEdit,
+  compact,
+}: {
+  plan: Plan;
+  moveTargets: MoveTarget[];
+  onMove: (id: string, targetValue: string) => void;
+  onEdit: (p: Plan) => void;
+  compact?: boolean;
+}) {
+  const [showMove, setShowMove] = useState(false);
+  const timerRef = useRef<number | null>(null);
+  const startRef = useRef<{ x: number; y: number } | null>(null);
+
+  const clear = () => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    startRef.current = null;
+  };
+
+  const isInteractiveTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest("button,select,input,textarea,a,label"));
+  };
+
+  const start = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Long-press edit ONLY on touch. Desktop uses right-click.
+    if (e.pointerType !== "touch") return;
+    if (isInteractiveTarget(e.target)) return;
+
+    clear();
+    startRef.current = { x: e.clientX, y: e.clientY };
+
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      startRef.current = null;
+      onEdit(plan);
+    }, 650);
+  };
+
+  const maybeCancelOnMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "touch") return;
+    if (!timerRef.current) return;
+    if (!startRef.current) return;
+
+    const dx = e.clientX - startRef.current.x;
+    const dy = e.clientY - startRef.current.y;
+    if (dx * dx + dy * dy > 10 * 10) {
+      clear();
+    }
+  };
+
+  return (
+    <div
+      className={clsx(
+        "flex items-start rounded-lg hover:bg-neutral-950/30",
+        compact ? "gap-1.5 px-2 py-1.5" : "gap-2 px-3 py-2"
+      )}
+      onClick={(e) => {
+        if (isInteractiveTarget(e.target)) return;
+        setShowMove((s) => !s);
+      }}
+      onPointerDown={start}
+      onPointerMove={maybeCancelOnMove}
+      onPointerUp={clear}
+      onPointerCancel={clear}
+      onPointerLeave={clear}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onEdit(plan);
+      }}
+      style={{ touchAction: "manipulation" }}
+    >
+      <div className={clsx("min-w-0 flex-1 italic text-neutral-200/90", compact ? "text-xs" : "text-sm")}>
+        <div className="truncate">
+          {plan.title}
+          <TimePill startsAt={plan.starts_at} endsAt={plan.ends_at} />
+        </div>
+      </div>
+
+      {showMove && (
+        <div className="shrink-0 opacity-85">
+          <MoveSelect
+            compact={compact}
+            value={locationValueFor(plan)}
+            onChange={(v) => onMove(plan.id, v)}
+            moveTargets={moveTargets}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanBand({
+  items,
+  moveTargets,
+  onMove,
+  onEdit,
+  compact,
+}: {
+  items: Plan[];
+  moveTargets: MoveTarget[];
+  onMove: (id: string, targetValue: string) => void;
+  onEdit: (p: Plan) => void;
+  compact?: boolean;
+}) {
+  if (!items || items.length === 0) return null;
+
+  return (
+    <div className={clsx(compact ? "mt-2" : "mt-3")}>
+      <div className={clsx(compact ? "space-y-0.5" : "space-y-1")}>
+        {items.map((p) => (
+          <PlanLine
+            key={p.id}
+            plan={p}
+            moveTargets={moveTargets}
+            onMove={onMove}
+            onEdit={onEdit}
+            compact={compact}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 function EditSheet({
   open,
   item,
@@ -791,7 +923,7 @@ function EditSheet({
                 {([
                   ["task", "Task"],
                   ["plan", "Plan"],
-                  ["focus", "Focus"],
+                  ["focus", "Intention"],
                 ] as const).map(([k, label]) => (
                   <button
                     key={k}
@@ -1051,7 +1183,7 @@ function AddSheet({
                 {([
                   ["task", "Task"],
                   ["plan", "Plan"],
-                  ["focus", "Focus"],
+                  ["focus", "Intention"],
                 ] as const).map(([k, label]) => (
                   <button
                     key={k}
@@ -2147,7 +2279,7 @@ const { error } = await supabase
                         {([
                           ["task", "Task"],
                           ["plan", "Plan"],
-                          ["focus", "Focus"],
+                          ["focus", "Intention"],
                         ] as const).map(([k, label]) => (
                           <button
                             key={k}
@@ -2208,24 +2340,34 @@ const { error } = await supabase
                     </div>
                   </div>
 
-                  <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                  {/* Plans (italic, unboxed) */}
+                  {drawerLists[drawerWindow].plan.length > 0 ? (
+                    <div className="mt-3 space-y-1">
+                      {drawerLists[drawerWindow].plan.map((p) => (
+                        <PlanLine
+                          key={p.id}
+                          compact
+                          plan={p}
+                          moveTargets={moveTargets}
+                          onMove={(id, v) => moveItem("plan", id, v)}
+                          onEdit={(x) => openEdit("plan", x)}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {/* Focuses + Tasks (boxed) */}
+                  <div className={clsx(
+                    "mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20",
+                    drawerLists[drawerWindow].plan.length > 0 ? "" : ""
+                  )}>
                     {drawerLists[drawerWindow].focus.map((f) => (
                       <FocusFloat
                         key={f.id}
                         focus={f}
                         moveTargets={moveTargets}
                         onMove={(id, v) => moveItem("focus", id, v)}
-                        onEdit={(f) => openEdit("focus", f)}
-                      />
-                    ))}
-
-                    {drawerLists[drawerWindow].plan.map((p) => (
-                      <PlanRow
-                        key={p.id}
-                        plan={p}
-                        moveTargets={moveTargets}
-                        onMove={(id, v) => moveItem("plan", id, v)}
-                        onEdit={(p) => openEdit("plan", p)}
+                        onEdit={(x) => openEdit("focus", x)}
                       />
                     ))}
 
@@ -2236,14 +2378,14 @@ const { error } = await supabase
                         moveTargets={moveTargets}
                         onMove={(id, v) => moveItem("task", id, v)}
                         onToggleDone={toggleTaskDone}
-                        onEdit={(t) => openEdit("task", t)}
+                        onEdit={(x) => openEdit("task", x)}
                       />
                     ))}
 
-                    {drawerLists[drawerWindow].focus.length +
-                      drawerLists[drawerWindow].plan.length +
-                      drawerLists[drawerWindow].task.length ===
-                      0 && <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>}
+                    {drawerLists[drawerWindow].focus.length + drawerLists[drawerWindow].task.length === 0 &&
+                      drawerLists[drawerWindow].plan.length === 0 && (
+                        <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>
+                      )}
                   </div>
                 </>
               )}
@@ -2327,7 +2469,7 @@ const { error } = await supabase
                 {([
                   ["task", "Task"],
                   ["plan", "Plan"],
-                  ["focus", "Focus"],
+                  ["focus", "Intention"],
                 ] as const).map(([k, label]) => (
                   <button
                     key={k}
@@ -2398,22 +2540,28 @@ const { error } = await supabase
               </div>
             </div>
 
-            {/* Focus band */}
-            <FocusBand
-              items={focusesByDay[todayIso] ?? []}
+            {/* Plans */}
+            <PlanBand
+              items={plansByDay[todayIso] ?? []}
               moveTargets={moveTargets}
-              onMove={(id, v) => moveItem("focus", id, v)}
-              onEdit={(f) => openEdit("focus", f)}
+              onMove={(id, v) => moveItem("plan", id, v)}
+              onEdit={(p) => openEdit("plan", p)}
             />
 
-            {/* Plans */}
-            <div className="mt-4">
-              <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                {(plansByDay[todayIso] ?? []).map((p) => (
-                  <PlanRow key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
+            {/* Focuses */}
+            {(focusesByDay[todayIso] ?? []).length ? (
+              <div className={clsx("mt-3", "overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20")}>
+                {(focusesByDay[todayIso] ?? []).map((f) => (
+                  <FocusRow
+                    key={f.id}
+                    focus={f}
+                    moveTargets={moveTargets}
+                    onMove={(id, v) => moveItem("focus", id, v)}
+                    onEdit={(x) => openEdit("focus", x)}
+                  />
                 ))}
               </div>
-            </div>
+            ) : null}
 
             {/* Tasks */}
             <div className="mt-4">
@@ -2486,7 +2634,7 @@ const { error } = await supabase
                           {([
                             ["task", "Task"],
                             ["plan", "Plan"],
-                            ["focus", "Focus"],
+                            ["focus", "Intention"],
                           ] as const).map(([k, label]) => (
                             <button
                               key={k}
@@ -2556,22 +2704,35 @@ const { error } = await supabase
                         </div>
                       </div>
 
-                      {/* Focus band */}
-                      <FocusBand
+                      {/* Plans */}
+                      <PlanBand
                         compact={isMdUp}
-                        items={dayFocus}
+                        items={dayPlans}
                         moveTargets={moveTargets}
-                        onMove={(id, v) => moveItem("focus", id, v)}
-                        onEdit={(f) => openEdit("focus", f)}
+                        onMove={(id, v) => moveItem("plan", id, v)}
+                        onEdit={(p) => openEdit("plan", p)}
                       />
 
-                      <div className="mt-4">
-                        <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                          {dayPlans.map((p) => (
-                            <PlanRow compact={isMdUp} key={p.id} plan={p} moveTargets={moveTargets} onMove={(id, v) => moveItem("plan", id, v)} onEdit={(p) => openEdit("plan", p)} />
+                      {/* Focuses */}
+                      {dayFocus.length ? (
+                        <div
+                          className={clsx(
+                            isMdUp ? "mt-2" : "mt-3",
+                            "overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20"
+                          )}
+                        >
+                          {dayFocus.map((f) => (
+                            <FocusRow
+                              compact={isMdUp}
+                              key={f.id}
+                              focus={f}
+                              moveTargets={moveTargets}
+                              onMove={(id, v) => moveItem("focus", id, v)}
+                              onEdit={(x) => openEdit("focus", x)}
+                            />
                           ))}
                         </div>
-                      </div>
+                      ) : null}
 
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
@@ -2583,26 +2744,33 @@ const { error } = await supabase
                     </>
                   ) : (
                     <>
-                      <FocusBand
+                      {/* Plans */}
+                      <PlanBand
                         compact
-                        items={dayFocus}
+                        items={dayPlans}
                         moveTargets={moveTargets}
-                        onMove={(id, v) => moveItem("focus", id, v)}
-                        onEdit={(f) => openEdit("focus", f)}
+                        onMove={(id, v) => moveItem("plan", id, v)}
+                        onEdit={(p) => openEdit("plan", p)}
                       />
 
-                      <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                        {dayPlans.map((p) => (
-                          <PlanRow
-                            compact
-                            key={p.id}
-                            plan={p}
-                            moveTargets={moveTargets}
-                            onMove={(id, v) => moveItem("plan", id, v)}
-                            onEdit={(p) => openEdit("plan", p)}
-                          />
-                        ))}
+                      {/* Focuses */}
+                      {dayFocus.length ? (
+                        <div className={clsx("mt-3", "overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20")}>
+                          {dayFocus.map((f) => (
+                            <FocusRow
+                              compact
+                              key={f.id}
+                              focus={f}
+                              moveTargets={moveTargets}
+                              onMove={(id, v) => moveItem("focus", id, v)}
+                              onEdit={(x) => openEdit("focus", x)}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
 
+                      {/* Tasks */}
+                      <div className={clsx("mt-3", "overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20")}>
                         {dayTasks.map((t) => (
                           <TaskRow
                             compact
