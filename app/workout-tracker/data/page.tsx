@@ -28,6 +28,8 @@ const WORKOUTS: { slug: string; label: string }[] = [
 
   { slug: "leg-press", label: "Leg Press" },
   { slug: "leg-curl", label: "Leg Curl" },
+  { slug: "leg-extension", label: "Leg Extension" },
+
 ];
 
 function labelForSlug(slug: string) {

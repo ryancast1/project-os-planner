@@ -1,34 +1,45 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export default function HomePage() {
-  const tiles = [
-    { href: "/planner", title: "Planner" },
-    { href: "/workout-tracker", title: "Workout Tracker" },
-    { href: "/movie-tracker", title: "Movie Tracker" },
-    { href: "/trich", title: "Trich Tracker" },
+  const iconTiles: { href: string; title: string; icon: string }[] = [
+    { href: "/planner", title: "Planner", icon: "/icons/planner.png" },
+    { href: "/workout-tracker", title: "Workout Tracker", icon: "/icons/workout.png" },
+    { href: "/movie-tracker", title: "Movie Tracker", icon: "/icons/movie.png" },
+    { href: "/trich", title: "Trich Tracker", icon: "/icons/trich.png" },
   ];
 
   return (
     <main className="min-h-dvh p-6">
       <div className="mx-auto max-w-md">
-        <h1 className="text-3xl font-semibold tracking-tight">Project OS</h1>
-        <p className="mt-2 text-sm text-neutral-600">
-          Personal planner + trackers.
-        </p>
+        <h1 className="text-3xl font-semibold tracking-tight text-center">RyanOS</h1>
 
-        <div className="mt-6 grid gap-3">
-          {tiles.map((t) => (
-            <Link
-              key={t.href}
-              href={t.href}
-              className="grid h-20 place-items-center rounded-3xl border border-neutral-200 bg-neutral-900 text-white shadow-sm transition active:scale-[0.99]"
-            >
-              <div className="text-xl font-semibold tracking-tight">{t.title}</div>
-            </Link>
-          ))}
+        <div className="mt-6">
+          {/* Modules (2x2 icon grid) */}
+          <div className="grid grid-cols-2 gap-x-4 gap-y-6 px-4 justify-items-center">
+            {iconTiles.map((t) => (
+              <Link
+                key={t.href}
+                href={t.href}
+                className="relative w-36 aspect-square overflow-hidden rounded-3xl bg-neutral-900 shadow-sm transition active:scale-[0.99]"
+                aria-label={t.title}
+                title={t.title}
+              >
+                <span className="sr-only">{t.title}</span>
+                <div className="absolute inset-0 p-3">
+                  <Image
+                    src={t.icon}
+                    alt=""
+                    fill
+                    sizes="(max-width: 768px) 50vw, 240px"
+                    className="object-contain"
+                    priority
+                  />
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
-
-        <div className="mt-8 text-xs text-neutral-500">v0.1</div>
       </div>
     </main>
   );
