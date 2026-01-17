@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getLastSession, saveSession } from "@/lib/db";
 
 
@@ -41,6 +42,8 @@ export default function PushUpsPage() {
   const [lastCompact, setLastCompact] = useState<string | null>(null);
   const [lastDate, setLastDate] = useState<string | null>(null);
   const [lastNotes, setLastNotes] = useState<string | null>(null);
+
+  const router = useRouter();
 
   // Load last logged session + draft on first mount
   useEffect(() => {
@@ -136,6 +139,9 @@ await saveSession({
     setNotes("");
 
     setStatus("saved");
+
+    // After saving, go back to the workout tracker home
+    router.push("/workout-tracker");
   }
 
   return (

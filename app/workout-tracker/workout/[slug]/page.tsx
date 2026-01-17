@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { getLastSession, saveSession } from "@/lib/db";
 import RestTimer from "@/components/RestTimer";
 
@@ -59,6 +59,7 @@ function titleizeSlug(slug: string) {
 
 export default function WorkoutPage() {
   const params = useParams();
+  const router = useRouter();
   const slug = params?.slug;
   const slugStr =
     typeof slug === "string" ? slug : Array.isArray(slug) ? slug[0] : "";
@@ -286,6 +287,9 @@ const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idl
 
   localStorage.removeItem(draftKey);
   setDraft(emptyDraft);
+
+  // After saving, go back to the workout tracker home
+  router.push("/workout-tracker");
 } catch (e: any) {
   console.error("SAVE FAILED:", e);
   setStatus("error");
@@ -423,4 +427,3 @@ const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idl
     </main>
   );
 }
-

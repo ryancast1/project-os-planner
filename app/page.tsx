@@ -6,7 +6,13 @@ export default function HomePage() {
     { href: "/planner", title: "Planner", icon: "/icons/planner.png" },
     { href: "/workout-tracker", title: "Workout Tracker", icon: "/icons/workout.png" },
     { href: "/movie-tracker", title: "Movie Tracker", icon: "/icons/movie.png" },
+
+    { href: "/cc", title: "Cocktail Chatter", icon: "/icons/cc.png" },
+
+    // Row 3: Sick (left) + Trich (right)
     { href: "/trich", title: "Trich Tracker", icon: "/icons/trich.png" },
+        { href: "/sick", title: "Sick Log", icon: "/icons/sick.png" },
+
   ];
 
   return (

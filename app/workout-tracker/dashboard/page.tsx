@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { getLastSession, listSessionsSince, listWeightSeries } from "@/lib/db";
 
 const START_ISO = "2026-01-01";
@@ -419,7 +420,15 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen md:h-screen md:overflow-hidden bg-gradient-to-b from-black to-zinc-950 px-4 py-8 text-white">
       <div className="mx-auto w-full max-w-md md:max-w-7xl md:h-full md:flex md:flex-col">
-        <h1 className="text-3xl font-semibold tracking-tight text-center">Dashboard</h1>
+        <div className="relative">
+          <h1 className="text-3xl font-semibold tracking-tight text-center">Dashboard</h1>
+          <Link
+            href="/workout-tracker/dashboard/planner"
+            className="absolute right-0 top-1/2 -translate-y-1/2 rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-sm font-semibold text-white/85 hover:bg-white/10"
+          >
+            Planner
+          </Link>
+        </div>
 
         {loading ? (
           <div className="mt-8 text-center text-white/60">Loading…</div>

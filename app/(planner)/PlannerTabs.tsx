@@ -15,6 +15,8 @@ export default function PlannerTabs() {
     { href: "/calendar", label: "Calendar" },
   ] as const;
 
+  const [homeTab, ...otherTabs] = tabs;
+
   return (
     <nav
       className={clsx(
@@ -23,8 +25,34 @@ export default function PlannerTabs() {
       )}
       aria-label="Planner tabs"
     >
-            <div className="mx-auto grid max-w-6xl grid-cols-[0.8fr_1fr_1fr_1fr_1fr] items-stretch gap-1 px-2 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
-        {tabs.map((t) => {
+      <div className="mx-auto grid max-w-6xl grid-cols-[0.85fr_12px_1fr_1fr_1fr_1fr] items-stretch gap-1 px-2 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
+        {/* Home: distinct button */}
+        {(() => {
+          const active = pathname === homeTab.href;
+          return (
+            <Link
+              href={homeTab.href}
+              className={clsx(
+                "flex flex-col items-center justify-center min-h-[56px] rounded-xl px-2",
+                "border",
+                active
+                  ? "bg-neutral-50 text-neutral-950 border-neutral-50"
+                  : "bg-neutral-50/10 text-neutral-100 border-neutral-700"
+              )}
+              aria-current={active ? "page" : undefined}
+            >
+              <span className="text-[13px] font-semibold">{homeTab.label}</span>
+            </Link>
+          );
+        })()}
+
+        {/* Separator */}
+        <div className="flex items-center justify-center">
+          <div className="h-8 w-px bg-neutral-800/80" />
+        </div>
+
+        {/* Other tabs */}
+        {otherTabs.map((t) => {
           const active = pathname === t.href;
           return (
             <Link
