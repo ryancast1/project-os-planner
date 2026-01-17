@@ -103,11 +103,20 @@ export default function WorkoutPlannerPage() {
   const [err, setErr] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
-  // Matrix sizing (must match Dashboard)
-  const DATE_COL = 42;
+  const [isPhone, setIsPhone] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsPhone(window.innerWidth <= 430);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  // Matrix sizing (slightly narrower on iPhone so the DOW letters don't touch the right border)
+  const DATE_COL = isPhone ? 36 : 42;
   const CELL = 23;
-  const SPACER = 8;
-  const DOW_COL = 18;
+  const SPACER = isPhone ? 6 : 8;
+  const DOW_COL = isPhone ? 20 : 18;
   const matrixCols = (
     MATRIX_COLS.map((c) =>
       c.kind === "date" ? `${DATE_COL}px` : c.kind === "spacer" ? `${SPACER}px` : `${CELL}px`
@@ -340,7 +349,7 @@ export default function WorkoutPlannerPage() {
   );
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-4 py-8 text-white">
+    <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-2 sm:px-4 py-8 text-white">
       <div className="mx-auto w-full max-w-md md:max-w-4xl">
         <div className="relative">
           <h1 className="text-3xl font-semibold tracking-tight text-center">Workout Planner</h1>
@@ -352,7 +361,7 @@ export default function WorkoutPlannerPage() {
           </div>
         ) : null}
 
-        <section className="mt-6 w-full md:w-fit mx-auto overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3">
+        <section className="mt-6 w-full md:w-fit mx-auto overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-2 sm:p-3">
           {/* Header row */}
           <div className="grid gap-0" style={{ gridTemplateColumns: matrixCols }}>
             {MATRIX_COLS.map((c, i) => {

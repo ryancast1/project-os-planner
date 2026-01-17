@@ -26,22 +26,25 @@ export default function PlannerTabs() {
       aria-label="Planner tabs"
     >
       <div className="mx-auto grid max-w-6xl grid-cols-[0.85fr_12px_1fr_1fr_1fr_1fr] items-stretch gap-1 px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
-        {/* Home: distinct button */}
+        {/* Home */}
         {(() => {
           const active = pathname === homeTab.href;
           return (
             <Link
               href={homeTab.href}
               className={clsx(
-                "w-full h-full flex flex-col items-center justify-center min-h-[56px] rounded-lg px-2",
-                "border",
-                active
-                  ? "bg-neutral-50 text-neutral-950 border-neutral-50"
-                  : "bg-neutral-50/10 text-neutral-100 border-neutral-700"
+                "flex flex-col items-center justify-center py-4 min-h-[56px] rounded-xl",
+                active ? "text-neutral-50" : "text-neutral-400"
               )}
               aria-current={active ? "page" : undefined}
             >
               <span className="text-[13px] font-semibold">{homeTab.label}</span>
+              <span
+                className={clsx(
+                  "mt-1 h-0.5 w-6 rounded-full",
+                  active ? "bg-neutral-50" : "bg-transparent"
+                )}
+              />
             </Link>
           );
         })()}
