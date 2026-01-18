@@ -44,6 +44,8 @@ type Focus = {
   scheduled_for: string | null; // YYYY-MM-DD
   window_kind: WindowKind | null;
   window_start: string | null; // YYYY-MM-DD
+  content_category?: string | null; // cook/watch/listen/read (movies handled separately)
+
   created_at: string;
 };
 
@@ -66,13 +68,21 @@ type ItemType = "task" | "plan" | "focus";
 
 type DrawerWindow = "thisWeek" | "thisWeekend" | "nextWeek" | "nextWeekend" | "open";
 
-type ContentTab = "cook" | "watch" | "movies" | "listen" | "read";
+type ContentTab = "cook" | "watch" | "movies" | "city" | "listen" | "read"| "listen" ;
 
 type ContentItem = {
   id: string;
   text: string;
   created_at: string; // ISO
 };
+
+
+type MovieTrackerItem = {
+  id: string;
+  title: string;
+  priority: number | null;
+};
+
 
 type MoveTarget = { label: string; value: string; group: "days" | "parking" };
 
@@ -1369,9 +1379,10 @@ export default function PlannerPage() {
   const [contentTab, setContentTab] = useState<ContentTab>(() => {
     if (typeof window === "undefined") return "cook";
     const raw = window.localStorage.getItem(CONTENT_TAB_KEY);
-    const allowed: ContentTab[] = ["cook", "watch", "movies", "listen", "read"];
+    const allowed: ContentTab[] = ["cook", "watch", "movies", "listen", "city", "read"];
     return allowed.includes(raw as ContentTab) ? (raw as ContentTab) : "cook";
   });
+const [movieItems, setMovieItems] = useState<MovieTrackerItem[]>([]);
 
   const [contentOpen, setContentOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
@@ -1384,10 +1395,10 @@ export default function PlannerPage() {
 
   const [contentItemsByTab, setContentItemsByTab] = useState<Record<ContentTab, ContentItem[]>>(() => {
     if (typeof window === "undefined") {
-      return { cook: [], watch: [], movies: [], listen: [], read: [] };
+      return { cook: [], watch: [], movies: [], listen: [], read: [], city: [] };
     }
-    const tabs: ContentTab[] = ["cook", "watch", "movies", "listen", "read"];
-    const out: Record<ContentTab, ContentItem[]> = { cook: [], watch: [], movies: [], listen: [], read: [] };
+    const tabs: ContentTab[] = ["cook", "watch", "movies", "listen", "read", "city"];
+    const out: Record<ContentTab, ContentItem[]> = { cook: [], watch: [], movies: [], listen: [], read: [], city: [] };
     for (const t of tabs) {
       try {
         const raw = window.localStorage.getItem(`${CONTENT_ITEMS_KEY_PREFIX}${t}`);
@@ -1400,6 +1411,37 @@ export default function PlannerPage() {
   });
 
   const [contentDraft, setContentDraft] = useState("");
+
+  const contentFocusesByTab = useMemo(() => {
+  const out: Record<ContentTab, Focus[]> = {
+    cook: [],
+    watch: [],
+    listen: [],
+    read: [],
+    movies: [],
+    city: [],
+  };
+
+  for (const f of focuses) {
+
+    
+    
+    const cat = (f as any).content_category as ContentTab | null | undefined;
+    
+    if (!cat) continue;
+    if (cat === "movies") continue; // movies comes from movie_tracker
+    if (f.scheduled_for) continue;  // only items not placed on a day
+    if (f.window_kind || f.window_start) continue; // only truly unplaced
+    if (out[cat]) out[cat].push(f);
+  }
+
+  (["cook", "watch", "listen", "read", "city"] as ContentTab[]).forEach((k) => {
+    out[k].sort((a, b) => b.created_at.localeCompare(a.created_at)); // newest first
+  });
+
+  return out;
+}, [focuses]);
+
 
   function handleContentTabClick(next: ContentTab) {
   // Tap the active tab => toggle open/closed
@@ -1458,7 +1500,7 @@ export default function PlannerPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const tabs: ContentTab[] = ["cook", "watch", "movies", "listen", "read"];
+    const tabs: ContentTab[] = ["cook", "watch", "movies", "listen", "read", "city"];
     for (const t of tabs) {
       try {
         window.localStorage.setItem(`${CONTENT_ITEMS_KEY_PREFIX}${t}`, JSON.stringify(contentItemsByTab[t] ?? []));
@@ -1515,8 +1557,10 @@ export default function PlannerPage() {
       { label: "Next Week", value: `P|workweek|${windows.nextWeekStart}`, group: "parking" },
       { label: "Next Weekend", value: `P|weekend|${windows.nextWeekendStart}`, group: "parking" },
       { label: "Open", value: "none", group: "parking" },
+      
     ];
 
+    
     return [...dayTargets, ...parkingTargets];
   }, [days, windows]);
 
@@ -1527,6 +1571,7 @@ function getWindowValue(which: DrawerWindow) {
     if (which === "nextWeek") return `P|workweek|${windows.nextWeekStart}`;
     return `P|weekend|${windows.nextWeekendStart}`;
   }
+
 
   async function fetchAll() {
     setLoading(true);
@@ -1541,6 +1586,7 @@ function getWindowValue(which: DrawerWindow) {
       console.warn("auth getSession (fetchAll)", sessionErr);
     }
 
+    
     if (!session) {
       setAuthReady(false);
       setAuthChecked(true);
@@ -1589,6 +1635,7 @@ function getWindowValue(which: DrawerWindow) {
       habitLogsTodayRes,
       workoutSessionsTodayRes,
       trichEventsTodayRes,
+      movieTrackerRes,
     ] = await Promise.all([
       supabase
         .from("tasks")
@@ -1638,7 +1685,7 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("focuses")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,created_at")
         .eq("status", "active")
         .not("scheduled_for", "is", null)
         .gte("scheduled_for", start)
@@ -1648,7 +1695,7 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("focuses")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,created_at")
         .eq("status", "active")
         .is("scheduled_for", null)
         .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
@@ -1674,6 +1721,13 @@ function getWindowValue(which: DrawerWindow) {
         .select("id")
         .eq("occurred_on", todayIso)
         .limit(1),
+        supabase
+  .from("movie_tracker")
+  .select("id,title,priority")
+  .not("priority", "is", null)
+  .neq("priority", 99)
+  .order("priority", { ascending: true })
+  .order("title", { ascending: true }),
     ]);
 
     if (tasksScheduledRes.error) console.warn("tasksScheduledRes", tasksScheduledRes.error);
@@ -1687,7 +1741,7 @@ function getWindowValue(which: DrawerWindow) {
     if (habitLogsTodayRes.error) console.warn("habitLogsTodayRes", habitLogsTodayRes.error);
     if (workoutSessionsTodayRes.error) console.warn("workoutSessionsTodayRes", workoutSessionsTodayRes.error);
     if (trichEventsTodayRes.error) console.warn("trichEventsTodayRes", trichEventsTodayRes.error);
-
+    if (movieTrackerRes.error) console.warn("movieTrackerRes", movieTrackerRes.error);
     setTasks([
       ...((tasksOverdueRes.data ?? []) as Task[]),
       ...((tasksScheduledRes.data ?? []) as Task[]),
@@ -1753,6 +1807,14 @@ function getWindowValue(which: DrawerWindow) {
       const trichLogged = ((trichEventsTodayRes.data ?? []) as any[]).length > 0;
       setTrichLoggedToday(trichLogged);
     }
+    const movies = (movieTrackerRes.error ? [] : (movieTrackerRes.data ?? [])) as any[];
+setMovieItems(
+  movies.map((m) => ({
+    id: String(m.id),
+    title: String(m.title ?? ""),
+    priority: (m.priority ?? null) as number | null,
+  }))
+);
 
     setLoading(false);
   }
@@ -2002,7 +2064,7 @@ function getWindowValue(which: DrawerWindow) {
       }
       const which = matchWindow(f.window_kind, f.window_start);
       if (which) out[which].focus.push(f);
-      else if (!f.window_kind && !f.window_start) out.open.focus.push(f);
+      else if (!f.window_kind && !f.window_start && !(f as any).content_category) out.open.focus.push(f);
     }
 
     const sortByDate = <T extends { scheduled_for: string | null; created_at: string }>(arr: T[]) => {
@@ -2075,7 +2137,7 @@ function getWindowValue(which: DrawerWindow) {
       const { data, error } = await supabase
         .from("focuses")
         .insert({ title, notes: notesVal, status: "active", ...placement })
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,created_at")
         .single();
       if (error) return console.error(error);
       if (data) setFocuses((p) => [...p, data as Focus]);
@@ -2196,34 +2258,50 @@ const { data, error } = await supabase
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
-  function addContentItem() {
-    const text = contentDraft.trim();
-    if (!text) return;
+  async function addContentItem() {
+  const title = contentDraft.trim();
+  if (!title) return;
+  if (contentTab === "movies") return;
 
-    const item: ContentItem = {
-      id: makeLocalId(),
-      text,
-      created_at: new Date().toISOString(),
-    };
+  const { data, error } = await supabase
+    .from("focuses")
+    .insert({
+      title,
+      notes: null,
+      status: "active",
+      scheduled_for: null,
+      window_kind: null,
+      window_start: null,
+      content_category: contentTab,
+    })
+    .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,created_at")
+    .single();
 
-    setContentItemsByTab((prev) => {
-      const cur = prev[contentTab] ?? [];
-      return { ...prev, [contentTab]: [item, ...cur] };
-    });
-
-    setContentDraft("");
+  if (error) {
+    console.warn("addContentItem", error);
+    return;
   }
 
-  function removeContentItem(id: string) {
-    setContentItemsByTab((prev) => {
-      const cur = prev[contentTab] ?? [];
-      return { ...prev, [contentTab]: cur.filter((x) => x.id !== id) };
-    });
+  if (data) setFocuses((p) => [data as any, ...p]);
+  setContentDraft("");
+}
+
+  async function removeContentItem(id: string) {
+  if (contentTab === "movies") return;
+
+  const { error } = await supabase.from("focuses").delete().eq("id", id);
+  if (error) {
+    console.warn("removeContentItem", error);
+    return;
   }
+
+  setFocuses((p) => p.filter((f) => f.id !== id));
+}
 
   const contentItems = useMemo(() => {
-    return contentItemsByTab[contentTab] ?? [];
-  }, [contentItemsByTab, contentTab]);
+    if (contentTab === "movies") return [] as Focus[];
+    return (contentFocusesByTab[contentTab] ?? []) as Focus[];
+  }, [contentTab, contentFocusesByTab]);
 
   const todayIso = toISODate(days[0]);
   const bottomOpenIso = openDayIso && openDayIso !== todayIso ? openDayIso : null;
@@ -2271,7 +2349,7 @@ const { data, error } = await supabase
         const { data, error } = await supabase
           .from("focuses")
           .insert({ title: patch.title, notes: patch.notes, status: "active", ...placement })
-          .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+          .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,created_at")
           .single();
         if (error) return console.error(error);
         if (data) setFocuses((p) => [...p, data as Focus]);
@@ -2376,11 +2454,11 @@ const { error } = await supabase
         <div className="mt-6 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-2 grid min-w-0 gap-4 md:grid-cols-3">
+          <div className="mt-2 grid min-w-0 gap-4 md:grid-cols-3 md:h-[425px] md:items-stretch">
             {/* Parking */}
             <section
               className={clsx(
-                "order-1 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm md:order-none md:col-start-2 md:row-start-1",
+                "order-1 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm md:order-none md:col-start-2 md:row-start-1 md:h-full md:overflow-y-auto md:overscroll-contain",
                 parkingOpen ? "p-4" : "p-2"
               )}
             >
@@ -2542,7 +2620,7 @@ const { error } = await supabase
             {/* Content */}
             <section
   className={clsx(
-    "order-2 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm md:order-none md:col-start-3 md:row-start-1",
+    "order-2 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm md:order-none md:col-start-3 md:row-start-1 md:h-full md:overflow-y-auto md:overscroll-contain",
     contentOpen ? "p-4" : "p-2"
   )}
 >
@@ -2551,9 +2629,10 @@ const { error } = await supabase
                   ["watch", "Watch"],
                   ["listen", "Listen"],
                   ["read", "Read"],
+                  ["city", "City"],
                   ["movies", "Movies"],
                 ] as const).map(([k, label]) => {
-                  const count = contentItemsByTab[k]?.length ?? 0;
+                  const count = k === "movies" ? movieItems.length : (contentFocusesByTab[k]?.length ?? 0);
                   // active only if contentOpen and contentTab match
                   const active = contentOpen && contentTab === k;
                   return (
@@ -2562,7 +2641,7 @@ const { error } = await supabase
                       type="button"
                       onClick={() => handleContentTabClick(k as ContentTab)}
                       className={clsx(
-                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold",
+                        "shrink-0 rounded-xl border px-3 py-1.5 text-xs font-semibold",
                         active
                           ? "border-neutral-200 bg-neutral-100 text-neutral-900"
                           : "border-neutral-800 bg-neutral-950 text-neutral-200"
@@ -2577,7 +2656,7 @@ const { error } = await supabase
               {contentOpen && (
                 <>
                   {contentTab !== "movies" && (
-                    <div className="mt-2 flex items-start gap-2">
+                    <div className="mt-2 flex items-center gap-2">
                       <input
                         value={contentDraft}
                         onChange={(e) => setContentDraft(e.target.value)}
@@ -2593,34 +2672,38 @@ const { error } = await supabase
                       <button
                         type="button"
                         onClick={addContentItem}
-                        className="shrink-0 rounded-xl bg-neutral-100 px-3 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                        className="shrink-0 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
                       >
                         Add
                       </button>
                     </div>
                   )}
                   <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/25">
-                    {contentItems.length === 0 ? (
+                    {contentTab === "movies" ? (
+                      movieItems.length === 0 ? (
+                        <div className="px-3 py-3 text-xs text-neutral-400">No items yet.</div>
+                      ) : (
+                        <div className="divide-y divide-neutral-800/60">
+                          {movieItems.map((m) => (
+                            <div key={m.id} className="flex items-center gap-2 px-3 py-2">
+                              <div className="min-w-0 flex-1 truncate text-base text-neutral-200">{m.title}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    ) : contentItems.length === 0 ? (
                       <div className="px-3 py-3 text-xs text-neutral-400">No items yet.</div>
                     ) : (
-                      <div className="divide-y divide-neutral-800/60">
-                        {contentItems.map((it) => {
-                          const firstLine = (it.text ?? "").split("\n")[0] ?? "";
-                          return (
-                            <div key={it.id} className="flex items-center gap-2 px-3 py-2">
-                              <div className="min-w-0 flex-1 truncate text-sm text-neutral-200">{firstLine}</div>
-                              <button
-                                type="button"
-                                onClick={() => removeContentItem(it.id)}
-                                className="rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1 text-[11px] font-semibold text-neutral-200"
-                                aria-label="Remove"
-                                title="Remove"
-                              >
-                                ×
-                              </button>
-                            </div>
-                          );
-                        })}
+                      <div>
+                        {contentItems.map((f) => (
+                          <FocusRow
+                            key={f.id}
+                            focus={f}
+                            moveTargets={moveTargets}
+                            onMove={(id, v) => moveItem("focus", id, v)}
+                            onEdit={(x) => openEdit("focus", x)}
+                          />
+                        ))}
                       </div>
                     )}
                   </div>
@@ -2631,7 +2714,7 @@ const { error } = await supabase
             {/* Today */}
             <section
               className={clsx(
-                "order-2 min-w-0 rounded-2xl border border-neutral-800 p-4 shadow-sm md:order-none md:col-start-1 md:row-start-1",
+                "order-2 min-w-0 rounded-2xl border border-neutral-800 p-4 shadow-sm md:order-none md:col-start-1 md:row-start-1 md:h-full md:overflow-y-auto md:overscroll-contain",
                 (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
               )}
             >
