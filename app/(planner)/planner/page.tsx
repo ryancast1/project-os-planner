@@ -1352,13 +1352,21 @@ export default function PlannerPage() {
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
 
   const PARKING_TAB_KEY = "planner.parkingTab";
+  const PARKING_OPEN_KEY = "planner.parkingOpen";
+
   const [drawerWindow, setDrawerWindow] = useState<DrawerWindow>(() => {
     if (typeof window === "undefined") return "thisWeek";
     const raw = window.localStorage.getItem(PARKING_TAB_KEY);
     const allowed: DrawerWindow[] = ["thisWeek", "thisWeekend", "nextWeek", "nextWeekend", "open"];
     return allowed.includes(raw as DrawerWindow) ? (raw as DrawerWindow) : "thisWeek";
   });
-  const [parkingOpen, setParkingOpen] = useState(true);
+
+  const [parkingOpen, setParkingOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const raw = window.localStorage.getItem(PARKING_OPEN_KEY);
+    if (raw === null) return true;
+    return raw === "1"; // stored as "1" or "0"
+  });
   const [drawerDraft, setDrawerDraft] = useState("");
   const [drawerType, setDrawerType] = useState<ItemType>("task");
 
@@ -1372,6 +1380,11 @@ export default function PlannerPage() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(PARKING_TAB_KEY, drawerWindow);
   }, [drawerWindow]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(PARKING_OPEN_KEY, parkingOpen ? "1" : "0");
+  }, [parkingOpen]);
 
   // Responsive flag for md (768px+) and up
   const [isMdUp, setIsMdUp] = useState(false);
