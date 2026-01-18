@@ -160,7 +160,7 @@ function dowLetterISO(iso: string) {
 }
 
 type SessionPair = { performed_on: string; workout_slug: string };
-type PlanRow = { planned_on: string; workout_slug: string };
+type PlanRow = { user_id?: string; planned_on: string; workout_slug: string };
 
 export default function WorkoutPlannerPage() {
   const router = useRouter();
@@ -266,9 +266,16 @@ export default function WorkoutPlannerPage() {
 
   async function loadPlans() {
     const start = todayISO; // only need today+forward, but keeping it simple
+
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr) throw new Error(userErr.message);
+    const userId = userData.user?.id;
+    if (!userId) throw new Error("Not signed in");
+
     const { data, error } = await supabase
       .from("workout_plans")
       .select("planned_on,workout_slug")
+      .eq("user_id", userId)
       .gte("planned_on", start);
 
     if (error) throw new Error(error.message);
@@ -404,6 +411,7 @@ export default function WorkoutPlannerPage() {
 
     try {
       // 1) Sync workout_plans for selectable days
+      const userId = await getUserId();
       const desired = new Set<string>(draftKeys);
       const existing = new Set<string>();
       for (const r of plans) {
@@ -411,13 +419,13 @@ export default function WorkoutPlannerPage() {
         existing.add(keyOf(r.planned_on, r.workout_slug));
       }
 
-      const toInsert: { planned_on: string; workout_slug: string }[] = [];
+      const toInsert: { user_id: string; planned_on: string; workout_slug: string }[] = [];
       const toDelete: { planned_on: string; workout_slug: string }[] = [];
 
       for (const k of desired) {
         if (!existing.has(k)) {
           const [planned_on, workout_slug] = k.split("|");
-          if (planned_on && workout_slug) toInsert.push({ planned_on, workout_slug });
+          if (planned_on && workout_slug) toInsert.push({ user_id: userId, planned_on, workout_slug });
         }
       }
       for (const k of existing) {
@@ -437,6 +445,7 @@ export default function WorkoutPlannerPage() {
         const { error } = await supabase
           .from("workout_plans")
           .delete()
+          .eq("user_id", userId)
           .eq("planned_on", row.planned_on)
           .eq("workout_slug", row.workout_slug);
         if (error) throw new Error(error.message);
@@ -447,7 +456,7 @@ export default function WorkoutPlannerPage() {
       setPlans(freshPlans);
 
       // 2) Create/update/delete one task per day (today..+7)
-      const userId = await getUserId();
+      // const userId = await getUserId(); // removed; now declared above
 
       // Build per-day slug sets
       const perDay = new Map<string, Set<string>>();
