@@ -2443,18 +2443,16 @@ const { error } = await supabase
   }
 
   return (
-    <main className="min-h-dvh w-full max-w-full overflow-x-hidden px-4 py-4 sm:mx-auto sm:max-w-6xl">
-
-
+    <main className="min-h-dvh w-full max-w-full overflow-x-hidden px-4 pt-2 pb-3 sm:mx-auto sm:max-w-6xl">
       {!authChecked ? (
-        <div className="mt-6 text-sm text-neutral-400">Loading…</div>
+        <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : !authReady ? (
-        <div className="mt-6 text-sm text-neutral-400">Redirecting…</div>
+        <div className="mt-3 text-sm text-neutral-400">Redirecting…</div>
       ) : loading ? (
-        <div className="mt-6 text-sm text-neutral-400">Loading…</div>
+        <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-2 grid min-w-0 gap-4 md:grid-cols-3 md:h-[425px] md:items-stretch">
+          <div className="mt-0 grid min-w-0 gap-4 md:grid-cols-3 md:h-[425px] md:items-stretch">
             {/* Parking */}
             <section
               className={clsx(
@@ -2469,30 +2467,33 @@ const { error } = await supabase
                   ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length})`],
                   ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length})`],
                   ["open", `Open (${drawerLists.open.task.length + drawerLists.open.plan.length + drawerLists.open.focus.length})`],
-                ] as const).map(([k, label]) => (
-                  <button
-                    key={k}
-                    onClick={() => {
-                      const next = k as DrawerWindow;
-                      // If already open and they tap the same tab, collapse.
-                      if (parkingOpen && drawerWindow === next) {
-                        setParkingOpen(false);
-                        return;
-                      }
-                      // Otherwise ensure it's open and switch to the tapped tab.
-                      setParkingOpen(true);
-                      setDrawerWindow(next);
-                    }}
-                    className={clsx(
-                      "whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold",
-                      drawerWindow === k
-                        ? "border-neutral-200 bg-neutral-100 text-neutral-900"
-                        : "border-neutral-800 bg-neutral-950 text-neutral-200"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
+                ] as const).map(([k, label]) => {
+                  const active = parkingOpen && drawerWindow === k;
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => {
+                        const next = k as DrawerWindow;
+                        // If already open and they tap the same tab, collapse.
+                        if (parkingOpen && drawerWindow === next) {
+                          setParkingOpen(false);
+                          return;
+                        }
+                        // Otherwise ensure it's open and switch to the tapped tab.
+                        setParkingOpen(true);
+                        setDrawerWindow(next);
+                      }}
+                      className={clsx(
+                        "whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                        active
+                          ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                          : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
 
               {parkingOpen && (
@@ -2718,19 +2719,19 @@ const { error } = await supabase
                 (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
               )}
             >
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start justify-between gap-2">
               <div className="shrink-0">
                 <div className="text-lg font-semibold">Today</div>
                 <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
               </div>
 
-              {/* Habit chips (Today only) */}
-              <div className="flex flex-1 flex-wrap justify-end gap-2 pt-0.5">
+    {/* Habit chips (Today only) */}
+              <div className="flex flex-1 flex-wrap justify-end gap-1">
                 {trichLoggedToday === false && (
                   <div
                     aria-label="Trich check"
                     title="Trich check"
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-emerald-400/70 bg-emerald-300 text-sm font-semibold text-neutral-900"
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-emerald-400/70 bg-emerald-300 text-sm font-semibold text-neutral-900"
                   >
                     T
                   </div>
@@ -2745,7 +2746,7 @@ const { error } = await supabase
                       <div
                         key={h.id}
                         className={clsx(
-                          "grid h-9 min-w-[34px] place-items-center rounded-xl border px-2.5 text-xs font-semibold tracking-wide sm:px-3",
+                          "grid h-9 min-w-[34px] place-items-center rounded-xl border px-2 text-xs font-semibold tracking-wide sm:px-3",
                           done
                             ? "border-emerald-400/70 bg-emerald-300 text-neutral-900"
                             : "border-neutral-800 bg-neutral-950 text-neutral-200"
@@ -2768,7 +2769,7 @@ const { error } = await supabase
                       }}
                       onClick={() => toggleHabitDone(h.id)}
                       className={clsx(
-                        "grid h-9 min-w-[34px] place-items-center rounded-xl border px-2.5 text-xs font-semibold tracking-wide sm:px-3",
+                        "grid h-9 min-w-[34px] place-items-center rounded-xl border px-2 text-xs font-semibold tracking-wide sm:px-3",
                         done
                           ? "border-emerald-400/70 bg-emerald-300 text-neutral-900"
                           : "border-neutral-800 bg-neutral-950 text-neutral-200"
@@ -2905,7 +2906,7 @@ const { error } = await supabase
           </div>
 
           {/* Next 6 days */}
-          <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-nowrap md:items-stretch">
+          <div className="mt-3 flex flex-col gap-3 md:flex-row md:flex-nowrap md:items-stretch">
             {days.slice(1).map((d, i) => {
               const iso = toISODate(d);
               const label = fmtDayLabel(d, i + 1);
