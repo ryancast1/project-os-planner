@@ -2378,8 +2378,13 @@ const { error } = await supabase
         <>
           <div className="mt-2 grid min-w-0 gap-4 md:grid-cols-3">
             {/* Parking */}
-            <section className="order-1 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm md:order-none md:col-start-2 md:row-start-1">
-              <div className="flex min-w-0 gap-2 overflow-x-auto pb-2">
+            <section
+              className={clsx(
+                "order-1 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm md:order-none md:col-start-2 md:row-start-1",
+                parkingOpen ? "p-4" : "p-2"
+              )}
+            >
+              <div className={clsx("flex min-w-0 gap-2 overflow-x-auto", parkingOpen ? "pb-2" : "pb-0")}>
                 {([
                   ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length})`],
                   ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length})`],
