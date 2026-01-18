@@ -15,6 +15,7 @@ type Task = {
   scheduled_for: string | null; // YYYY-MM-DD
   window_kind: WindowKind | null;
   window_start: string | null; // YYYY-MM-DD
+  project_goal_id: string | null;
   created_at: string;
   completed_at?: string | null;
 };
@@ -31,6 +32,7 @@ type Plan = {
   scheduled_for: string | null; // YYYY-MM-DD
   window_kind: WindowKind | null;
   window_start: string | null; // YYYY-MM-DD
+  project_goal_id: string | null;
   created_at: string;
   completed_at?: string | null;
 };
@@ -45,7 +47,7 @@ type Focus = {
   window_kind: WindowKind | null;
   window_start: string | null; // YYYY-MM-DD
   content_category?: string | null; // cook/watch/listen/read (movies handled separately)
-
+  project_goal_id: string | null;
   created_at: string;
 };
 
@@ -83,6 +85,13 @@ type MovieTrackerItem = {
   priority: number | null;
 };
 
+type ProjectGoal = {
+  id: string;
+  goal: string;
+  bucket: string;
+  archived: boolean;
+  created_at: string;
+};
 
 type MoveTarget = { label: string; value: string; group: "days" | "parking" };
 
@@ -848,6 +857,7 @@ function EditSheet({
   itemType,
   onClose,
   moveTargets,
+  projectGoals,
   onSave,
   onDelete,
   onArchiveFocus,
@@ -857,6 +867,7 @@ function EditSheet({
   itemType: ItemType;
   onClose: () => void;
   moveTargets: MoveTarget[];
+  projectGoals: ProjectGoal[];
   onSave: (patch: {
     itemType: ItemType;
     title: string;
@@ -864,6 +875,7 @@ function EditSheet({
     targetValue: string;
     planStartTime?: string;
     planEndDate?: string;
+    projectGoalId?: string;
   }) => void;
   onDelete: () => void;
   onArchiveFocus: () => void;
@@ -874,6 +886,7 @@ function EditSheet({
   const [planStartTime, setPlanStartTime] = useState("");
   const [planEndDate, setPlanEndDate] = useState("");
   const [localType, setLocalType] = useState<ItemType>("task");
+  const [projectGoalId, setProjectGoalId] = useState("");
   // Date picker state for custom date
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [customDate, setCustomDate] = useState("");
@@ -884,6 +897,7 @@ function EditSheet({
     setNotes(((item as any).notes ?? "") as string);
     setTargetValue(locationValueFor(item as any));
     setLocalType(itemType);
+    setProjectGoalId((item as any).project_goal_id ?? "");
     if (itemType === "plan") {
       const p = item as Plan;
       setPlanStartTime(isoToTimeInput(p.starts_at));
@@ -927,6 +941,7 @@ function EditSheet({
                   targetValue,
                   planStartTime,
                   planEndDate,
+                  projectGoalId: projectGoalId || "",
                 })
               }
               className="rounded-lg border border-neutral-800 bg-neutral-100 px-2 py-1 text-xs font-semibold text-neutral-900 active:scale-[0.99]"
@@ -1021,6 +1036,22 @@ function EditSheet({
               )}
             </div>
 
+            <div>
+              <div className="mb-1 text-xs text-neutral-400">Project/Goal (optional)</div>
+              <select
+                value={projectGoalId}
+                onChange={(e) => setProjectGoalId(e.target.value)}
+                className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
+              >
+                <option value="">None</option>
+                {projectGoals.map((pg) => (
+                  <option key={pg.id} value={pg.id}>
+                    {pg.bucket ? `${pg.bucket}: ${pg.goal}` : pg.goal}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {localType === "plan" && isDayTarget && (
               <div className="grid grid-cols-1 gap-2">
                 <div>
@@ -1057,29 +1088,11 @@ function EditSheet({
 
             <div className="flex gap-2">
               <button
-                onClick={() =>
-                  onSave({
-                    itemType: localType,
-                    title: title.trim(),
-                    notes: notes.trim() ? notes.trim() : null,
-                    targetValue,
-                    planStartTime,
-                    planEndDate,
-                  })
-                }
-                className="flex-1 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
-              >
-                Save
-              </button>
-              <button
                 onClick={onClose}
-                className="rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-100 active:scale-[0.99]"
+                className="flex-1 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-100 active:scale-[0.99]"
               >
                 Cancel
               </button>
-            </div>
-
-            <div className="flex gap-2">
               {itemType === "focus" ? (
                 <button
                   onClick={onArchiveFocus}
@@ -1111,6 +1124,7 @@ function AddSheet({
   onCreate,
   moveTargets,
   defaultTarget,
+  projectGoals,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1122,9 +1136,11 @@ function AddSheet({
   planStartTime: string;
   planEndDate: string;
   planDayOff: boolean;
+  projectGoalId: string;
 }) => void;
   moveTargets: MoveTarget[];
   defaultTarget: string;
+  projectGoals: ProjectGoal[];
 }) {
   const [itemType, setItemType] = useState<ItemType>("task");
   const [titleRaw, setTitleRaw] = useState("");
@@ -1133,6 +1149,7 @@ function AddSheet({
   const [planStartTime, setPlanStartTime] = useState("");
   const [planEndDate, setPlanEndDate] = useState("");
   const [planDayOff, setPlanDayOff] = useState(false);
+  const [projectGoalId, setProjectGoalId] = useState("");
   // Date picker state for custom date
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [customDate, setCustomDate] = useState("");
@@ -1146,6 +1163,7 @@ function AddSheet({
     setPlanStartTime("");
     setPlanEndDate("");
     setPlanDayOff(false);
+    setProjectGoalId("");
     // Date picker: set to today or to defaultTarget if D|
     let initialDate = "";
     if (defaultTarget.startsWith("D|")) {
@@ -1162,7 +1180,7 @@ function AddSheet({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff });
+        onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff, projectGoalId });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1186,7 +1204,7 @@ function AddSheet({
             <button
               onClick={() => {
                 if (!titleRaw.trim()) return;
-                onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff });
+                onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff, projectGoalId });
                 onClose();
               }}
               className="rounded-lg border border-neutral-800 bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-900 active:scale-[0.99]"
@@ -1292,6 +1310,22 @@ function AddSheet({
               )}
             </div>
 
+            <div>
+              <div className="mb-1 text-xs text-neutral-400">Project/Goal (optional)</div>
+              <select
+                value={projectGoalId}
+                onChange={(e) => setProjectGoalId(e.target.value)}
+                className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
+              >
+                <option value="">None</option>
+                {projectGoals.map((pg) => (
+                  <option key={pg.id} value={pg.id}>
+                    {pg.bucket ? `${pg.bucket}: ${pg.goal}` : pg.goal}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {itemType === "plan" && isDayTarget && (
   <div className="grid grid-cols-1 gap-2">
     <div>
@@ -1330,7 +1364,7 @@ function AddSheet({
               <button
                 onClick={() => {
                   if (!titleRaw.trim()) return;
-                  onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff });
+                  onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff, projectGoalId });
                   onClose();
                 }}
                 className="flex-1 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
@@ -1362,6 +1396,7 @@ export default function PlannerPage() {
   const [habitDoneIds, setHabitDoneIds] = useState<Set<string>>(new Set());
   const [gymDoneToday, setGymDoneToday] = useState(false);
   const [trichLoggedToday, setTrichLoggedToday] = useState<boolean | null>(null);
+  const [projectGoals, setProjectGoals] = useState<ProjectGoal[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const [authReady, setAuthReady] = useState(false);
@@ -1444,17 +1479,15 @@ const [movieItems, setMovieItems] = useState<MovieTrackerItem[]>([]);
 
 
   function handleContentTabClick(next: ContentTab) {
-  // Tap the active tab => toggle open/closed
-  // Tap a different tab => switch tab and force open
-  setContentTab((prev) => {
-    if (prev === next) {
+    // Tap the active tab => toggle open/closed
+    // Tap a different tab => switch tab and force open
+    if (next === contentTab) {
       setContentOpen((o) => !o);
-      return prev;
+      return;
     }
+    setContentTab(next);
     setContentOpen(true);
-    return next;
-  });
-}
+  }
 
   const [drawerWindow, setDrawerWindow] = useState<DrawerWindow>(() => {
     if (typeof window === "undefined") return "thisWeek";
@@ -1636,10 +1669,11 @@ function getWindowValue(which: DrawerWindow) {
       workoutSessionsTodayRes,
       trichEventsTodayRes,
       movieTrackerRes,
+      projectGoalsRes,
     ] = await Promise.all([
       supabase
         .from("tasks")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
         .in("status", ["open", "done"])
         .not("scheduled_for", "is", null)
         .gte("scheduled_for", start)
@@ -1649,7 +1683,7 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("tasks")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
         .eq("status", "open")
         .not("scheduled_for", "is", null)
         .lt("scheduled_for", start)
@@ -1658,7 +1692,7 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("tasks")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
         .eq("status", "open")
         .is("scheduled_for", null)
         .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
@@ -1666,18 +1700,17 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("plans")
-        .select("id,title,notes,starts_at,ends_at,end_date,day_off,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,starts_at,ends_at,end_date,day_off,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
         .eq("status", "open")
         .not("scheduled_for", "is", null)
-        .gte("scheduled_for", start)
-        .lte("scheduled_for", end)
+         .or(`and(scheduled_for.gte.${start},scheduled_for.lte.${end}),and(scheduled_for.lt.${start},end_date.gte.${start})`)
         .order("scheduled_for", { ascending: true })
         .order("starts_at", { ascending: true, nullsFirst: true })
         .order("created_at", { ascending: true }),
 
       supabase
         .from("plans")
-        .select("id,title,notes,starts_at,ends_at,end_date,day_off,status,scheduled_for,window_kind,window_start,created_at")
+        .select("id,title,notes,starts_at,ends_at,end_date,day_off,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
         .eq("status", "open")
         .is("scheduled_for", null)
         .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
@@ -1685,7 +1718,7 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("focuses")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at")
         .eq("status", "active")
         .not("scheduled_for", "is", null)
         .gte("scheduled_for", start)
@@ -1695,7 +1728,7 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("focuses")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at")
         .eq("status", "active")
         .is("scheduled_for", null)
         .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
@@ -1728,6 +1761,12 @@ function getWindowValue(which: DrawerWindow) {
   .neq("priority", 99)
   .order("priority", { ascending: true })
   .order("title", { ascending: true }),
+      supabase
+        .from("projects_goals")
+        .select("id,goal,bucket,archived,created_at")
+        .eq("archived", false)
+        .order("sort_order", { ascending: true })
+        .order("goal", { ascending: true }),
     ]);
 
     if (tasksScheduledRes.error) console.warn("tasksScheduledRes", tasksScheduledRes.error);
@@ -1742,6 +1781,7 @@ function getWindowValue(which: DrawerWindow) {
     if (workoutSessionsTodayRes.error) console.warn("workoutSessionsTodayRes", workoutSessionsTodayRes.error);
     if (trichEventsTodayRes.error) console.warn("trichEventsTodayRes", trichEventsTodayRes.error);
     if (movieTrackerRes.error) console.warn("movieTrackerRes", movieTrackerRes.error);
+    if (projectGoalsRes.error) console.warn("projectGoalsRes", projectGoalsRes.error);
     setTasks([
       ...((tasksOverdueRes.data ?? []) as Task[]),
       ...((tasksScheduledRes.data ?? []) as Task[]),
@@ -1757,6 +1797,8 @@ function getWindowValue(which: DrawerWindow) {
       ...((focusesScheduledRes.data ?? []) as Focus[]),
       ...((focusesParkingRes.data ?? []) as Focus[]),
     ]);
+
+    setProjectGoals((projectGoalsRes.data ?? []) as ProjectGoal[]);
 
     let habitsData = (habitsRes.data ?? []) as any[];
     if (habitsRes.error) {
@@ -2106,6 +2148,7 @@ setMovieItems(
     planStartTime?: string;
     planEndDate?: string;
     planDayOff?: boolean;
+    projectGoalId?: string;
   }) {
     const parsed = parseHashtags(args.titleRaw, { targetValue: args.targetValue, today, windows, itemType: args.itemType });
     const title = parsed.title.trim();
@@ -2125,8 +2168,8 @@ setMovieItems(
     if (parsed.itemType === "task") {
       const { data, error } = await supabase
         .from("tasks")
-        .insert({ title, notes: notesVal, status: "open", ...placement })
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+        .insert({ title, notes: notesVal, status: "open", project_goal_id: args.projectGoalId || null, ...placement })
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
         .single();
       if (error) return console.error(error);
       if (data) setTasks((p) => [...p, data as Task]);
@@ -2136,8 +2179,8 @@ setMovieItems(
     if (parsed.itemType === "focus") {
       const { data, error } = await supabase
         .from("focuses")
-        .insert({ title, notes: notesVal, status: "active", ...placement })
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,created_at")
+        .insert({ title, notes: notesVal, status: "active", project_goal_id: args.projectGoalId || null, ...placement })
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at")
         .single();
       if (error) return console.error(error);
       if (data) setFocuses((p) => [...p, data as Focus]);
@@ -2169,9 +2212,10 @@ const { data, error } = await supabase
     day_off: Boolean(args.planDayOff),
     starts_at,
     end_date,
+    project_goal_id: args.projectGoalId || null,
     ...placement
   })
-  .select("id,title,notes,starts_at,ends_at,end_date,day_off,status,scheduled_for,window_kind,window_start,created_at")
+  .select("id,title,notes,starts_at,ends_at,end_date,day_off,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
   .single();
     if (error) return console.error(error);
     if (data) setPlans((p) => [...p, data as Plan]);
@@ -2312,7 +2356,7 @@ const { data, error } = await supabase
     setEditOpen(true);
   }
 
-  async function saveEdit(patch: { itemType: ItemType; title: string; notes: string | null; targetValue: string; planStartTime?: string; planEndDate?: string }) {
+  async function saveEdit(patch: { itemType: ItemType; title: string; notes: string | null; targetValue: string; planStartTime?: string; planEndDate?: string; projectGoalId?: string }) {
     if (!editItem) return;
     const id = (editItem as any).id as string;
 
@@ -2338,8 +2382,8 @@ const { data, error } = await supabase
       if (patch.itemType === "task") {
         const { data, error } = await supabase
           .from("tasks")
-          .insert({ title: patch.title, notes: patch.notes, status: "open", ...placement })
-          .select("id,title,notes,status,scheduled_for,window_kind,window_start,created_at")
+          .insert({ title: patch.title, notes: patch.notes, status: "open", project_goal_id: null, ...placement })
+          .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
           .single();
         if (error) return console.error(error);
         if (data) setTasks((p) => [...p, data as Task]);
@@ -2348,8 +2392,8 @@ const { data, error } = await supabase
       if (patch.itemType === "focus") {
         const { data, error } = await supabase
           .from("focuses")
-          .insert({ title: patch.title, notes: patch.notes, status: "active", ...placement })
-          .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,created_at")
+          .insert({ title: patch.title, notes: patch.notes, status: "active", project_goal_id: null, ...placement })
+          .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at")
           .single();
         if (error) return console.error(error);
         if (data) setFocuses((p) => [...p, data as Focus]);
@@ -2365,8 +2409,8 @@ const { data, error } = await supabase
 
         const { data, error } = await supabase
           .from("plans")
-          .insert({ title: patch.title, notes: patch.notes, status: "open", starts_at, end_date, ...placement })
-          .select("id,title,notes,starts_at,ends_at,end_date,status,scheduled_for,window_kind,window_start,created_at")
+          .insert({ title: patch.title, notes: patch.notes, status: "open", starts_at, end_date, project_goal_id: null, ...placement })
+          .select("id,title,notes,starts_at,ends_at,end_date,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
           .single();
         if (error) return console.error(error);
         if (data) setPlans((p) => [...p, data as Plan]);
@@ -2382,17 +2426,19 @@ const { data, error } = await supabase
     }
 
     if (editType === "task") {
-      const { error } = await supabase.from("tasks").update({ title: patch.title, notes: patch.notes, ...placement }).eq("id", id);
+      const project_goal_id = patch.projectGoalId ? patch.projectGoalId : null;
+      const { error } = await supabase.from("tasks").update({ title: patch.title, notes: patch.notes, project_goal_id, ...placement }).eq("id", id);
       if (error) return console.error(error);
-      setTasks((p) => p.map((t) => (t.id === id ? ({ ...t, title: patch.title, notes: patch.notes, ...placement } as Task) : t)));
+      setTasks((p) => p.map((t) => (t.id === id ? ({ ...t, title: patch.title, notes: patch.notes, project_goal_id, ...placement } as Task) : t)));
       setEditOpen(false);
       return;
     }
 
     if (editType === "focus") {
-      const { error } = await supabase.from("focuses").update({ title: patch.title, notes: patch.notes, ...placement }).eq("id", id);
+      const project_goal_id = patch.projectGoalId ? patch.projectGoalId : null;
+      const { error } = await supabase.from("focuses").update({ title: patch.title, notes: patch.notes, project_goal_id, ...placement }).eq("id", id);
       if (error) return console.error(error);
-      setFocuses((p) => p.map((f) => (f.id === id ? ({ ...f, title: patch.title, notes: patch.notes, ...placement } as Focus) : f)));
+      setFocuses((p) => p.map((f) => (f.id === id ? ({ ...f, title: patch.title, notes: patch.notes, project_goal_id, ...placement } as Focus) : f)));
       setEditOpen(false);
       return;
     }
@@ -2409,15 +2455,16 @@ if (placement.scheduled_for && patch.planEndDate && patch.planEndDate.trim()) {
   }
 }
 
+const project_goal_id = patch.projectGoalId ? patch.projectGoalId : null;
 const { error } = await supabase
   .from("plans")
-  .update({ title: patch.title, notes: patch.notes, starts_at, end_date, ...placement })
+  .update({ title: patch.title, notes: patch.notes, starts_at, end_date, project_goal_id, ...placement })
   .eq("id", id);
     if (error) return console.error(error);
 
     setPlans((p) =>
       p.map((pl) =>
-        pl.id === id ? ({ ...pl, title: patch.title, notes: patch.notes, starts_at, end_date, ...placement } as Plan) : pl
+        pl.id === id ? ({ ...pl, title: patch.title, notes: patch.notes, starts_at, end_date, project_goal_id, ...placement } as Plan) : pl
       )
     );
 
@@ -2443,7 +2490,7 @@ const { error } = await supabase
   }
 
   return (
-    <main className="min-h-dvh w-full max-w-full overflow-x-hidden px-4 pt-2 pb-3 sm:mx-auto sm:max-w-6xl">
+    <main className="min-h-dvh w-full max-w-full overflow-x-hidden px-4 pt-2 pb-3 sm:mx-auto sm:max-w-[1600px] lg:px-6">
       {!authChecked ? (
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : !authReady ? (
@@ -2452,7 +2499,7 @@ const { error } = await supabase
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-0 grid min-w-0 gap-4 md:grid-cols-3 md:h-[425px] md:items-stretch">
+          <div className="mt-0 grid min-w-0 gap-3 md:grid-cols-3 md:h-[425px] md:items-stretch lg:gap-4">
             {/* Parking */}
             <section
               className={clsx(
@@ -2906,7 +2953,7 @@ const { error } = await supabase
           </div>
 
           {/* Next 6 days */}
-          <div className="mt-3 flex flex-col gap-3 md:flex-row md:flex-nowrap md:items-stretch">
+          <div className="mt-3 flex flex-col gap-3 md:flex-row md:flex-nowrap md:items-stretch lg:gap-4">
             {days.slice(1).map((d, i) => {
               const iso = toISODate(d);
               const label = fmtDayLabel(d, i + 1);
@@ -2928,8 +2975,7 @@ const { error } = await supabase
                       "rounded-2xl border border-neutral-800 p-4 shadow-sm md:min-w-0",
                       // Flex sizing on desktop/iPad: open card grows, others shrink slightly
                       isOpen ? "md:flex-[2]" : isAnotherOpen ? "md:flex-[0.85]" : "md:flex-1",
-                      isWeekend ? "bg-neutral-800/80" : "bg-neutral-900",
-                      afterSunday ? "md:ml-4" : ""
+                      isWeekend ? "bg-neutral-800/80" : "bg-neutral-900"
                     )}
                   >
                   <button
@@ -3129,6 +3175,7 @@ const { error } = await supabase
         onClose={() => setAddOpen(false)}
         moveTargets={moveTargets}
         defaultTarget={openDayIso ? `D|${openDayIso}` : `D|${todayIso}`}
+        projectGoals={projectGoals}
         onCreate={async (args) => {
           await createItem({
             titleRaw: args.titleRaw,
@@ -3138,6 +3185,7 @@ const { error } = await supabase
             planStartTime: args.planStartTime,
             planEndDate: args.planEndDate,
             planDayOff: args.planDayOff,
+            projectGoalId: args.projectGoalId,
           });
         }}
       />
@@ -3148,6 +3196,7 @@ const { error } = await supabase
         itemType={editType}
         onClose={() => setEditOpen(false)}
         moveTargets={moveTargets}
+        projectGoals={projectGoals}
         onSave={saveEdit}
         onDelete={deleteEditItem}
         onArchiveFocus={archiveEditedFocus}
