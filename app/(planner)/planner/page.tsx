@@ -2535,11 +2535,13 @@ const { error } = await supabase
             </section>
 
             {/* Content */}
-            <section className="order-2 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm md:order-none md:col-start-3 md:row-start-1">
-              <div className="h-5" />
-
-              <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-2">
-                {([
+            <section
+  className={clsx(
+    "order-2 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm md:order-none md:col-start-3 md:row-start-1",
+    contentOpen ? "p-4" : "p-2"
+  )}
+>
+<div className={clsx("flex min-w-0 gap-2 overflow-x-auto", contentOpen ? "pb-2" : "pb-0")}>                {([
                   ["cook", "Cook"],
                   ["watch", "Watch"],
                   ["listen", "Listen"],
@@ -2571,11 +2573,17 @@ const { error } = await supabase
                 <>
                   {contentTab !== "movies" && (
                     <div className="mt-2 flex items-start gap-2">
-                      <textarea
+                      <input
                         value={contentDraft}
                         onChange={(e) => setContentDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addContentItem();
+                          }
+                        }}
                         placeholder="Add…"
-                        className="min-h-[44px] w-full flex-1 resize-none rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                        className="h-10 w-full flex-1 rounded-xl border border-neutral-800 bg-neutral-950 px-3 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                       />
                       <button
                         type="button"
