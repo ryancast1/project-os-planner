@@ -2538,54 +2538,54 @@ const { error } = await supabase
             <section className="order-2 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm md:order-none md:col-start-3 md:row-start-1">
               <div className="h-5" />
 
+              <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-2">
+                {([
+                  ["cook", "Cook"],
+                  ["watch", "Watch"],
+                  ["listen", "Listen"],
+                  ["read", "Read"],
+                  ["movies", "Movies"],
+                ] as const).map(([k, label]) => {
+                  const count = contentItemsByTab[k]?.length ?? 0;
+                  // active only if contentOpen and contentTab match
+                  const active = contentOpen && contentTab === k;
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => handleContentTabClick(k as ContentTab)}
+                      className={clsx(
+                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold",
+                        active
+                          ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                          : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                      )}
+                    >
+                      {label}{count ? ` (${count})` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+
               {contentOpen && (
                 <>
-                  <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-2">
-                    {([
-                      ["cook", "Cook"],
-                      ["watch", "Watch"],
-                      ["listen", "Listen"],
-                      ["read", "Read"],
-                      ["movies", "Movies"],
-
-                    ] as const).map(([k, label]) => {
-                      const count = contentItemsByTab[k]?.length ?? 0;
-                      const active = contentTab === k;
-                      return (
-                        <button
-                          key={k}
-                          type="button"
-                          onClick={() => handleContentTabClick(k as ContentTab)}
-                          className={clsx(
-                            "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold",
-                            active
-                              ? "border-neutral-200 bg-neutral-100 text-neutral-900"
-                              : "border-neutral-800 bg-neutral-950 text-neutral-200"
-                          )}
-                        >
-                          {label}{count ? ` (${count})` : ""}
-                        </button>
-                      );
-                    })}
-                  </div>
-
                   {contentTab !== "movies" && (
-                  <div className="mt-2 flex items-start gap-2">
-                    <textarea
-                      value={contentDraft}
-                      onChange={(e) => setContentDraft(e.target.value)}
-                      placeholder="Add…"
-                      className="min-h-[44px] w-full flex-1 resize-none rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={addContentItem}
-                      className="shrink-0 rounded-xl bg-neutral-100 px-3 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
-                    >
-                      Add
-                    </button>
-                  </div>
-)}
+                    <div className="mt-2 flex items-start gap-2">
+                      <textarea
+                        value={contentDraft}
+                        onChange={(e) => setContentDraft(e.target.value)}
+                        placeholder="Add…"
+                        className="min-h-[44px] w-full flex-1 resize-none rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={addContentItem}
+                        className="shrink-0 rounded-xl bg-neutral-100 px-3 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
                   <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/25">
                     {contentItems.length === 0 ? (
                       <div className="px-3 py-3 text-xs text-neutral-400">No items yet.</div>
