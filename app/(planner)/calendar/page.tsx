@@ -374,27 +374,27 @@ export default function CalendarPage() {
     );
 
     return (
-      <div className="w-[min(560px,92vw)] rounded-3xl border border-neutral-800 bg-neutral-950/95 p-4 shadow-2xl backdrop-blur">
+      <div className="w-[min(560px,92vw)] rounded-3xl border border-neutral-700/60 bg-neutral-950/98 p-5 shadow-2xl backdrop-blur-xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-sm text-neutral-400">{fmtWeekday(d)}</div>
-            <div className="text-xl font-semibold text-neutral-100">{fmtMonthDay(d)}</div>
+            <div className="text-sm font-medium text-neutral-400">{fmtWeekday(d)}</div>
+            <div className="text-xl font-semibold text-neutral-50 tracking-tight">{fmtMonthDay(d)}</div>
           </div>
           <button
             onClick={() => setOpenIso(null)}
-            className="rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-200"
+            className="rounded-xl border border-neutral-700 bg-neutral-900/80 px-3 py-2 text-sm font-medium text-neutral-100 hover:bg-neutral-800/80 transition-colors"
           >
             Close
           </button>
         </div>
 
-        <div className="mt-4 space-y-4">
+        <div className="mt-5 space-y-4">
           {dayFocus.length > 0 ? (
             <div>
-              <div className="mb-2 text-xs text-neutral-400">Intentions</div>
-              <div className="space-y-1">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Intentions</div>
+              <div className="space-y-1.5">
                 {dayFocus.map((f) => (
-                  <div key={f.id} className="truncate italic text-sm text-neutral-200">
+                  <div key={f.id} className="truncate italic text-sm text-neutral-100">
                     {f.title}
                   </div>
                 ))}
@@ -404,10 +404,10 @@ export default function CalendarPage() {
 
           {dayPlans.length > 0 ? (
             <div>
-              <div className="mb-2 text-xs text-neutral-400">Plans</div>
-              <div className="space-y-1">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Plans</div>
+              <div className="space-y-1.5">
                 {dayPlans.map((p) => (
-                  <div key={p.id} className="truncate text-sm text-neutral-100">
+                  <div key={p.id} className="truncate text-sm text-neutral-50">
                     {p.title}
                   </div>
                 ))}
@@ -417,16 +417,16 @@ export default function CalendarPage() {
 
           {dayTasks.length > 0 ? (
             <div>
-              <div className="mb-2 text-xs text-neutral-400">Tasks</div>
-              <div className="space-y-1">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Tasks</div>
+              <div className="space-y-1.5">
                 {dayTasks.map((t) => {
                   const done = t.status === "done";
                   return (
                     <div
                       key={t.id}
                       className={clsx(
-                        "truncate text-sm",
-                        done ? "text-emerald-300" : "text-neutral-100"
+                        "truncate text-sm font-medium",
+                        done ? "text-emerald-400" : "text-neutral-50"
                       )}
                     >
                       {done ? "✓ " : ""}
@@ -450,13 +450,14 @@ export default function CalendarPage() {
     <main className="min-h-dvh px-3 py-3 pb-28 sm:px-6 sm:py-6">
       {/* Weekday headers */}
       <div className="mx-auto w-full max-w-[1200px]">
-        <div className="grid grid-cols-7">
+        <div className="grid grid-cols-7 shadow-sm">
           {weekdays.map((w, idx) => (
             <div
               key={w}
               className={clsx(
-                "border border-neutral-800 bg-neutral-950/40 px-0.5 py-1 text-center text-[9px] font-semibold leading-none text-neutral-300 sm:text-xs md:landscape:text-sm",
-                idx >= 5 ? "bg-neutral-900/40" : ""
+                "border-r border-b border-neutral-700/50 bg-neutral-900/60 px-0.5 py-2 text-center text-[10px] font-medium tracking-wide leading-none text-neutral-200 sm:text-xs md:landscape:text-sm",
+                idx === 6 ? "border-r-0" : "",
+                idx >= 5 ? "bg-neutral-800/60" : ""
               )}
             >
               {w}
@@ -465,7 +466,7 @@ export default function CalendarPage() {
         </div>
 
         {/* 13-week grid */}
-        <div className="border-x border-b border-neutral-800">
+        <div className="border-x border-b border-neutral-700/50 shadow-lg">
           <div>
             {weeks.map((row, wIdx) => {
               return (
@@ -499,35 +500,35 @@ export default function CalendarPage() {
                             setOpenIso(iso);
                           }}
                           className={clsx(
-                            "relative p-1 select-none aspect-square",
+                            "relative p-1 select-none aspect-square transition-colors",
                             // grid lines
-                            dIdx === 6 ? "border-r-0" : "border-r border-r-neutral-800",
+                            dIdx === 6 ? "border-r-0" : "border-r border-r-neutral-700/40",
                             // top border for every cell; thicker when month changes vs the cell above
-                            monthChangeFromTop ? "border-t-2 border-t-neutral-500/60" : "border-t border-t-neutral-800",
+                            monthChangeFromTop ? "border-t-2 border-t-neutral-500/70" : "border-t border-t-neutral-700/40",
                             // thicker left border when month changes vs the cell to the left (e.g., Jan 31 -> Feb 1)
-                            monthChangeFromLeft ? "border-l-2 border-l-neutral-500/60" : "",
+                            monthChangeFromLeft ? "border-l-2 border-l-neutral-500/70" : "",
                             isToday
-                              ? "bg-neutral-600/55 ring-2 ring-neutral-200/35"
+                              ? "bg-neutral-600/55 ring-2 ring-inset ring-neutral-200/40 shadow-inner"
                               : (weekend || dayOff)
-                                ? "bg-neutral-800/55"
-                                : "bg-neutral-950/25"
+                                ? "bg-neutral-800/50"
+                                : "bg-neutral-950/30"
                           )}
                           style={{ touchAction: "manipulation" }}
                         >
-                          <div className="absolute right-1 top-1 text-[10px] text-neutral-400 md:landscape:text-xs">{d.getDate()}</div>
+                          <div className="absolute right-1 top-1 text-[10px] font-medium text-neutral-400 md:landscape:text-xs">{d.getDate()}</div>
 
                           <div className="mt-5 space-y-0.5 sm:space-y-1 landscape:space-y-1 md:landscape:space-y-2 md:landscape:mt-0 md:landscape:h-full md:landscape:pt-5 md:landscape:pb-2 md:landscape:flex md:landscape:flex-col md:landscape:justify-center">
                             {show.map((p) => (
                               <div
                                 key={p.id}
-                                className="text-center whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-200 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:break-words landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
+                                className="text-center whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-100 font-normal sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:break-words landscape:text-center md:landscape:text-[13px] md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
                                 title={p.title}
                               >
                                 {p.title}
                               </div>
                             ))}
                             {extra > 0 ? (
-                              <div className="text-center whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:text-center md:landscape:text-sm md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
+                              <div className="text-center whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 font-medium sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:text-center md:landscape:text-[13px] md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
                             ) : null}
                           </div>
                         </div>
@@ -561,10 +562,10 @@ export default function CalendarPage() {
                           >
                             <div
                               className={clsx(
-                                "w-full border border-neutral-200/25 bg-neutral-200/10 backdrop-blur",
+                                "w-full border border-neutral-200/30 bg-neutral-200/10 backdrop-blur shadow-sm",
                                 isWide
-                                  ? "rounded-md px-1 py-1 text-[11px] leading-none text-neutral-100"
-                                  : "rounded-sm px-1 text-[8px] leading-none text-neutral-100 h-3 flex items-center"
+                                  ? "rounded-md px-1.5 py-1 text-[11px] leading-none text-neutral-100 font-medium"
+                                  : "rounded-sm px-1 text-[8px] leading-none text-neutral-100 font-medium h-3 flex items-center"
                               )}
                             >
                               <div className="flex w-full items-center justify-center gap-1 overflow-hidden">

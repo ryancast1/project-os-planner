@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { searchMovies, getMovieDetails, getPosterUrl, type TMDBSearchResult } from "@/lib/tmdb";
 
 type Category = "movie" | "documentary";
 type Status = "to_watch" | "watching" | "watched";
@@ -46,6 +47,12 @@ export default function AddMoviePage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // TMDB search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<TMDBSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+
   const lengthMinutes = useMemo(() => parseLengthToMinutes(lengthText), [lengthText]);
 
   const parsedYear = useMemo(() => {
@@ -82,6 +89,63 @@ export default function AddMoviePage() {
     return true;
   }, [title, lengthText, lengthMinutes, yearText, parsedYear, priorityText, parsedPriority, status, dateWatched]);
 
+  // Debounced TMDB search
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      const results = await searchMovies(searchQuery);
+      setSearchResults(results);
+      setShowResults(true);
+      setSearching(false);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Select a movie from TMDB results
+  const selectMovie = useCallback(async (result: TMDBSearchResult) => {
+    setShowResults(false);
+    setSearchQuery("");
+
+    // Get detailed movie info
+    const details = await getMovieDetails(result.id);
+    if (!details) {
+      setTitle(result.title);
+      if (result.release_date) {
+        setYearText(result.release_date.split("-")[0]);
+      }
+      return;
+    }
+
+    // Populate form fields
+    setTitle(details.title);
+
+    if (details.release_date) {
+      setYearText(details.release_date.split("-")[0]);
+    }
+
+    if (details.runtime) {
+      const hours = Math.floor(details.runtime / 60);
+      const mins = details.runtime % 60;
+      setLengthText(`${hours}:${String(mins).padStart(2, "0")}`);
+    }
+
+    // Set category based on genre
+    const isDocumentary = details.genres.some(g => g.name.toLowerCase() === "documentary");
+    setCategory(isDocumentary ? "documentary" : "movie");
+
+    // Add overview to notes if present
+    if (details.overview) {
+      setNote(details.overview);
+    }
+  }, []);
+
   async function onSave() {
     if (!canSave || saving) return;
 
@@ -117,8 +181,8 @@ export default function AddMoviePage() {
     setMsg("Saved ✓");
     setSaving(false);
 
-    // Go back to the home screen after save
-    router.push("/");
+    // Go back to the movie tracker page after save
+    router.push("/movie-tracker");
   }
 
   return (
@@ -127,7 +191,7 @@ export default function AddMoviePage() {
         <header className="mb-6">
           <h1 className="text-3xl font-semibold tracking-tight text-center">Add a Movie</h1>
           <div className="mt-2 text-center text-sm text-white/60">
-            <Link href="/" className="underline underline-offset-4 hover:text-white">
+            <Link href="/movie-tracker" className="underline underline-offset-4 hover:text-white">
               Back
             </Link>
           </div>
@@ -135,6 +199,70 @@ export default function AddMoviePage() {
 
         <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
           <div className="space-y-4">
+            {/* TMDB Search */}
+            <div className="relative">
+              <label className="block">
+                <span className="mb-1 block text-xs text-white/60 text-center">Search TMDB</span>
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search for a movie..."
+                  className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-lg outline-none focus:border-white/20 focus:bg-black/40"
+                />
+              </label>
+
+              {searching && (
+                <div className="mt-2 text-center text-sm text-white/60">Searching...</div>
+              )}
+
+              {showResults && searchResults.length > 0 && (
+                <div className="absolute z-10 mt-2 w-full rounded-xl border border-white/10 bg-zinc-950 shadow-2xl max-h-96 overflow-y-auto">
+                  {searchResults.map((result) => {
+                    const year = result.release_date ? result.release_date.split("-")[0] : "";
+                    const posterUrl = getPosterUrl(result.poster_path, "w92");
+
+                    return (
+                      <button
+                        key={result.id}
+                        type="button"
+                        onClick={() => selectMovie(result)}
+                        className="w-full flex items-start gap-3 p-3 hover:bg-white/5 transition border-b border-white/5 last:border-b-0 text-left"
+                      >
+                        {posterUrl ? (
+                          <img
+                            src={posterUrl}
+                            alt={result.title}
+                            className="w-12 h-18 object-cover rounded"
+                          />
+                        ) : (
+                          <div className="w-12 h-18 bg-white/5 rounded flex items-center justify-center text-white/30 text-xs">
+                            No poster
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-white truncate">{result.title}</div>
+                          {year && <div className="text-sm text-white/60">{year}</div>}
+                          {result.overview && (
+                            <div className="text-xs text-white/45 line-clamp-2 mt-1">
+                              {result.overview}
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {showResults && searchResults.length === 0 && !searching && (
+                <div className="mt-2 text-center text-sm text-white/60">No results found</div>
+              )}
+            </div>
+
+            <div className="border-t border-white/10 pt-4">
+              <div className="text-xs text-white/40 text-center mb-4">Or enter manually</div>
+            </div>
+
             <label className="block">
               <span className="mb-1 block text-xs text-white/60 text-center">Title</span>
               <input
