@@ -1418,6 +1418,10 @@ export default function PlannerPage() {
     return allowed.includes(raw as ContentTab) ? (raw as ContentTab) : "cook";
   });
 const [movieItems, setMovieItems] = useState<MovieTrackerItem[]>([]);
+const [watchingMovieId, setWatchingMovieId] = useState<string | null>(null);
+const [watchedDate, setWatchedDate] = useState<string>("");
+const [watchedNote, setWatchedNote] = useState<string>("");
+const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
 
   const [contentOpen, setContentOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
@@ -1906,6 +1910,231 @@ setMovieItems(
         });
       }
     }
+  }
+
+  // Movie tracker functions
+  function sortMoviesByPriority(list: MovieTrackerItem[]): MovieTrackerItem[] {
+    return [...list].sort((a, b) => {
+      const ap = a.priority ?? 999999;
+      const bp = b.priority ?? 999999;
+      if (ap !== bp) return ap - bp;
+      return (a.title ?? "").localeCompare(b.title ?? "");
+    });
+  }
+
+  const maxNon99MoviePriority = useMemo(() => {
+    let max = -1;
+    for (const m of movieItems) {
+      if (m.priority === null || m.priority === 99) continue;
+      if (m.priority > max) max = m.priority;
+    }
+    return max;
+  }, [movieItems]);
+
+  async function moveMoviePriority(id: string, direction: "up" | "down") {
+    const me = movieItems.find((m) => m.id === id);
+    if (!me) return;
+
+    const p = me.priority;
+    if (p === null) return;
+
+    // bounds for watching
+    if (p === 0 && direction === "up") return;
+
+    const target = direction === "up" ? p - 1 : p + 1;
+
+    const sameCount = movieItems.filter((m) => m.priority === p).length;
+
+    // if this movie is the *only* one at the current highest non-99 priority,
+    // a single DOWN click should demote it directly to On Deck (99).
+    if (direction === "down" && p === maxNon99MoviePriority && sameCount === 1) {
+      const newP = 99;
+
+      // optimistic UI update
+      setMovieItems((prev) =>
+        sortMoviesByPriority(prev.map((m) => (m.id === id ? { ...m, priority: newP } : m)))
+      );
+
+      const { error } = await supabase
+        .from("movie_tracker")
+        .update({ priority: newP })
+        .eq("id", id);
+
+      if (error) {
+        alert(`Move failed: ${error.message}`);
+        await fetchAll();
+      }
+      return;
+    }
+
+    const targetCount = movieItems.filter((m) => m.priority === target).length;
+
+    // Only swap if BOTH sides are singletons
+    const shouldSwap = sameCount === 1 && targetCount === 1 && !(p === 0 && direction === "down");
+
+    if (!shouldSwap) {
+      // optimistic UI update
+      setMovieItems((prev) =>
+        sortMoviesByPriority(prev.map((m) => (m.id === id ? { ...m, priority: target } : m)))
+      );
+
+      const { error } = await supabase
+        .from("movie_tracker")
+        .update({ priority: target })
+        .eq("id", id);
+
+      if (error) {
+        alert(`Move failed: ${error.message}`);
+        await fetchAll();
+      }
+      return;
+    }
+
+    // Swap with the single movie at the target priority
+    const targetMovieId = movieItems.find((m) => m.priority === target)?.id;
+    if (!targetMovieId) {
+      await fetchAll();
+      return;
+    }
+
+    // optimistic UI update
+    setMovieItems((prev) =>
+      sortMoviesByPriority(
+        prev.map((m) => {
+          if (m.id === id) return { ...m, priority: target };
+          if (m.id === targetMovieId) return { ...m, priority: p };
+          return m;
+        })
+      )
+    );
+
+    try {
+      const { error: e1 } = await supabase
+        .from("movie_tracker")
+        .update({ priority: p })
+        .eq("id", targetMovieId);
+      if (e1) throw e1;
+
+      const { error: e2 } = await supabase
+        .from("movie_tracker")
+        .update({ priority: target })
+        .eq("id", id);
+      if (e2) throw e2;
+    } catch (e: any) {
+      alert(`Move failed: ${e?.message ?? "Unknown error"}`);
+      await fetchAll();
+    }
+  }
+
+  function openWatchedModal(id: string) {
+    setWatchingMovieId(id);
+    setWatchedDate(toISODate(new Date()));
+    setWatchedNote("");
+  }
+
+  async function confirmMarkWatched() {
+    const movie = movieItems.find((m) => m.id === watchingMovieId);
+    if (!movie) {
+      setWatchingMovieId(null);
+      return;
+    }
+
+    const watchedPriority = movie.priority;
+
+    const payload: any = {
+      status: "watched",
+      date_watched: watchedDate,
+      priority: null,
+    };
+
+    const { error } = await supabase
+      .from("movie_tracker")
+      .update(payload)
+      .eq("id", movie.id);
+
+    if (error) {
+      alert(`Mark watched failed: ${error.message}`);
+      return;
+    }
+
+    setWatchingMovieId(null);
+
+    // Rebalance priorities
+    if (watchedPriority !== null && watchedPriority !== 99) {
+      try {
+        const { data: affected, error: selErr } = await supabase
+          .from("movie_tracker")
+          .select("id,priority")
+          .eq("status", "to_watch")
+          .not("priority", "is", null)
+          .neq("priority", 99)
+          .gt("priority", watchedPriority);
+
+        if (selErr) throw selErr;
+
+        const updates = (affected ?? []).map((r: any) => {
+          const nextP = Math.max(0, (r.priority as number) - 1);
+          return supabase.from("movie_tracker").update({ priority: nextP }).eq("id", r.id);
+        });
+
+        if (updates.length > 0) {
+          const results = await Promise.all(updates);
+          const firstErr = results.find((res: any) => res?.error)?.error;
+          if (firstErr) throw firstErr;
+        }
+      } catch (e: any) {
+        alert(`Priority rebalance failed: ${e?.message ?? "Unknown error"}`);
+      }
+    }
+
+    await fetchAll();
+  }
+
+  async function scheduleMovieAsIntention(movieId: string, targetValue: string) {
+    const movie = movieItems.find((m) => m.id === movieId);
+    if (!movie) return;
+
+    // Don't process if "Open" (none) is selected
+    if (targetValue === "none") {
+      setMovieDropdownId(null);
+      return;
+    }
+
+    setMovieDropdownId(null);
+
+    // Parse the target value to get the scheduled_for date
+    let scheduledFor: string | null = null;
+
+    if (targetValue.startsWith("D|")) {
+      // Day target: D|YYYY-MM-DD
+      scheduledFor = targetValue.slice(2);
+    } else if (targetValue.startsWith("P|week|") || targetValue.startsWith("P|weekend|")) {
+      // Parking lot target - use the window start date
+      const windowStart = targetValue.split("|")[2];
+      scheduledFor = windowStart;
+    }
+
+    if (!scheduledFor) {
+      alert("Invalid target selected");
+      return;
+    }
+
+    // Create a focus (intention) with content_category = "movies"
+    const payload: any = {
+      title: movie.title,
+      scheduled_for: scheduledFor,
+      content_category: "movies",
+      status: "active",
+    };
+
+    const { error } = await supabase.from("focuses").insert(payload);
+
+    if (error) {
+      alert(`Failed to schedule movie: ${error.message}`);
+      return;
+    }
+
+    await fetchAll();
   }
 
   useEffect(() => {
@@ -2732,11 +2961,63 @@ const { error } = await supabase
                         <div className="px-3 py-3 text-xs text-neutral-400">No items yet.</div>
                       ) : (
                         <div className="divide-y divide-neutral-800/60">
-                          {movieItems.map((m) => (
-                            <div key={m.id} className="flex items-center gap-2 px-3 py-2">
-                              <div className="min-w-0 flex-1 truncate text-base text-neutral-200">{m.title}</div>
-                            </div>
-                          ))}
+                          {movieItems.map((m) => {
+                            const showDropdown = movieDropdownId === m.id;
+                            return (
+                              <div key={m.id}>
+                                <div
+                                  className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-neutral-800/30 transition"
+                                  onClick={() => setMovieDropdownId(showDropdown ? null : m.id)}
+                                >
+                                  <div className="min-w-0 flex-1 truncate text-base text-neutral-200">{m.title}</div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      aria-label="Move up"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        moveMoviePriority(m.id, "up");
+                                      }}
+                                      className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg border border-neutral-700 bg-neutral-800/50 grid place-items-center text-[12px] sm:text-[13px] text-neutral-300 hover:bg-neutral-700/50 active:scale-[0.98] transition"
+                                    >
+                                      ▲
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label="Move down"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        moveMoviePriority(m.id, "down");
+                                      }}
+                                      className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg border border-neutral-700 bg-neutral-800/50 grid place-items-center text-[12px] sm:text-[13px] text-neutral-300 hover:bg-neutral-700/50 active:scale-[0.98] transition"
+                                    >
+                                      ▼
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label="Mark watched"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openWatchedModal(m.id);
+                                      }}
+                                      className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl border border-neutral-700 bg-neutral-800/50 grid place-items-center text-neutral-300 hover:bg-neutral-700/50 active:scale-[0.98] transition"
+                                    >
+                                      ✓
+                                    </button>
+                                  </div>
+                                </div>
+                                {showDropdown && (
+                                  <div className="px-3 pb-2">
+                                    <MoveSelect
+                                      value="none"
+                                      onChange={(v) => scheduleMovieAsIntention(m.id, v)}
+                                      moveTargets={moveTargets}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )
                     ) : contentItems.length === 0 ? (
@@ -3201,6 +3482,47 @@ const { error } = await supabase
         onDelete={deleteEditItem}
         onArchiveFocus={archiveEditedFocus}
       />
+
+      {/* Movie Watched Modal */}
+      {watchingMovieId ? (
+        <div className="fixed inset-0 z-50 grid place-items-center px-5">
+          <div
+            className="absolute inset-0 bg-black/70"
+            onClick={() => setWatchingMovieId(null)}
+          />
+          <div className="relative w-full max-w-md rounded-2xl border border-neutral-700 bg-neutral-950 p-4 shadow-2xl">
+            <div className="text-lg font-semibold mb-1">Mark watched</div>
+            <div className="text-sm text-neutral-400 mb-4 truncate">
+              {movieItems.find((m) => m.id === watchingMovieId)?.title ?? ""}
+            </div>
+
+            <label className="block text-xs text-neutral-400 mb-1">Watched date</label>
+            <input
+              type="date"
+              value={watchedDate}
+              onChange={(e) => setWatchedDate(e.target.value)}
+              className="w-full rounded-xl border border-neutral-700 bg-neutral-800/50 px-3 py-2 text-neutral-100 outline-none"
+            />
+
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setWatchingMovieId(null)}
+                className="h-11 flex-1 rounded-xl border border-neutral-700 bg-neutral-800/50 text-neutral-100 font-semibold hover:bg-neutral-700/50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmMarkWatched}
+                className="h-11 flex-1 rounded-xl bg-white text-black font-semibold hover:bg-neutral-100 transition"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
