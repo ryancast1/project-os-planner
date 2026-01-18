@@ -169,6 +169,7 @@ export default function WorkoutPlannerPage() {
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [draftKeys, setDraftKeys] = useState<Set<string>>(new Set());
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
 
   const [isPhone, setIsPhone] = useState(false);
@@ -302,14 +303,18 @@ export default function WorkoutPlannerPage() {
               if (selectableDays.has(d)) filtered.add(k);
             }
             setDraftKeys(filtered);
+            setDraftHydrated(true);
           } else {
             setDraftKeys(new Set(freshSaved));
+            setDraftHydrated(true);
           }
         } else {
           setDraftKeys(new Set(freshSaved));
+          setDraftHydrated(true);
         }
       } catch {
         setDraftKeys(new Set(freshSaved));
+        setDraftHydrated(true);
       }
     } catch (e: any) {
       setErr(e?.message ?? String(e));
@@ -362,13 +367,14 @@ export default function WorkoutPlannerPage() {
   }, []);
 
   useEffect(() => {
+    if (!draftHydrated) return;
     try {
       if (typeof window === "undefined") return;
       window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(Array.from(draftKeys)));
     } catch {
       // ignore
     }
-  }, [draftKeys]);
+  }, [draftKeys, draftHydrated]);
 
   function toggleDraft(iso: string, slug: string) {
     const k = keyOf(iso, slug);
@@ -514,6 +520,7 @@ export default function WorkoutPlannerPage() {
         freshSaved.add(keyOf(r.planned_on, r.workout_slug));
       }
       setDraftKeys(new Set(freshSaved));
+      setDraftHydrated(true);
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
