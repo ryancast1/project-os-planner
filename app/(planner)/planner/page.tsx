@@ -63,7 +63,16 @@ type HabitLog = {
 
 type ItemType = "task" | "plan" | "focus";
 
+
 type DrawerWindow = "thisWeek" | "thisWeekend" | "nextWeek" | "nextWeekend" | "open";
+
+type ContentTab = "cook" | "watch" | "movies" | "listen" | "read";
+
+type ContentItem = {
+  id: string;
+  text: string;
+  created_at: string; // ISO
+};
 
 type MoveTarget = { label: string; value: string; group: "days" | "parking" };
 
@@ -1354,6 +1363,57 @@ export default function PlannerPage() {
   const PARKING_TAB_KEY = "planner.parkingTab";
   const PARKING_OPEN_KEY = "planner.parkingOpen";
 
+  const CONTENT_TAB_KEY = "planner.contentTab";
+  const CONTENT_OPEN_KEY = "planner.contentOpen";
+
+  const [contentTab, setContentTab] = useState<ContentTab>(() => {
+    if (typeof window === "undefined") return "cook";
+    const raw = window.localStorage.getItem(CONTENT_TAB_KEY);
+    const allowed: ContentTab[] = ["cook", "watch", "movies", "listen", "read"];
+    return allowed.includes(raw as ContentTab) ? (raw as ContentTab) : "cook";
+  });
+
+  const [contentOpen, setContentOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const raw = window.localStorage.getItem(CONTENT_OPEN_KEY);
+    if (raw === null) return true;
+    return raw === "1";
+  });
+
+  const CONTENT_ITEMS_KEY_PREFIX = "planner.content.items.";
+
+  const [contentItemsByTab, setContentItemsByTab] = useState<Record<ContentTab, ContentItem[]>>(() => {
+    if (typeof window === "undefined") {
+      return { cook: [], watch: [], movies: [], listen: [], read: [] };
+    }
+    const tabs: ContentTab[] = ["cook", "watch", "movies", "listen", "read"];
+    const out: Record<ContentTab, ContentItem[]> = { cook: [], watch: [], movies: [], listen: [], read: [] };
+    for (const t of tabs) {
+      try {
+        const raw = window.localStorage.getItem(`${CONTENT_ITEMS_KEY_PREFIX}${t}`);
+        out[t] = raw ? (JSON.parse(raw) as ContentItem[]) : [];
+      } catch {
+        out[t] = [];
+      }
+    }
+    return out;
+  });
+
+  const [contentDraft, setContentDraft] = useState("");
+
+  function handleContentTabClick(next: ContentTab) {
+  // Tap the active tab => toggle open/closed
+  // Tap a different tab => switch tab and force open
+  setContentTab((prev) => {
+    if (prev === next) {
+      setContentOpen((o) => !o);
+      return prev;
+    }
+    setContentOpen(true);
+    return next;
+  });
+}
+
   const [drawerWindow, setDrawerWindow] = useState<DrawerWindow>(() => {
     if (typeof window === "undefined") return "thisWeek";
     const raw = window.localStorage.getItem(PARKING_TAB_KEY);
@@ -1385,6 +1445,28 @@ export default function PlannerPage() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(PARKING_OPEN_KEY, parkingOpen ? "1" : "0");
   }, [parkingOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(CONTENT_TAB_KEY, contentTab);
+  }, [contentTab]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(CONTENT_OPEN_KEY, contentOpen ? "1" : "0");
+  }, [contentOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const tabs: ContentTab[] = ["cook", "watch", "movies", "listen", "read"];
+    for (const t of tabs) {
+      try {
+        window.localStorage.setItem(`${CONTENT_ITEMS_KEY_PREFIX}${t}`, JSON.stringify(contentItemsByTab[t] ?? []));
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }, [contentItemsByTab]);
 
   // Responsive flag for md (768px+) and up
   const [isMdUp, setIsMdUp] = useState(false);
@@ -2107,6 +2189,42 @@ const { data, error } = await supabase
     setDrawerDraft("");
   }
 
+  function makeLocalId() {
+    // Prefer UUID when available; fallback to a stable-ish string.
+    const anyCrypto = globalThis.crypto as any;
+    if (anyCrypto?.randomUUID) return anyCrypto.randomUUID() as string;
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function addContentItem() {
+    const text = contentDraft.trim();
+    if (!text) return;
+
+    const item: ContentItem = {
+      id: makeLocalId(),
+      text,
+      created_at: new Date().toISOString(),
+    };
+
+    setContentItemsByTab((prev) => {
+      const cur = prev[contentTab] ?? [];
+      return { ...prev, [contentTab]: [item, ...cur] };
+    });
+
+    setContentDraft("");
+  }
+
+  function removeContentItem(id: string) {
+    setContentItemsByTab((prev) => {
+      const cur = prev[contentTab] ?? [];
+      return { ...prev, [contentTab]: cur.filter((x) => x.id !== id) };
+    });
+  }
+
+  const contentItems = useMemo(() => {
+    return contentItemsByTab[contentTab] ?? [];
+  }, [contentItemsByTab, contentTab]);
+
   const todayIso = toISODate(days[0]);
   const bottomOpenIso = openDayIso && openDayIso !== todayIso ? openDayIso : null;
 
@@ -2258,7 +2376,7 @@ const { error } = await supabase
         <div className="mt-6 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-2 grid min-w-0 gap-4 md:grid-cols-2">
+          <div className="mt-2 grid min-w-0 gap-4 md:grid-cols-3">
             {/* Parking */}
             <section className="order-1 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm md:order-none md:col-start-2 md:row-start-1">
               <div className="flex min-w-0 gap-2 overflow-x-auto pb-2">
@@ -2363,7 +2481,6 @@ const { error } = await supabase
                       </div>
                     </div>
                   </div>
-
                   {/* Plans (italic, unboxed) */}
                   {drawerLists[drawerWindow].plan.length > 0 ? (
                     <div className="mt-3 space-y-1">
@@ -2381,10 +2498,12 @@ const { error } = await supabase
                   ) : null}
 
                   {/* Focuses + Tasks (boxed) */}
-                  <div className={clsx(
-                    "mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20",
-                    drawerLists[drawerWindow].plan.length > 0 ? "" : ""
-                  )}>
+                  <div
+                    className={clsx(
+                      "mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20",
+                      drawerLists[drawerWindow].plan.length > 0 ? "" : ""
+                    )}
+                  >
                     {drawerLists[drawerWindow].focus.map((f) => (
                       <FocusFloat
                         key={f.id}
@@ -2410,6 +2529,87 @@ const { error } = await supabase
                       drawerLists[drawerWindow].plan.length === 0 && (
                         <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>
                       )}
+                  </div>
+                </>
+              )}
+            </section>
+
+            {/* Content */}
+            <section className="order-2 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm md:order-none md:col-start-3 md:row-start-1">
+              <div className="h-5" />
+
+              {contentOpen && (
+                <>
+                  <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-2">
+                    {([
+                      ["cook", "Cook"],
+                      ["watch", "Watch"],
+                      ["listen", "Listen"],
+                      ["read", "Read"],
+                      ["movies", "Movies"],
+
+                    ] as const).map(([k, label]) => {
+                      const count = contentItemsByTab[k]?.length ?? 0;
+                      const active = contentTab === k;
+                      return (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => handleContentTabClick(k as ContentTab)}
+                          className={clsx(
+                            "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold",
+                            active
+                              ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                              : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                          )}
+                        >
+                          {label}{count ? ` (${count})` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {contentTab !== "movies" && (
+                  <div className="mt-2 flex items-start gap-2">
+                    <textarea
+                      value={contentDraft}
+                      onChange={(e) => setContentDraft(e.target.value)}
+                      placeholder="Add…"
+                      className="min-h-[44px] w-full flex-1 resize-none rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={addContentItem}
+                      className="shrink-0 rounded-xl bg-neutral-100 px-3 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                    >
+                      Add
+                    </button>
+                  </div>
+)}
+                  <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/25">
+                    {contentItems.length === 0 ? (
+                      <div className="px-3 py-3 text-xs text-neutral-400">No items yet.</div>
+                    ) : (
+                      <div className="divide-y divide-neutral-800/60">
+                        {contentItems.map((it) => {
+                          const firstLine = (it.text ?? "").split("\n")[0] ?? "";
+                          return (
+                            <div key={it.id} className="flex items-center gap-2 px-3 py-2">
+                              <div className="min-w-0 flex-1 truncate text-sm text-neutral-200">{firstLine}</div>
+                              <button
+                                type="button"
+                                onClick={() => removeContentItem(it.id)}
+                                className="rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1 text-[11px] font-semibold text-neutral-200"
+                                aria-label="Remove"
+                                title="Remove"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
