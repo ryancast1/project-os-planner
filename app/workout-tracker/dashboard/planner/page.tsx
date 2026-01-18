@@ -111,7 +111,6 @@ function keyOf(iso: string, slug: string) {
   return `${iso}|${slug}`;
 }
 
-const DRAFT_STORAGE_KEY = "workout_planner_draft_v1";
 
 function isoFromUTCDate(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -169,7 +168,6 @@ export default function WorkoutPlannerPage() {
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [draftKeys, setDraftKeys] = useState<Set<string>>(new Set());
-  const [draftHydrated, setDraftHydrated] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
 
   const [isPhone, setIsPhone] = useState(false);
@@ -289,40 +287,13 @@ export default function WorkoutPlannerPage() {
       const [sess, pls] = await Promise.all([loadSessions(), loadPlans()]);
       setPairs(sess);
       setPlans(pls);
-      // Initialize draft from saved plans for today..+7 (or restore draft from localStorage)
+      // Initialize draft from saved plans for today..+7
       const freshSaved = new Set<string>();
       for (const r of pls) {
         if (!selectableDays.has(r.planned_on)) continue;
         freshSaved.add(keyOf(r.planned_on, r.workout_slug));
       }
-      try {
-        const raw = typeof window !== "undefined" ? window.localStorage.getItem(DRAFT_STORAGE_KEY) : null;
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            const restored = new Set<string>();
-            for (const v of parsed) {
-              if (typeof v === "string") restored.add(v);
-            }
-            const filtered = new Set<string>();
-            for (const k of restored) {
-              const d = k.split("|")[0];
-              if (selectableDays.has(d)) filtered.add(k);
-            }
-            setDraftKeys(filtered);
-            setDraftHydrated(true);
-          } else {
-            setDraftKeys(new Set(freshSaved));
-            setDraftHydrated(true);
-          }
-        } else {
-          setDraftKeys(new Set(freshSaved));
-          setDraftHydrated(true);
-        }
-      } catch {
-        setDraftKeys(new Set(freshSaved));
-        setDraftHydrated(true);
-      }
+      setDraftKeys(new Set(freshSaved));
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -345,14 +316,14 @@ export default function WorkoutPlannerPage() {
               setPlans(p);
               // If user hasn't started editing, keep draft in sync with saved plans
               setDraftKeys((cur) => {
-                // Only auto-sync when draft matches prior saved state (best-effort)
-                // If user is mid-edit, don't clobber.
-                // We'll detect "dirty" by comparing here.
+                // If the user has unsaved edits, don't clobber the draft.
                 const saved = new Set<string>();
                 for (const r of p) {
                   if (!selectableDays.has(r.planned_on)) continue;
                   saved.add(keyOf(r.planned_on, r.workout_slug));
                 }
+
+                // If draft matches saved, keep synced; otherwise leave user's in-progress edits alone.
                 if (cur.size !== saved.size) return cur;
                 for (const k of cur) if (!saved.has(k)) return cur;
                 return new Set(saved);
@@ -373,15 +344,6 @@ export default function WorkoutPlannerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!draftHydrated) return;
-    try {
-      if (typeof window === "undefined") return;
-      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(Array.from(draftKeys)));
-    } catch {
-      // ignore
-    }
-  }, [draftKeys, draftHydrated]);
 
   function toggleDraft(iso: string, slug: string) {
     const k = keyOf(iso, slug);
@@ -517,19 +479,13 @@ export default function WorkoutPlannerPage() {
         }
       }
 
-      // Clear draft cache and re-sync draft to saved
-      try {
-        if (typeof window !== "undefined") window.localStorage.removeItem(DRAFT_STORAGE_KEY);
-      } catch {
-        // ignore
-      }
+      // Re-sync draftKeys to saved
       const freshSaved = new Set<string>();
       for (const r of freshPlans) {
         if (!selectableDays.has(r.planned_on)) continue;
         freshSaved.add(keyOf(r.planned_on, r.workout_slug));
       }
       setDraftKeys(new Set(freshSaved));
-      setDraftHydrated(true);
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
