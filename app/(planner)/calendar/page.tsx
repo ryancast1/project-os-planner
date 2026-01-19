@@ -133,6 +133,82 @@ function useLongPress(opts: {
   return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel };
 }
 
+function DayCell({
+  d,
+  iso,
+  isToday,
+  dayPlans,
+  maxPlansPerCell,
+  weekend,
+  dayOff,
+  monthChangeFromTop,
+  monthChangeFromLeft,
+  dIdx,
+  onOpenDay,
+}: {
+  d: Date;
+  iso: string;
+  isToday: boolean;
+  dayPlans: Plan[];
+  maxPlansPerCell: number;
+  weekend: boolean;
+  dayOff: boolean;
+  monthChangeFromTop: boolean;
+  monthChangeFromLeft: boolean;
+  dIdx: number;
+  onOpenDay: (iso: string) => void;
+}) {
+  const lp = useLongPress({
+    onLongPress: () => onOpenDay(iso),
+    ms: 450,
+  });
+
+  const show = dayPlans.slice(0, maxPlansPerCell);
+  const extra = Math.max(0, dayPlans.length - show.length);
+
+  return (
+    <div
+      {...lp}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onOpenDay(iso);
+      }}
+      className={clsx(
+        "relative p-1 select-none aspect-square transition-colors",
+        // grid lines
+        dIdx === 6 ? "border-r-0" : "border-r border-r-neutral-700/40",
+        // top border for every cell; thicker when month changes vs the cell above
+        monthChangeFromTop ? "border-t-2 border-t-neutral-500/70" : "border-t border-t-neutral-700/40",
+        // thicker left border when month changes vs the cell to the left (e.g., Jan 31 -> Feb 1)
+        monthChangeFromLeft ? "border-l-2 border-l-neutral-500/70" : "",
+        isToday
+          ? "bg-neutral-600/55 ring-2 ring-inset ring-neutral-200/40 shadow-inner"
+          : (weekend || dayOff)
+            ? "bg-neutral-800/50"
+            : "bg-neutral-950/30"
+      )}
+      style={{ touchAction: "manipulation" }}
+    >
+      <div className="absolute right-1 top-1 text-[10px] font-medium text-neutral-400 md:landscape:text-xs">{d.getDate()}</div>
+
+      <div className="mt-5 space-y-0.5 sm:space-y-1 landscape:space-y-1 md:landscape:space-y-2 md:landscape:mt-0 md:landscape:h-full md:landscape:pt-5 md:landscape:pb-2 md:landscape:flex md:landscape:flex-col md:landscape:justify-center">
+        {show.map((p) => (
+          <div
+            key={p.id}
+            className="text-center whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-100 font-normal sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:break-words landscape:text-center md:landscape:text-[13px] md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
+            title={p.title}
+          >
+            {p.title}
+          </div>
+        ))}
+        {extra > 0 ? (
+          <div className="text-center whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 font-medium sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:text-center md:landscape:text-[13px] md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function CalendarPage() {
   const today = useMemo(() => {
     const d = new Date();
@@ -142,8 +218,36 @@ export default function CalendarPage() {
 
   const week0 = useMemo(() => startOfWeekMonday(today), [today]);
 
+  // App start date - January 12, 2026
+  const appStartDate = useMemo(() => new Date(2026, 0, 12), []);
+  const appStartWeek = useMemo(() => startOfWeekMonday(appStartDate), [appStartDate]);
+
+  const [showPast, setShowPast] = useState(false);
+
+  // Calculate how many past weeks to show (from app start to last week)
+  const pastWeeksCount = useMemo(() => {
+    const diffMs = week0.getTime() - appStartWeek.getTime();
+    const diffWeeks = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
+    return Math.max(0, diffWeeks);
+  }, [week0, appStartWeek]);
+
+  // Index where current week starts (0 if not showing past, pastWeeksCount if showing past)
+  const currentWeekIndex = showPast ? pastWeeksCount : 0;
+
   const weeks = useMemo(() => {
     const out: Date[][] = [];
+
+    // Add past weeks if showing past
+    if (showPast && pastWeeksCount > 0) {
+      for (let w = 0; w < pastWeeksCount; w++) {
+        const row: Date[] = [];
+        const start = addDays(appStartWeek, w * 7);
+        for (let i = 0; i < 7; i++) row.push(addDays(start, i));
+        out.push(row);
+      }
+    }
+
+    // Add current week + next 12 weeks (13 total future weeks)
     for (let w = 0; w < 13; w++) {
       const row: Date[] = [];
       const start = addDays(week0, w * 7);
@@ -151,11 +255,11 @@ export default function CalendarPage() {
       out.push(row);
     }
     return out;
-  }, [week0]);
+  }, [week0, showPast, pastWeeksCount, appStartWeek]);
 
   const range = useMemo(() => {
     const start = toISODate(weeks[0][0]);
-    const end = toISODate(weeks[12][6]);
+    const end = toISODate(weeks[weeks.length - 1][6]);
     return { start, end };
   }, [weeks]);
 
@@ -448,6 +552,21 @@ export default function CalendarPage() {
 
   return (
     <main className="h-full overflow-y-auto px-3 py-3 pb-[calc(100px+env(safe-area-inset-bottom))] sm:px-6 sm:py-6">
+      {/* Show Past button */}
+      <div className="mx-auto w-full max-w-[1200px] mb-3 flex justify-end">
+        <button
+          onClick={() => setShowPast((s) => !s)}
+          className={clsx(
+            "rounded-xl border px-4 py-2 text-sm font-semibold transition-colors",
+            showPast
+              ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+              : "border-neutral-700 bg-neutral-900 text-neutral-200"
+          )}
+        >
+          {showPast ? "Hide Past" : "Show Past"}
+        </button>
+      </div>
+
       {/* Weekday headers */}
       <div className="mx-auto w-full max-w-[1200px]">
         <div className="grid grid-cols-7 shadow-sm">
@@ -465,73 +584,48 @@ export default function CalendarPage() {
           ))}
         </div>
 
-        {/* 13-week grid */}
+        {/* Week grid */}
         <div className="border-x border-b border-neutral-700/50 shadow-lg">
           <div>
             {weeks.map((row, wIdx) => {
+              // Show divider before current week when viewing past
+              const isCurrentWeekStart = showPast && wIdx === currentWeekIndex;
+
               return (
-                <div key={`week-${wIdx}`} className="relative">
+                <div key={`week-${wIdx}`}>
+                  {/* Divider between past and current week */}
+                  {isCurrentWeekStart && (
+                    <div className="h-1.5 bg-neutral-500/80" />
+                  )}
+                  <div className="relative">
                   <div className="grid grid-cols-7">
                     {row.map((d, dIdx) => {
                       const iso = toISODate(d);
                       const isToday = iso === todayIso;
                       const dayPlans = plansByDay[iso] ?? [];
-                      const show = dayPlans.slice(0, maxPlansPerCell);
-                      const extra = Math.max(0, dayPlans.length - show.length);
                       const weekend = isWeekend(d);
                       const dayOff = !!dayOffByDay[iso];
 
                       const monthChangeFromTop =
-                        wIdx > 0 && weeks[wIdx - 1][dIdx].getMonth() !== d.getMonth();
+                        wIdx > 0 && weeks[wIdx - 1][dIdx].getMonth() !== d.getMonth() && !isCurrentWeekStart;
                       const monthChangeFromLeft =
                         dIdx > 0 && row[dIdx - 1].getMonth() !== d.getMonth();
 
-                      const lp = useLongPress({
-                        onLongPress: () => setOpenIso(iso),
-                        ms: 450,
-                      });
-
                       return (
-                        <div
+                        <DayCell
                           key={iso}
-                          {...lp}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setOpenIso(iso);
-                          }}
-                          className={clsx(
-                            "relative p-1 select-none aspect-square transition-colors",
-                            // grid lines
-                            dIdx === 6 ? "border-r-0" : "border-r border-r-neutral-700/40",
-                            // top border for every cell; thicker when month changes vs the cell above
-                            monthChangeFromTop ? "border-t-2 border-t-neutral-500/70" : "border-t border-t-neutral-700/40",
-                            // thicker left border when month changes vs the cell to the left (e.g., Jan 31 -> Feb 1)
-                            monthChangeFromLeft ? "border-l-2 border-l-neutral-500/70" : "",
-                            isToday
-                              ? "bg-neutral-600/55 ring-2 ring-inset ring-neutral-200/40 shadow-inner"
-                              : (weekend || dayOff)
-                                ? "bg-neutral-800/50"
-                                : "bg-neutral-950/30"
-                          )}
-                          style={{ touchAction: "manipulation" }}
-                        >
-                          <div className="absolute right-1 top-1 text-[10px] font-medium text-neutral-400 md:landscape:text-xs">{d.getDate()}</div>
-
-                          <div className="mt-5 space-y-0.5 sm:space-y-1 landscape:space-y-1 md:landscape:space-y-2 md:landscape:mt-0 md:landscape:h-full md:landscape:pt-5 md:landscape:pb-2 md:landscape:flex md:landscape:flex-col md:landscape:justify-center">
-                            {show.map((p) => (
-                              <div
-                                key={p.id}
-                                className="text-center whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-100 font-normal sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:break-words landscape:text-center md:landscape:text-[13px] md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:break-words md:landscape:text-center"
-                                title={p.title}
-                              >
-                                {p.title}
-                              </div>
-                            ))}
-                            {extra > 0 ? (
-                              <div className="text-center whitespace-nowrap overflow-hidden text-ellipsis text-[8px] leading-tight text-neutral-400 font-medium sm:text-[11px] landscape:whitespace-normal landscape:overflow-visible landscape:text-clip landscape:text-center md:landscape:text-[13px] md:landscape:whitespace-normal md:landscape:overflow-visible md:landscape:text-clip md:landscape:text-center">+{extra}</div>
-                            ) : null}
-                          </div>
-                        </div>
+                          d={d}
+                          iso={iso}
+                          isToday={isToday}
+                          dayPlans={dayPlans}
+                          maxPlansPerCell={maxPlansPerCell}
+                          weekend={weekend}
+                          dayOff={dayOff}
+                          monthChangeFromTop={monthChangeFromTop}
+                          monthChangeFromLeft={monthChangeFromLeft}
+                          dIdx={dIdx}
+                          onOpenDay={setOpenIso}
+                        />
                       );
                     })}
                   </div>
@@ -591,6 +685,7 @@ export default function CalendarPage() {
                       })}
                     </div>
                   ) : null}
+                  </div>
                 </div>
               );
             })}

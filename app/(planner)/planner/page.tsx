@@ -97,6 +97,11 @@ type ProjectGoal = {
 
 type MoveTarget = { label: string; value: string; group: "days" | "parking" };
 
+type DayNote = {
+  note_date: string; // YYYY-MM-DD
+  notes: string;
+};
+
 type PlanningWindows = {
   thisWeekStart: string; // Monday
   nextWeekStart: string; // Monday
@@ -555,7 +560,6 @@ function TaskRow({
       tone={tone}
       compact={compact}
       onEdit={() => onEdit(task)}
-      onTap={() => setShowMove((s) => !s)}
       draggable={showDragHandle}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = "move";
@@ -586,7 +590,7 @@ function TaskRow({
         {isDone ? "✓" : ""}
       </button>
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setShowMove((s) => !s)}>
         <div
           className={clsx(
             "truncate",
@@ -624,8 +628,8 @@ function PlanRow({
 }) {
   const [showMove, setShowMove] = useState(false);
   return (
-    <RowShell compact={compact} onEdit={() => onEdit(plan)} onTap={() => setShowMove((s) => !s)}>
-      <div className="min-w-0 flex-1">
+    <RowShell compact={compact} onEdit={() => onEdit(plan)}>
+      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setShowMove((s) => !s)}>
         <div className={clsx("truncate", compact ? "text-[11px]" : "text-sm")}>
           {plan.title}
           <TimePill startsAt={plan.starts_at} endsAt={plan.ends_at} />
@@ -675,7 +679,6 @@ function FocusRow({
     <RowShell
       compact={compact}
       onEdit={() => onEdit(focus)}
-      onTap={() => setShowMove((s) => !s)}
       draggable={showDragHandle}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = "move";
@@ -690,7 +693,7 @@ function FocusRow({
       dropPosition={dropPosition}
       dragItemId={focus.id}
     >
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setShowMove((s) => !s)}>
         <div className={clsx("truncate", compact ? "text-[11px]" : "text-sm")}>{focus.title}</div>
       </div>
 
@@ -739,7 +742,6 @@ function FocusFloat({
   return (
     <RowShell
       onEdit={() => onEdit(focus)}
-      onTap={() => setShowMove((s) => !s)}
       draggable={showDragHandle}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = "move";
@@ -754,7 +756,7 @@ function FocusFloat({
       dropPosition={dropPosition}
       dragItemId={focus.id}
     >
-      <div className="min-w-0 flex-1 truncate text-sm text-neutral-200">{focus.title}</div>
+      <div className="min-w-0 flex-1 truncate text-sm text-neutral-200 cursor-pointer" onClick={() => setShowMove((s) => !s)}>{focus.title}</div>
 
       {showDragHandle && (
         <DragHandle className="ml-2" onTouchDragStart={() => onTouchDragStart?.(focus.id)} />
@@ -833,10 +835,6 @@ function FocusLine({
         "flex items-start rounded-lg hover:bg-neutral-950/30",
         compact ? "gap-1.5 px-2 py-1.5" : "gap-2 px-3 py-2"
       )}
-      onClick={(e) => {
-        if (isInteractiveTarget(e.target)) return;
-        setShowMove((s) => !s);
-      }}
       onPointerDown={start}
       onPointerMove={maybeCancelOnMove}
       onPointerUp={clear}
@@ -848,7 +846,10 @@ function FocusLine({
       }}
       style={{ touchAction: "manipulation" }}
     >
-      <div className={clsx("min-w-0 flex-1 italic text-neutral-200/90", compact ? "text-xs" : "text-sm")}>
+      <div
+        className={clsx("min-w-0 flex-1 italic text-neutral-200/90 cursor-pointer", compact ? "text-xs" : "text-sm")}
+        onClick={() => setShowMove((s) => !s)}
+      >
         <div className="truncate">{focus.title}</div>
       </div>
       {showMove && (
@@ -1569,6 +1570,10 @@ export default function PlannerPage() {
   const [gymDoneToday, setGymDoneToday] = useState(false);
   const [trichLoggedToday, setTrichLoggedToday] = useState<boolean | null>(null);
   const [projectGoals, setProjectGoals] = useState<ProjectGoal[]>([]);
+  const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
+  const [notesModalDate, setNotesModalDate] = useState<string | null>(null);
+  const [notesModalDraft, setNotesModalDraft] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const [authReady, setAuthReady] = useState(false);
