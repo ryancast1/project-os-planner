@@ -3234,7 +3234,7 @@ const { error } = await supabase
           </div>
 
           {/* Next 6 days */}
-          <div className="mt-3 flex flex-col gap-3 flex-shrink min-h-0 md:flex-row md:flex-nowrap md:items-stretch md:basis-[40%] md:overflow-y-auto lg:gap-4">
+          <div className="mt-3 flex flex-col gap-3 flex-shrink min-h-0 overflow-y-auto md:flex-row md:flex-nowrap md:items-stretch md:basis-[40%] lg:gap-4">
             {days.slice(1).map((d, i) => {
               const iso = toISODate(d);
               const label = fmtDayLabel(d, i + 1);
