@@ -489,7 +489,7 @@ function EditSheet({
             {loadingLinked ? (
               <div className="text-xs text-neutral-500">Loading linked items…</div>
             ) : linkedItems.length === 0 ? (
-              <div className="text-xs text-neutral-500">No linked tasks, plans, or intentions yet.</div>
+              <div className="text-xs text-neutral-500">No linked items yet.</div>
             ) : (
               <div className="space-y-1.5">
                 {linkedItems.map((item) => (
