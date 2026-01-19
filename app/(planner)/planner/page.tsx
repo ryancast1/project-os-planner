@@ -1291,6 +1291,120 @@ function EditSheet({
   );
 }
 
+function NotesButton({ date, hasNotes, onClick }: { date: string; hasNotes: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={clsx(
+        "transition-colors",
+        hasNotes ? "text-neutral-200" : "text-neutral-500 hover:text-neutral-300"
+      )}
+      title="Day notes"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-4 w-4"
+      >
+        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+        <line x1="10" y1="9" x2="8" y2="9" />
+      </svg>
+    </button>
+  );
+}
+
+function NotesModal({
+  open,
+  date,
+  dateLabel,
+  initialNotes,
+  saving,
+  onSave,
+  onClose,
+}: {
+  open: boolean;
+  date: string;
+  dateLabel: string;
+  initialNotes: string;
+  saving: boolean;
+  onSave: (date: string, notes: string) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState(initialNotes);
+
+  // Reset draft when modal opens with new date
+  useEffect(() => {
+    if (open) setDraft(initialNotes);
+  }, [open, initialNotes]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-neutral-100">Notes for {dateLabel}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-neutral-400 hover:text-neutral-200 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add notes for this day..."
+          className="w-full min-h-[200px] resize-y rounded-xl border border-neutral-700 bg-neutral-800/50 px-3 py-2 text-base text-neutral-100 placeholder:text-neutral-500 outline-none focus:border-neutral-500"
+          autoFocus
+        />
+
+        <div className="mt-4 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-neutral-700 px-4 py-2 text-sm font-semibold text-neutral-300 hover:bg-neutral-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onSave(date, draft);
+              onClose();
+            }}
+            disabled={saving}
+            className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AddSheet({
   open,
   onClose,
@@ -1914,6 +2028,7 @@ function getWindowValue(which: DrawerWindow) {
       trichEventsTodayRes,
       movieTrackerRes,
       projectGoalsRes,
+      dayNotesRes,
     ] = await Promise.all([
       supabase
         .from("tasks")
@@ -2016,6 +2131,11 @@ function getWindowValue(which: DrawerWindow) {
         .eq("archived", false)
         .order("sort_order", { ascending: true })
         .order("goal", { ascending: true }),
+      supabase
+        .from("day_notes")
+        .select("note_date,notes")
+        .gte("note_date", start)
+        .lte("note_date", end),
     ]);
 
     if (tasksScheduledRes.error) console.warn("tasksScheduledRes", tasksScheduledRes.error);
@@ -2031,6 +2151,7 @@ function getWindowValue(which: DrawerWindow) {
     if (trichEventsTodayRes.error) console.warn("trichEventsTodayRes", trichEventsTodayRes.error);
     if (movieTrackerRes.error) console.warn("movieTrackerRes", movieTrackerRes.error);
     if (projectGoalsRes.error) console.warn("projectGoalsRes", projectGoalsRes.error);
+    if (dayNotesRes.error) console.warn("dayNotesRes", dayNotesRes.error);
     setTasks([
       ...((tasksOverdueRes.data ?? []) as Task[]),
       ...((tasksScheduledRes.data ?? []) as Task[]),
@@ -2048,6 +2169,13 @@ function getWindowValue(which: DrawerWindow) {
     ]);
 
     setProjectGoals((projectGoalsRes.data ?? []) as ProjectGoal[]);
+
+    // Process day notes into a lookup by date
+    const notesMap: Record<string, string> = {};
+    for (const row of (dayNotesRes.data ?? []) as DayNote[]) {
+      if (row.notes) notesMap[row.note_date] = row.notes;
+    }
+    setDayNotes(notesMap);
 
     let habitsData = (habitsRes.data ?? []) as any[];
     if (habitsRes.error) {
@@ -2831,6 +2959,19 @@ const { data, error } = await supabase
     );
   }
 
+  async function saveDayNotes(date: string, notes: string) {
+    setNotesSaving(true);
+    const { error } = await supabase
+      .from("day_notes")
+      .upsert({ note_date: date, notes, updated_at: new Date().toISOString() }, { onConflict: "note_date" });
+    setNotesSaving(false);
+    if (error) {
+      console.error("saveDayNotes", error);
+      return;
+    }
+    setDayNotes((prev) => ({ ...prev, [date]: notes }));
+  }
+
   async function deleteTask(id: string) {
     const { error } = await supabase.from("tasks").delete().eq("id", id);
     if (error) return console.error(error);
@@ -3491,9 +3632,16 @@ const { error } = await supabase
               )}
             >
             <div className="flex items-start justify-between gap-2">
-              <div className="shrink-0">
-                <div className="text-lg font-semibold">Today</div>
-                <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
+              <div className="flex items-center gap-2">
+                <div className="shrink-0">
+                  <div className="text-lg font-semibold">Today</div>
+                  <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
+                </div>
+                <NotesButton
+                  date={toISODate(days[0])}
+                  hasNotes={!!dayNotes[toISODate(days[0])]}
+                  onClick={() => setNotesModalDate(toISODate(days[0]))}
+                />
               </div>
 
     {/* Habit chips (Today only) */}
@@ -3773,21 +3921,36 @@ const { error } = await supabase
                       isWeekend ? "bg-neutral-800/80" : "bg-neutral-900"
                     )}
                   >
-                  <button
-                    onClick={() => {
-                      ensureDayDraft(iso);
-                      setOpenDayIso((cur) => (cur === iso ? null : iso));
-                    }}
-                    className="flex w-full items-center justify-between text-left"
-                  >
-                    <div>
-                      <div className="font-semibold">{label}</div>
-                      <div className="mt-0.5 text-xs text-neutral-400">
-                        {fmtMonthDay(d)}
-                      </div>
+                  <div className="flex w-full items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          ensureDayDraft(iso);
+                          setOpenDayIso((cur) => (cur === iso ? null : iso));
+                        }}
+                        className="text-left"
+                      >
+                        <div className="font-semibold">{label}</div>
+                        <div className="mt-0.5 text-xs text-neutral-400">
+                          {fmtMonthDay(d)}
+                        </div>
+                      </button>
+                      <NotesButton
+                        date={iso}
+                        hasNotes={!!dayNotes[iso]}
+                        onClick={() => setNotesModalDate(iso)}
+                      />
                     </div>
-                    <div className="text-sm text-neutral-400">{isOpen ? "–" : "+"}</div>
-                  </button>
+                    <button
+                      onClick={() => {
+                        ensureDayDraft(iso);
+                        setOpenDayIso((cur) => (cur === iso ? null : iso));
+                      }}
+                      className="text-sm text-neutral-400"
+                    >
+                      {isOpen ? "–" : "+"}
+                    </button>
+                  </div>
 
                   {isOpen ? (
                     <>
@@ -4067,6 +4230,21 @@ const { error } = await supabase
         onSave={saveEdit}
         onDelete={deleteEditItem}
         onArchiveFocus={archiveEditedFocus}
+      />
+
+      <NotesModal
+        open={!!notesModalDate}
+        date={notesModalDate ?? ""}
+        dateLabel={notesModalDate ? (() => {
+          const d = fromISODate(notesModalDate);
+          const isToday = notesModalDate === toISODate(days[0]);
+          if (isToday) return "Today";
+          return d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+        })() : ""}
+        initialNotes={notesModalDate ? (dayNotes[notesModalDate] ?? "") : ""}
+        saving={notesSaving}
+        onSave={saveDayNotes}
+        onClose={() => setNotesModalDate(null)}
       />
 
       {/* Movie Watched Modal */}

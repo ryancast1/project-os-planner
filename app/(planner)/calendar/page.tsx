@@ -18,6 +18,7 @@ type Task = {
   title: string;
   scheduled_for: string;
   status: string;
+  sort_order?: number | null;
 };
 
 type Focus = {
@@ -25,6 +26,7 @@ type Focus = {
   title: string;
   scheduled_for: string;
   status?: string | null;
+  sort_order?: number | null;
 };
 
 function pad2(n: number) {
@@ -268,6 +270,7 @@ export default function CalendarPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [focuses, setFocuses] = useState<Focus[]>([]);
+  const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   const [openIso, setOpenIso] = useState<string | null>(null);
@@ -292,7 +295,7 @@ export default function CalendarPage() {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [plansRes, tasksRes, focusRes] = await Promise.all([
+      const [plansRes, tasksRes, focusRes, dayNotesRes] = await Promise.all([
         supabase
           .from("plans")
           .select("id,title,scheduled_for,end_date,starts_at,status,day_off")
@@ -303,28 +306,44 @@ export default function CalendarPage() {
           .order("created_at", { ascending: true }),
         supabase
           .from("tasks")
-          .select("id,title,scheduled_for,status")
+          .select("id,title,scheduled_for,status,sort_order")
           .gte("scheduled_for", range.start)
           .lte("scheduled_for", range.end)
           .order("scheduled_for", { ascending: true })
+          .order("sort_order", { ascending: true })
           .order("created_at", { ascending: true }),
         supabase
           .from("focuses")
-          .select("id,title,scheduled_for,status")
+          .select("id,title,scheduled_for,status,sort_order")
           .gte("scheduled_for", range.start)
           .lte("scheduled_for", range.end)
           .order("scheduled_for", { ascending: true })
+          .order("sort_order", { ascending: true })
           .order("created_at", { ascending: true }),
+        supabase
+          .from("day_notes")
+          .select("note_date,notes")
+          .gte("note_date", range.start)
+          .lte("note_date", range.end),
       ]);
 
       if (!alive) return;
       if (plansRes.error) console.error(plansRes.error);
       if (tasksRes.error) console.error(tasksRes.error);
       if (focusRes.error) console.error(focusRes.error);
+      if (dayNotesRes.error) console.error(dayNotesRes.error);
 
       setPlans((plansRes.data ?? []) as Plan[]);
       setTasks((tasksRes.data ?? []) as Task[]);
       setFocuses((focusRes.data ?? []) as Focus[]);
+
+      // Process day notes into a lookup by date
+      const notesMap: Record<string, string> = {};
+      for (const row of (dayNotesRes.data ?? []) as { note_date: string; notes: string }[]) {
+        if (row.notes) notesMap[row.note_date] = row.notes;
+      }
+      setDayNotes(notesMap);
+
       setLoading(false);
     })();
     return () => {
@@ -368,6 +387,10 @@ export default function CalendarPage() {
       if (!t.scheduled_for) continue;
       (m[t.scheduled_for] ||= []).push(t);
     }
+    // Sort each day's tasks by sort_order
+    for (const k of Object.keys(m)) {
+      m[k].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    }
     return m;
   }, [tasks]);
 
@@ -378,6 +401,10 @@ export default function CalendarPage() {
       const st = String(f.status ?? "").toLowerCase();
       if (st === "archived") continue;
       (m[f.scheduled_for] ||= []).push(f);
+    }
+    // Sort each day's focuses by sort_order
+    for (const k of Object.keys(m)) {
+      m[k].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     }
     return m;
   }, [focuses]);
@@ -476,6 +503,7 @@ export default function CalendarPage() {
     const dayFocus = (focusByDay[iso] ?? []).filter(
       (f) => String(f.status ?? "").toLowerCase() !== "archived"
     );
+    const notes = dayNotes[iso] ?? "";
 
     return (
       <div className="w-[min(560px,92vw)] rounded-3xl border border-neutral-700/60 bg-neutral-950/98 p-5 shadow-2xl backdrop-blur-xl">
@@ -542,7 +570,14 @@ export default function CalendarPage() {
             </div>
           ) : null}
 
-          {dayFocus.length === 0 && dayPlans.length === 0 && dayTasks.length === 0 ? (
+          {notes ? (
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Notes</div>
+              <div className="text-sm text-neutral-200 whitespace-pre-wrap">{notes}</div>
+            </div>
+          ) : null}
+
+          {!notes && dayFocus.length === 0 && dayPlans.length === 0 && dayTasks.length === 0 ? (
             <div className="text-sm text-neutral-400">Nothing scheduled.</div>
           ) : null}
         </div>
