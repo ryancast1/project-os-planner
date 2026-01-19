@@ -2719,7 +2719,7 @@ const { error } = await supabase
   }
 
   return (
-    <main className="min-h-dvh w-full max-w-full overflow-x-hidden px-4 pt-2 pb-3 sm:mx-auto sm:max-w-[1600px] lg:px-6">
+    <main className="h-dvh w-full max-w-full overflow-hidden px-4 pt-2 pb-3 sm:mx-auto sm:max-w-[1600px] lg:px-6 flex flex-col">
       {!authChecked ? (
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : !authReady ? (
@@ -2728,7 +2728,7 @@ const { error } = await supabase
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-0 grid min-w-0 gap-3 md:grid-cols-3 md:h-[425px] md:items-stretch lg:gap-4">
+          <div className="mt-0 grid min-w-0 gap-3 flex-shrink md:grid-cols-3 md:min-h-[450px] md:basis-[60%] md:items-stretch lg:gap-4">
             {/* Parking */}
             <section
               className={clsx(
@@ -3234,7 +3234,7 @@ const { error } = await supabase
           </div>
 
           {/* Next 6 days */}
-          <div className="mt-3 flex flex-col gap-3 md:flex-row md:flex-nowrap md:items-stretch lg:gap-4">
+          <div className="mt-3 flex flex-col gap-3 flex-shrink min-h-0 md:flex-row md:flex-nowrap md:items-stretch md:basis-[40%] md:overflow-y-auto lg:gap-4">
             {days.slice(1).map((d, i) => {
               const iso = toISODate(d);
               const label = fmtDayLabel(d, i + 1);
@@ -3253,7 +3253,7 @@ const { error } = await supabase
                 <Fragment key={iso}>
                   <section
                     className={clsx(
-                      "rounded-2xl border border-neutral-800 p-4 shadow-sm md:min-w-0",
+                      "rounded-2xl border border-neutral-800 p-4 shadow-sm md:min-w-0 md:overflow-y-auto md:h-full",
                       // Flex sizing on desktop/iPad: open card grows, others shrink slightly
                       isOpen ? "md:flex-[2]" : isAnotherOpen ? "md:flex-[0.85]" : "md:flex-1",
                       isWeekend ? "bg-neutral-800/80" : "bg-neutral-900"
