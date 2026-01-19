@@ -2719,7 +2719,7 @@ const { error } = await supabase
   }
 
   return (
-    <main className="h-dvh w-full max-w-full overflow-hidden px-4 pt-2 pb-3 sm:mx-auto sm:max-w-[1600px] lg:px-6 flex flex-col">
+    <main className="h-dvh w-full max-w-full overflow-y-auto px-4 pt-2 pb-3 sm:mx-auto sm:max-w-[1600px] lg:px-6 md:overflow-hidden md:flex md:flex-col">
       {!authChecked ? (
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : !authReady ? (
@@ -2728,7 +2728,7 @@ const { error } = await supabase
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-0 grid min-w-0 gap-3 flex-shrink min-h-0 md:grid-cols-3 md:min-h-[450px] md:flex-[1_1_60%] md:items-stretch lg:gap-4">
+          <div className="mt-0 grid min-w-0 gap-3 md:flex-shrink md:min-h-0 md:grid-cols-3 md:min-h-[450px] md:flex-[1_1_60%] md:items-stretch lg:gap-4">
             {/* Parking */}
             <section
               className={clsx(
@@ -3234,7 +3234,7 @@ const { error } = await supabase
           </div>
 
           {/* Next 6 days */}
-          <div className="mt-3 flex flex-col gap-3 flex-shrink min-h-0 overflow-y-auto md:flex-row md:flex-nowrap md:items-stretch md:basis-[40%] lg:gap-4">
+          <div className="mt-3 flex flex-col gap-3 md:flex-shrink md:min-h-0 md:overflow-y-auto md:flex-row md:flex-nowrap md:items-stretch md:basis-[40%] lg:gap-4">
             {days.slice(1).map((d, i) => {
               const iso = toISODate(d);
               const label = fmtDayLabel(d, i + 1);
