@@ -327,11 +327,17 @@ function TimePill({ startsAt, endsAt }: { startsAt: string | null; endsAt: strin
   );
 }
 
-function DragHandle({ className = "" }: { className?: string }) {
+function DragHandle({ className = "", onTouchDragStart }: { className?: string; onTouchDragStart?: () => void }) {
   return (
     <div
-      className={`cursor-grab active:cursor-grabbing ${className}`}
+      className={`cursor-grab active:cursor-grabbing touch-none ${className}`}
       aria-label="Drag to reorder"
+      onTouchStart={(e) => {
+        if (onTouchDragStart) {
+          e.stopPropagation();
+          onTouchDragStart();
+        }
+      }}
     >
       <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24">
         <path stroke="currentColor" strokeLinecap="round" strokeWidth={2}
@@ -355,6 +361,7 @@ function RowShell({
   isDragging = false,
   isDropTarget = false,
   dropPosition,
+  dragItemId,
 }: {
   tone?: "normal" | "overdue";
   children: React.ReactNode;
@@ -369,6 +376,7 @@ function RowShell({
   isDragging?: boolean;
   isDropTarget?: boolean;
   dropPosition?: "above" | "below" | null;
+  dragItemId?: string;
 }) {
   const timerRef = useRef<number | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
@@ -447,6 +455,7 @@ function RowShell({
         onEdit();
       }}
       style={{ touchAction: "manipulation" }}
+      data-drag-item-id={dragItemId}
     >
       {/* Drop indicator line */}
       {isDropTarget && dropPosition === "above" && (
@@ -519,6 +528,7 @@ function TaskRow({
   isDragging = false,
   isDropTarget = false,
   dropPosition,
+  onTouchDragStart,
 }: {
   task: Task;
   moveTargets: MoveTarget[];
@@ -535,6 +545,7 @@ function TaskRow({
   isDragging?: boolean;
   isDropTarget?: boolean;
   dropPosition?: "above" | "below" | null;
+  onTouchDragStart?: (id: string) => void;
 }) {
   const isDone = task.status === "done";
   const [showMove, setShowMove] = useState(false);
@@ -557,6 +568,7 @@ function TaskRow({
       isDragging={isDragging}
       isDropTarget={isDropTarget}
       dropPosition={dropPosition}
+      dragItemId={task.id}
     >
       <button
         onPointerDown={(e) => e.stopPropagation()}
@@ -586,8 +598,8 @@ function TaskRow({
         </div>
       </div>
 
-      {showDragHandle && !compact && (
-        <DragHandle className="ml-2" />
+      {showDragHandle && (
+        <DragHandle className={compact ? "ml-1" : "ml-2"} onTouchDragStart={() => onTouchDragStart?.(task.id)} />
       )}
 
       {showMove && (
@@ -641,6 +653,7 @@ function FocusRow({
   isDragging = false,
   isDropTarget = false,
   dropPosition,
+  onTouchDragStart,
 }: {
   focus: Focus;
   moveTargets: MoveTarget[];
@@ -655,6 +668,7 @@ function FocusRow({
   isDragging?: boolean;
   isDropTarget?: boolean;
   dropPosition?: "above" | "below" | null;
+  onTouchDragStart?: (id: string) => void;
 }) {
   const [showMove, setShowMove] = useState(false);
   return (
@@ -674,13 +688,14 @@ function FocusRow({
       isDragging={isDragging}
       isDropTarget={isDropTarget}
       dropPosition={dropPosition}
+      dragItemId={focus.id}
     >
       <div className="min-w-0 flex-1">
         <div className={clsx("truncate", compact ? "text-[11px]" : "text-sm")}>{focus.title}</div>
       </div>
 
-      {showDragHandle && !compact && (
-        <DragHandle className="ml-2" />
+      {showDragHandle && (
+        <DragHandle className={compact ? "ml-1" : "ml-2"} onTouchDragStart={() => onTouchDragStart?.(focus.id)} />
       )}
 
       {showMove && (
@@ -703,6 +718,7 @@ function FocusFloat({
   isDragging = false,
   isDropTarget = false,
   dropPosition,
+  onTouchDragStart,
 }: {
   focus: Focus;
   moveTargets: MoveTarget[];
@@ -716,6 +732,7 @@ function FocusFloat({
   isDragging?: boolean;
   isDropTarget?: boolean;
   dropPosition?: "above" | "below" | null;
+  onTouchDragStart?: (id: string) => void;
 }) {
   const [showMove, setShowMove] = useState(false);
 
@@ -735,11 +752,12 @@ function FocusFloat({
       isDragging={isDragging}
       isDropTarget={isDropTarget}
       dropPosition={dropPosition}
+      dragItemId={focus.id}
     >
       <div className="min-w-0 flex-1 truncate text-sm text-neutral-200">{focus.title}</div>
 
       {showDragHandle && (
-        <DragHandle className="ml-2" />
+        <DragHandle className="ml-2" onTouchDragStart={() => onTouchDragStart?.(focus.id)} />
       )}
 
       {showMove && (
@@ -1561,6 +1579,62 @@ export default function PlannerPage() {
   const [draggedItemType, setDraggedItemType] = useState<"task" | "focus" | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"above" | "below" | null>(null);
+  const [isTouchDragging, setIsTouchDragging] = useState(false);
+  const touchDragContextRef = useRef<{ type: "task" | "focus"; context: { date?: string; window?: string; contentTab?: string } } | null>(null);
+
+  // Touch drag handlers - reorder function reference for use in effect
+  const reorderItemsRef = useRef<((type: "task" | "focus", draggedId: string, targetId: string, context: { date?: string; window?: string; contentTab?: string }, position: "above" | "below") => void) | null>(null);
+
+  useEffect(() => {
+    if (!isTouchDragging) return;
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+
+      // Find element under touch point
+      const elementsAtPoint = document.elementsFromPoint(touch.clientX, touch.clientY);
+      const targetRow = elementsAtPoint.find((el) => el.getAttribute("data-drag-item-id"));
+
+      if (targetRow) {
+        const targetId = targetRow.getAttribute("data-drag-item-id");
+        if (targetId && targetId !== draggedItemId) {
+          setDropTargetId(targetId);
+          const rect = targetRow.getBoundingClientRect();
+          const midpoint = rect.top + rect.height / 2;
+          setDropPosition(touch.clientY < midpoint ? "above" : "below");
+        }
+      } else {
+        setDropTargetId(null);
+        setDropPosition(null);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      // Perform reorder if we have valid drop target
+      if (draggedItemId && dropTargetId && dropPosition && touchDragContextRef.current && reorderItemsRef.current) {
+        const { type, context } = touchDragContextRef.current;
+        reorderItemsRef.current(type, draggedItemId, dropTargetId, context, dropPosition);
+      }
+      // Clean up state
+      setIsTouchDragging(false);
+      setDraggedItemId(null);
+      setDraggedItemType(null);
+      setDropTargetId(null);
+      setDropPosition(null);
+      touchDragContextRef.current = null;
+    };
+
+    document.addEventListener("touchmove", handleTouchMove, { passive: true });
+    document.addEventListener("touchend", handleTouchEnd);
+    document.addEventListener("touchcancel", handleTouchEnd);
+
+    return () => {
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
+      document.removeEventListener("touchcancel", handleTouchEnd);
+    };
+  }, [isTouchDragging, draggedItemId, dropTargetId, dropPosition]);
 
   const [draftByDay, setDraftByDay] = useState<Record<string, Record<ItemType, string>>>({});
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
@@ -2556,11 +2630,29 @@ setMovieItems(
 
     const notesVal = args.notes.trim() ? args.notes.trim() : null;
 
+    // Calculate sort_order to place new item at the bottom of its context list
+    const getNextSortOrder = (items: { sort_order?: number; scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null }[]) => {
+      // Filter to items in the same context
+      const contextItems = items.filter((item) => {
+        if (placement.scheduled_for) {
+          return item.scheduled_for === placement.scheduled_for;
+        }
+        if (placement.window_kind && placement.window_start) {
+          return item.window_kind === placement.window_kind && item.window_start === placement.window_start;
+        }
+        // Unscheduled items (content box or truly unplaced)
+        return !item.scheduled_for && !item.window_kind && !item.window_start;
+      });
+      const maxOrder = contextItems.reduce((max, item) => Math.max(max, item.sort_order ?? 0), -1);
+      return maxOrder + 1;
+    };
+
     if (parsed.itemType === "task") {
+      const sort_order = getNextSortOrder(tasks);
       const { data, error } = await supabase
         .from("tasks")
-        .insert({ title, notes: notesVal, status: "open", project_goal_id: args.projectGoalId || null, ...placement })
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
+        .insert({ title, notes: notesVal, status: "open", project_goal_id: args.projectGoalId || null, sort_order, ...placement })
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at,sort_order")
         .single();
       if (error) return console.error(error);
       if (data) setTasks((p) => [...p, data as Task]);
@@ -2568,10 +2660,11 @@ setMovieItems(
     }
 
     if (parsed.itemType === "focus") {
+      const sort_order = getNextSortOrder(focuses);
       const { data, error } = await supabase
         .from("focuses")
-        .insert({ title, notes: notesVal, status: "active", project_goal_id: args.projectGoalId || null, ...placement })
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at")
+        .insert({ title, notes: notesVal, status: "active", project_goal_id: args.projectGoalId || null, sort_order, ...placement })
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at,sort_order")
         .single();
       if (error) return console.error(error);
       if (data) setFocuses((p) => [...p, data as Focus]);
@@ -2716,6 +2809,9 @@ const { data, error } = await supabase
       }
     }
   }
+
+  // Keep ref updated for touch drag effect
+  reorderItemsRef.current = reorderItems;
 
   async function toggleTaskDone(id: string, nextDone: boolean) {
     const nextStatus = nextDone ? "done" : "open";
@@ -2965,7 +3061,7 @@ const { error } = await supabase
   }
 
   return (
-    <main className="h-dvh w-full max-w-full overflow-y-auto px-4 pt-2 pb-3 sm:mx-auto sm:max-w-[1600px] lg:px-6 md:overflow-hidden md:flex md:flex-col">
+    <main className="h-full w-full max-w-full overflow-y-auto px-4 pt-2 pb-[calc(100px+env(safe-area-inset-bottom))] sm:mx-auto sm:max-w-[1600px] lg:px-6 md:overflow-hidden md:flex md:flex-col md:pb-3">
       {!authChecked ? (
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : !authReady ? (
@@ -3143,6 +3239,12 @@ const { error } = await supabase
                             reorderItems("focus", draggedItemId, f.id, { window: drawerWindow }, dropPosition);
                           }
                         }}
+                        onTouchDragStart={(id) => {
+                          setDraggedItemId(id);
+                          setDraggedItemType("focus");
+                          setIsTouchDragging(true);
+                          touchDragContextRef.current = { type: "focus", context: { window: drawerWindow } };
+                        }}
                       />
                     ))}
 
@@ -3179,6 +3281,12 @@ const { error } = await supabase
                           if (draggedItemId && draggedItemType === "task" && dropPosition) {
                             reorderItems("task", draggedItemId, t.id, { window: drawerWindow }, dropPosition);
                           }
+                        }}
+                        onTouchDragStart={(id) => {
+                          setDraggedItemId(id);
+                          setDraggedItemType("task");
+                          setIsTouchDragging(true);
+                          touchDragContextRef.current = { type: "task", context: { window: drawerWindow } };
                         }}
                       />
                     ))}
@@ -3354,6 +3462,12 @@ const { error } = await supabase
                               if (draggedItemId && draggedItemType === "focus" && dropPosition) {
                                 reorderItems("focus", draggedItemId, f.id, { contentTab }, dropPosition);
                               }
+                            }}
+                            onTouchDragStart={(id) => {
+                              setDraggedItemId(id);
+                              setDraggedItemType("focus");
+                              setIsTouchDragging(true);
+                              touchDragContextRef.current = { type: "focus", context: { contentTab } };
                             }}
                           />
                         ))}
@@ -3557,6 +3671,12 @@ const { error } = await supabase
                         reorderItems("focus", draggedItemId, f.id, { date: todayIso }, dropPosition);
                       }
                     }}
+                    onTouchDragStart={(id) => {
+                      setDraggedItemId(id);
+                      setDraggedItemType("focus");
+                      setIsTouchDragging(true);
+                      touchDragContextRef.current = { type: "focus", context: { date: todayIso } };
+                    }}
                   />
                 ))}
               </div>
@@ -3608,6 +3728,12 @@ const { error } = await supabase
                       if (draggedItemId && draggedItemType === "task" && dropPosition) {
                         reorderItems("task", draggedItemId, t.id, { date: todayIso }, dropPosition);
                       }
+                    }}
+                    onTouchDragStart={(id) => {
+                      setDraggedItemId(id);
+                      setDraggedItemType("task");
+                      setIsTouchDragging(true);
+                      touchDragContextRef.current = { type: "task", context: { date: todayIso } };
                     }}
                   />
                 ))}
@@ -3786,6 +3912,12 @@ const { error } = await supabase
                                   reorderItems("focus", draggedItemId, f.id, { date: iso }, dropPosition);
                                 }
                               }}
+                              onTouchDragStart={(id) => {
+                                setDraggedItemId(id);
+                                setDraggedItemType("focus");
+                                setIsTouchDragging(true);
+                                touchDragContextRef.current = { type: "focus", context: { date: iso } };
+                              }}
                             />
                           ))}
                         </div>
@@ -3827,6 +3959,12 @@ const { error } = await supabase
                                 if (draggedItemId && draggedItemType === "task" && dropPosition) {
                                   reorderItems("task", draggedItemId, t.id, { date: iso }, dropPosition);
                                 }
+                              }}
+                              onTouchDragStart={(id) => {
+                                setDraggedItemId(id);
+                                setDraggedItemType("task");
+                                setIsTouchDragging(true);
+                                touchDragContextRef.current = { type: "task", context: { date: iso } };
                               }}
                             />
                           ))}

@@ -390,7 +390,7 @@ export default function HabitsPage() {
   }
 
   return (
-    <main className="min-h-dvh px-4 py-3 pb-[calc(84px+env(safe-area-inset-bottom))]">
+    <main className="h-full overflow-y-auto px-4 py-3 pb-[calc(100px+env(safe-area-inset-bottom))]">
       <div className="mx-auto w-full max-w-5xl">
         {err ? (
           <div className="mb-3 rounded-xl border border-red-900/60 bg-red-950/30 px-3 py-2 text-sm text-red-200">

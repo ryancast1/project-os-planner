@@ -720,7 +720,7 @@ export default function GoalsPage() {
 
 
   return (
-    <main className="min-h-dvh w-full max-w-full overflow-x-hidden px-4 py-4 pb-[calc(112px+env(safe-area-inset-bottom))] sm:mx-auto sm:max-w-6xl">
+    <main className="h-full w-full max-w-full overflow-y-auto overflow-x-hidden px-4 py-4 pb-[calc(100px+env(safe-area-inset-bottom))] sm:mx-auto sm:max-w-6xl">
       <div className="flex items-center justify-end gap-2">
         <button
           className="rounded-2xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm font-semibold text-neutral-200"

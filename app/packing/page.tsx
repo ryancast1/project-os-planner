@@ -471,7 +471,7 @@ export default function PackingPage() {
                     value={newTripName}
                     onChange={(e) => setNewTripName(e.target.value)}
                     placeholder="Trip name (e.g. Florida - Feb 26)"
-                    className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-500"
+                    className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-base text-neutral-100 outline-none focus:border-neutral-500"
                   />
                   <button
                     onClick={createTrip}
@@ -520,7 +520,7 @@ export default function PackingPage() {
                       value={newItemName}
                       onChange={(e) => setNewItemName(e.target.value)}
                       placeholder="Item name"
-                      className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-500"
+                      className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-base text-neutral-100 outline-none focus:border-neutral-500"
                     />
                     <button
                       onClick={addTripItem}
@@ -548,7 +548,7 @@ export default function PackingPage() {
                                   <input
                                     value={editingText}
                                     onChange={(e) => setEditingText(e.target.value)}
-                                    className="w-full rounded-lg border border-neutral-700 bg-black/40 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-neutral-500"
+                                    className="w-full rounded-lg border border-neutral-700 bg-black/40 px-2 py-1 text-base text-neutral-100 outline-none focus:border-neutral-500"
                                   />
                                   <div className="mt-2 flex gap-2">
                                     <button
@@ -654,7 +654,7 @@ export default function PackingPage() {
                   value={newTemplateName}
                   onChange={(e) => setNewTemplateName(e.target.value)}
                   placeholder="Item name"
-                  className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-500"
+                  className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-base text-neutral-100 outline-none focus:border-neutral-500"
                 />
                 <button
                   onClick={addTemplateItem}

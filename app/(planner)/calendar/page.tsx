@@ -447,7 +447,7 @@ export default function CalendarPage() {
   }
 
   return (
-    <main className="min-h-dvh px-3 py-3 pb-28 sm:px-6 sm:py-6">
+    <main className="h-full overflow-y-auto px-3 py-3 pb-[calc(100px+env(safe-area-inset-bottom))] sm:px-6 sm:py-6">
       {/* Weekday headers */}
       <div className="mx-auto w-full max-w-[1200px]">
         <div className="grid grid-cols-7 shadow-sm">
