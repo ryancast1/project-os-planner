@@ -306,6 +306,14 @@ function LinkedItemsSheet({
   );
 }
 
+type LinkedItem = {
+  id: string;
+  title: string;
+  type: "task" | "plan" | "focus";
+  status?: string;
+  scheduled_for: string | null;
+};
+
 function EditSheet({
   open,
   title,
@@ -327,10 +335,53 @@ function EditSheet({
 }) {
   const [draft, setDraft] = useState<GoalRow | null>(initial);
   const [saving, setSaving] = useState(false);
+  const [linkedItems, setLinkedItems] = useState<LinkedItem[]>([]);
+  const [loadingLinked, setLoadingLinked] = useState(false);
 
   useEffect(() => {
     setDraft(initial);
     setSaving(false);
+
+    // Load linked items when opening
+    async function loadLinkedItems() {
+      if (!initial?.id) {
+        setLinkedItems([]);
+        return;
+      }
+
+      setLoadingLinked(true);
+      try {
+        const [tasksRes, plansRes, focusesRes] = await Promise.all([
+          supabase.from("tasks").select("id, title, status, scheduled_for").eq("project_goal_id", initial.id).in("status", ["open", "done"]),
+          supabase.from("plans").select("id, title, status, scheduled_for").eq("project_goal_id", initial.id).in("status", ["open", "done"]),
+          supabase.from("focuses").select("id, title, status, scheduled_for").eq("project_goal_id", initial.id).eq("status", "active"),
+        ]);
+
+        const items: LinkedItem[] = [
+          ...(tasksRes.data ?? []).map(t => ({ ...t, type: "task" as const })),
+          ...(plansRes.data ?? []).map(p => ({ ...p, type: "plan" as const })),
+          ...(focusesRes.data ?? []).map(f => ({ ...f, type: "focus" as const })),
+        ];
+
+        items.sort((a, b) => {
+          if (a.scheduled_for && b.scheduled_for) {
+            return new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime();
+          }
+          if (a.scheduled_for) return -1;
+          if (b.scheduled_for) return 1;
+          return 0;
+        });
+        setLinkedItems(items);
+      } finally {
+        setLoadingLinked(false);
+      }
+    }
+
+    if (open && initial) {
+      loadLinkedItems();
+    } else {
+      setLinkedItems([]);
+    }
   }, [initial, open]);
 
   if (!open || !draft) return null;
@@ -361,8 +412,8 @@ function EditSheet({
           if (!saving) onClose();
         }}
       />
-      <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-2xl rounded-t-3xl border border-neutral-800 bg-neutral-950 p-5 pb-[calc(20px+env(safe-area-inset-bottom))] shadow-2xl">
-        <div className="flex items-center justify-between">
+      <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-2xl rounded-t-3xl border border-neutral-800 bg-neutral-950 shadow-2xl flex flex-col max-h-[85dvh]">
+        <div className="flex items-center justify-between p-5 pb-3 shrink-0">
           <div className="text-base font-semibold text-neutral-100">{title}</div>
           <button
             className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-200"
@@ -374,7 +425,8 @@ function EditSheet({
           </button>
         </div>
 
-        <div className="mt-4 space-y-3">
+        <div className="overflow-y-auto px-5 flex-1 min-h-0">
+          <div className="space-y-3 pb-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <div className="mb-1 text-xs font-semibold text-neutral-400">Bucket</div>
@@ -428,9 +480,48 @@ function EditSheet({
               placeholder="Review notes…"
             />
           </div>
+
+          {/* Linked Items Section */}
+          <div>
+            <div className="mb-2 text-xs font-semibold text-neutral-400">
+              Linked Items ({linkedItems.length})
+            </div>
+            {loadingLinked ? (
+              <div className="text-xs text-neutral-500">Loading linked items…</div>
+            ) : linkedItems.length === 0 ? (
+              <div className="text-xs text-neutral-500">No linked tasks, plans, or intentions yet.</div>
+            ) : (
+              <div className="space-y-1.5">
+                {linkedItems.map((item) => (
+                  <div
+                    key={`${item.type}-${item.id}`}
+                    className="flex items-start gap-2 rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2"
+                  >
+                    <div className="shrink-0 rounded-md border border-neutral-700 bg-neutral-950 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                      {item.type === "task" ? "Task" : item.type === "plan" ? "Plan" : "Intent"}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className={clsx(
+                        "text-sm",
+                        item.status === "done" ? "text-neutral-500 line-through" : "text-neutral-200"
+                      )}>
+                        {item.title}
+                      </div>
+                      {item.scheduled_for && (
+                        <div className="mt-0.5 text-[11px] text-neutral-500">
+                          {new Date(item.scheduled_for).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-2">
+        <div className="shrink-0 p-5 pt-3 pb-[calc(20px+env(safe-area-inset-bottom))] flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <button
               className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-200"
@@ -796,7 +887,7 @@ export default function GoalsPage() {
                         "bg-neutral-950/20 hover:bg-neutral-950/30",
                         g.archived && "opacity-60"
                       )}
-                      onClick={() => setSelectedGoalId(g.id)}
+                      onClick={() => setEditingId(g.id)}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">

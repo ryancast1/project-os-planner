@@ -2728,7 +2728,7 @@ const { error } = await supabase
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-0 grid min-w-0 gap-3 flex-shrink md:grid-cols-3 md:min-h-[450px] md:basis-[60%] md:items-stretch lg:gap-4">
+          <div className="mt-0 grid min-w-0 gap-3 flex-shrink min-h-0 md:grid-cols-3 md:min-h-[450px] md:flex-[1_1_60%] md:items-stretch lg:gap-4">
             {/* Parking */}
             <section
               className={clsx(

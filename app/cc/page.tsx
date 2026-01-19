@@ -196,7 +196,13 @@ export default function CocktailChatterPage() {
       .update({ is_archived: true, archived_at: new Date().toISOString() })
       .eq("id", id);
 
-    if (error) setErr(error.message);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
+    // Refresh list immediately (in case realtime is delayed)
+    await load();
   }
 
   async function unarchiveEntry(id: string) {
@@ -206,7 +212,13 @@ export default function CocktailChatterPage() {
       .update({ is_archived: false, archived_at: null })
       .eq("id", id);
 
-    if (error) setErr(error.message);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
+    // Refresh list immediately (in case realtime is delayed)
+    await load();
   }
 
   function startEdit(e: CCEntry) {
@@ -322,28 +334,34 @@ export default function CocktailChatterPage() {
             {people.length === 0 ? (
               <div className="text-sm text-neutral-500">No entries yet.</div>
             ) : (
-              people.map((p) => {
-                const active = p === selectedPerson;
-                const c = countsByPerson.get(p) ?? { active: 0, archived: 0 };
-                const count = showArchived ? c.active + c.archived : c.active;
-                return (
-                  <button
-                    key={p}
-                    onClick={() => setSelectedPerson(p)}
-                    className={
-                      "whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-semibold " +
-                      (active
-                        ? "bg-neutral-100 text-neutral-950"
-                        : "bg-neutral-950/40 text-neutral-200 border border-neutral-800")
-                    }
-                  >
-                    {p}
-                    <span className={"ml-2 text-xs " + (active ? "text-neutral-700" : "text-neutral-500")}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })
+              people
+                .filter((p) => {
+                  const c = countsByPerson.get(p) ?? { active: 0, archived: 0 };
+                  // If showArchived is false, hide persons with only archived items
+                  return showArchived || c.active > 0;
+                })
+                .map((p) => {
+                  const active = p === selectedPerson;
+                  const c = countsByPerson.get(p) ?? { active: 0, archived: 0 };
+                  const count = showArchived ? c.active + c.archived : c.active;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setSelectedPerson(p)}
+                      className={
+                        "whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-semibold " +
+                        (active
+                          ? "bg-neutral-100 text-neutral-950"
+                          : "bg-neutral-950/40 text-neutral-200 border border-neutral-800")
+                      }
+                    >
+                      {p}
+                      <span className={"ml-2 text-xs " + (active ? "text-neutral-700" : "text-neutral-500")}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })
             )}
           </div>
         </section>
