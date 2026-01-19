@@ -246,6 +246,13 @@ export default function PackingPage() {
   async function togglePacked(itemId: string, currentPacked: boolean) {
     if (!currentTrip) return;
 
+    // Optimistically update local state first
+    setTripItems((items) =>
+      items.map((item) =>
+        item.id === itemId ? { ...item, is_packed: !currentPacked } : item
+      )
+    );
+
     const { error } = await supabase
       .from("packing_trip_items")
       .update({ is_packed: !currentPacked })
@@ -253,14 +260,24 @@ export default function PackingPage() {
 
     if (error) {
       setErr(error.message);
-      return;
+      // Revert on error
+      setTripItems((items) =>
+        items.map((item) =>
+          item.id === itemId ? { ...item, is_packed: currentPacked } : item
+        )
+      );
     }
-
-    await loadTripItems(currentTrip.id);
   }
 
   async function toggleHidden(itemId: string, currentHidden: boolean) {
     if (!currentTrip) return;
+
+    // Optimistically update local state first
+    setTripItems((items) =>
+      items.map((item) =>
+        item.id === itemId ? { ...item, is_hidden: !currentHidden } : item
+      )
+    );
 
     const { error } = await supabase
       .from("packing_trip_items")
@@ -269,10 +286,13 @@ export default function PackingPage() {
 
     if (error) {
       setErr(error.message);
-      return;
+      // Revert on error
+      setTripItems((items) =>
+        items.map((item) =>
+          item.id === itemId ? { ...item, is_hidden: currentHidden } : item
+        )
+      );
     }
-
-    await loadTripItems(currentTrip.id);
   }
 
   async function addToTemplate(itemName: string, category: Category) {
@@ -353,10 +373,13 @@ export default function PackingPage() {
   const itemsByCategory = useMemo(() => {
     const map = new Map<Category, TripItem[]>();
     for (const cat of CATEGORIES) {
-      map.set(
-        cat,
-        tripItems.filter((item) => item.category === cat && !item.is_hidden)
-      );
+      const filtered = tripItems.filter((item) => item.category === cat && !item.is_hidden);
+      // Sort: unpacked items first, then packed items
+      const sorted = filtered.sort((a, b) => {
+        if (a.is_packed === b.is_packed) return 0;
+        return a.is_packed ? 1 : -1;
+      });
+      map.set(cat, sorted);
     }
     return map;
   }, [tripItems]);

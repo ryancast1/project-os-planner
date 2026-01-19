@@ -18,6 +18,7 @@ type Task = {
   project_goal_id: string | null;
   created_at: string;
   completed_at?: string | null;
+  sort_order?: number;
 };
 
 type Plan = {
@@ -49,6 +50,7 @@ type Focus = {
   content_category?: string | null; // cook/watch/listen/read (movies handled separately)
   project_goal_id: string | null;
   created_at: string;
+  sort_order?: number;
 };
 
 type Habit = {
@@ -325,18 +327,48 @@ function TimePill({ startsAt, endsAt }: { startsAt: string | null; endsAt: strin
   );
 }
 
+function DragHandle({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`cursor-grab active:cursor-grabbing ${className}`}
+      aria-label="Drag to reorder"
+    >
+      <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24">
+        <path stroke="currentColor" strokeLinecap="round" strokeWidth={2}
+              d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01" />
+      </svg>
+    </div>
+  );
+}
+
 function RowShell({
   tone,
   children,
   onEdit,
   onTap,
   compact,
+  draggable = false,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  isDragging = false,
+  isDropTarget = false,
+  dropPosition,
 }: {
   tone?: "normal" | "overdue";
   children: React.ReactNode;
   onEdit?: () => void;
   onTap?: () => void;
   compact?: boolean;
+  draggable?: boolean;
+  onDragStart?: React.DragEventHandler<HTMLDivElement>;
+  onDragEnd?: React.DragEventHandler<HTMLDivElement>;
+  onDragOver?: React.DragEventHandler<HTMLDivElement>;
+  onDrop?: React.DragEventHandler<HTMLDivElement>;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  dropPosition?: "above" | "below" | null;
 }) {
   const timerRef = useRef<number | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
@@ -389,10 +421,16 @@ function RowShell({
   return (
     <div
       className={clsx(
-        "flex items-center border-b border-neutral-800 last:border-b-0",
+        "relative flex items-center border-b border-neutral-800 last:border-b-0 transition-all duration-150",
         compact ? "gap-1 px-2 py-1" : "gap-2 px-3 py-2",
-        tone === "overdue" ? "bg-red-950/20" : "bg-transparent"
+        tone === "overdue" ? "bg-red-950/20" : "bg-transparent",
+        isDragging && "opacity-40"
       )}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       onClick={(e) => {
         if (!onTap) return;
         if (isInteractiveTarget(e.target)) return;
@@ -410,6 +448,13 @@ function RowShell({
       }}
       style={{ touchAction: "manipulation" }}
     >
+      {/* Drop indicator line */}
+      {isDropTarget && dropPosition === "above" && (
+        <div className="absolute left-0 right-0 top-0 h-0.5 bg-emerald-400 z-10" />
+      )}
+      {isDropTarget && dropPosition === "below" && (
+        <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-emerald-400 z-10" />
+      )}
       {children}
     </div>
   );
@@ -466,6 +511,14 @@ function TaskRow({
   onEdit,
   tone,
   compact,
+  showDragHandle = false,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  isDragging = false,
+  isDropTarget = false,
+  dropPosition,
 }: {
   task: Task;
   moveTargets: MoveTarget[];
@@ -474,12 +527,37 @@ function TaskRow({
   onEdit: (t: Task) => void;
   tone?: "normal" | "overdue";
   compact?: boolean;
+  showDragHandle?: boolean;
+  onDragStart?: (id: string) => void;
+  onDragEnd?: () => void;
+  onDragOver?: React.DragEventHandler<HTMLDivElement>;
+  onDrop?: () => void;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  dropPosition?: "above" | "below" | null;
 }) {
   const isDone = task.status === "done";
   const [showMove, setShowMove] = useState(false);
 
   return (
-    <RowShell tone={tone} compact={compact} onEdit={() => onEdit(task)} onTap={() => setShowMove((s) => !s)}>
+    <RowShell
+      tone={tone}
+      compact={compact}
+      onEdit={() => onEdit(task)}
+      onTap={() => setShowMove((s) => !s)}
+      draggable={showDragHandle}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", task.id);
+        onDragStart?.(task.id);
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      isDragging={isDragging}
+      isDropTarget={isDropTarget}
+      dropPosition={dropPosition}
+    >
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
@@ -507,6 +585,10 @@ function TaskRow({
           {task.title}
         </div>
       </div>
+
+      {showDragHandle && !compact && (
+        <DragHandle className="ml-2" />
+      )}
 
       {showMove && (
         <MoveSelect compact={compact} value={locationValueFor(task)} onChange={(v) => onMove(task.id, v)} moveTargets={moveTargets} />
@@ -551,19 +633,55 @@ function FocusRow({
   onMove,
   onEdit,
   compact,
+  showDragHandle = false,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  isDragging = false,
+  isDropTarget = false,
+  dropPosition,
 }: {
   focus: Focus;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
   onEdit: (f: Focus) => void;
   compact?: boolean;
+  showDragHandle?: boolean;
+  onDragStart?: (id: string) => void;
+  onDragEnd?: () => void;
+  onDragOver?: React.DragEventHandler<HTMLDivElement>;
+  onDrop?: () => void;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  dropPosition?: "above" | "below" | null;
 }) {
   const [showMove, setShowMove] = useState(false);
   return (
-    <RowShell compact={compact} onEdit={() => onEdit(focus)} onTap={() => setShowMove((s) => !s)}>
+    <RowShell
+      compact={compact}
+      onEdit={() => onEdit(focus)}
+      onTap={() => setShowMove((s) => !s)}
+      draggable={showDragHandle}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", focus.id);
+        onDragStart?.(focus.id);
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      isDragging={isDragging}
+      isDropTarget={isDropTarget}
+      dropPosition={dropPosition}
+    >
       <div className="min-w-0 flex-1">
         <div className={clsx("truncate", compact ? "text-[11px]" : "text-sm")}>{focus.title}</div>
       </div>
+
+      {showDragHandle && !compact && (
+        <DragHandle className="ml-2" />
+      )}
 
       {showMove && (
         <MoveSelect compact={compact} value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
@@ -577,17 +695,53 @@ function FocusFloat({
   moveTargets,
   onMove,
   onEdit,
+  showDragHandle = false,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  isDragging = false,
+  isDropTarget = false,
+  dropPosition,
 }: {
   focus: Focus;
   moveTargets: MoveTarget[];
   onMove: (id: string, targetValue: string) => void;
   onEdit: (f: Focus) => void;
+  showDragHandle?: boolean;
+  onDragStart?: (id: string) => void;
+  onDragEnd?: () => void;
+  onDragOver?: React.DragEventHandler<HTMLDivElement>;
+  onDrop?: () => void;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  dropPosition?: "above" | "below" | null;
 }) {
   const [showMove, setShowMove] = useState(false);
 
   return (
-    <RowShell onEdit={() => onEdit(focus)} onTap={() => setShowMove((s) => !s)}>
+    <RowShell
+      onEdit={() => onEdit(focus)}
+      onTap={() => setShowMove((s) => !s)}
+      draggable={showDragHandle}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", focus.id);
+        onDragStart?.(focus.id);
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      isDragging={isDragging}
+      isDropTarget={isDropTarget}
+      dropPosition={dropPosition}
+    >
       <div className="min-w-0 flex-1 truncate text-sm text-neutral-200">{focus.title}</div>
+
+      {showDragHandle && (
+        <DragHandle className="ml-2" />
+      )}
+
       {showMove && (
         <div className="opacity-80">
           <MoveSelect value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
@@ -1402,6 +1556,12 @@ export default function PlannerPage() {
   const [authReady, setAuthReady] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
 
+  // Drag and drop state
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+  const [draggedItemType, setDraggedItemType] = useState<"task" | "focus" | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<"above" | "below" | null>(null);
+
   const [draftByDay, setDraftByDay] = useState<Record<string, Record<ItemType, string>>>({});
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
 
@@ -1463,10 +1623,10 @@ const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
 
   for (const f of focuses) {
 
-    
-    
+
+
     const cat = (f as any).content_category as ContentTab | null | undefined;
-    
+
     if (!cat) continue;
     if (cat === "movies") continue; // movies comes from movie_tracker
     if (f.scheduled_for) continue;  // only items not placed on a day
@@ -1474,8 +1634,9 @@ const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
     if (out[cat]) out[cat].push(f);
   }
 
+  // Sort by sort_order for drag-and-drop reordering
   (["cook", "watch", "listen", "read", "city"] as ContentTab[]).forEach((k) => {
-    out[k].sort((a, b) => b.created_at.localeCompare(a.created_at)); // newest first
+    out[k].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   });
 
   return out;
@@ -1677,29 +1838,32 @@ function getWindowValue(which: DrawerWindow) {
     ] = await Promise.all([
       supabase
         .from("tasks")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at,sort_order")
         .in("status", ["open", "done"])
         .not("scheduled_for", "is", null)
         .gte("scheduled_for", start)
         .lte("scheduled_for", end)
         .order("scheduled_for", { ascending: true })
+        .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
 
       supabase
         .from("tasks")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at,sort_order")
         .eq("status", "open")
         .not("scheduled_for", "is", null)
         .lt("scheduled_for", start)
         .order("scheduled_for", { ascending: true })
+        .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
 
       supabase
         .from("tasks")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at,sort_order")
         .eq("status", "open")
         .is("scheduled_for", null)
         .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
+        .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
 
       supabase
@@ -1722,20 +1886,22 @@ function getWindowValue(which: DrawerWindow) {
 
       supabase
         .from("focuses")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at,sort_order")
         .eq("status", "active")
         .not("scheduled_for", "is", null)
         .gte("scheduled_for", start)
         .lte("scheduled_for", end)
         .order("scheduled_for", { ascending: true })
+        .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
 
       supabase
         .from("focuses")
-        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at")
+        .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at,sort_order")
         .eq("status", "active")
         .is("scheduled_for", null)
         .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
+        .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
 
       supabase
@@ -2218,6 +2384,10 @@ setMovieItems(
       if (t.scheduled_for < dayRangeStart) continue;
       if (map[t.scheduled_for]) map[t.scheduled_for].push(t);
     }
+    // Sort each day's tasks by sort_order
+    for (const k of Object.keys(map)) {
+      map[k].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    }
     return map;
   }, [tasks, days, dayRangeStart]);
 
@@ -2260,6 +2430,10 @@ setMovieItems(
     for (const f of focuses) {
       if (!f.scheduled_for) continue;
       if (map[f.scheduled_for]) map[f.scheduled_for].push(f);
+    }
+    // Sort each day's focuses by sort_order
+    for (const k of Object.keys(map)) {
+      map[k].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     }
     return map;
   }, [focuses, days]);
@@ -2338,27 +2512,15 @@ setMovieItems(
       else if (!f.window_kind && !f.window_start && !(f as any).content_category) out.open.focus.push(f);
     }
 
-    const sortByDate = <T extends { scheduled_for: string | null; created_at: string }>(arr: T[]) => {
-      arr.sort((a, b) => {
-        const da = a.scheduled_for ?? "9999-12-31";
-        const db = b.scheduled_for ?? "9999-12-31";
-        if (da !== db) return da.localeCompare(db);
-        return a.created_at.localeCompare(b.created_at);
-      });
+    const sortBySortOrder = <T extends { sort_order?: number }>(arr: T[]) => {
+      arr.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     };
 
-    sortByDate(out.thisWeek.task);
-    sortByDate(out.thisWeek.plan);
-    sortByDate(out.thisWeek.focus);
-    sortByDate(out.thisWeekend.task);
-    sortByDate(out.thisWeekend.plan);
-    sortByDate(out.thisWeekend.focus);
-    sortByDate(out.nextWeek.task);
-    sortByDate(out.nextWeek.plan);
-    sortByDate(out.nextWeek.focus);
-    sortByDate(out.nextWeekend.task);
-    sortByDate(out.nextWeekend.plan);
-    sortByDate(out.nextWeekend.focus);
+    // Sort each window's items by sort_order
+    for (const key of Object.keys(out) as (keyof typeof out)[]) {
+      sortBySortOrder(out[key].task);
+      sortBySortOrder(out[key].focus);
+    }
 
     return out;
   }, [tasks, plans, focuses, windows, days]);
@@ -2469,6 +2631,90 @@ const { data, error } = await supabase
     if (type === "task") setTasks((p) => p.map((t) => (t.id === id ? ({ ...t, ...placement } as Task) : t)));
     if (type === "plan") setPlans((p) => p.map((x) => (x.id === id ? ({ ...x, ...placement } as Plan) : x)));
     if (type === "focus") setFocuses((p) => p.map((x) => (x.id === id ? ({ ...x, ...placement } as Focus) : x)));
+  }
+
+  async function reorderItems(
+    type: "task" | "focus",
+    draggedId: string,
+    targetId: string,
+    context: { date?: string; window?: string; contentTab?: string },
+    position: "above" | "below" = "above"
+  ) {
+    // 1. Get the relevant array of items from the source arrays (tasks/focuses, not derived)
+    const sourceArray = type === "task" ? tasks : focuses;
+
+    // 2. Get the items in the current context
+    let contextItems: (Task | Focus)[];
+    if (context.date) {
+      contextItems = type === "task" ? (tasksByDay[context.date] ?? []) : (focusesByDay[context.date] ?? []);
+    } else if (context.window) {
+      contextItems = drawerLists[context.window as DrawerWindow][type];
+    } else if (context.contentTab) {
+      contextItems = contentFocusesByTab[context.contentTab as ContentTab] ?? [];
+    } else {
+      return;
+    }
+
+    // 3. Find indices in context
+    const draggedIndex = contextItems.findIndex((i) => i.id === draggedId);
+    const targetIndex = contextItems.findIndex((i) => i.id === targetId);
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    // 4. Reorder the context items
+    const reordered = [...contextItems];
+    const [removed] = reordered.splice(draggedIndex, 1);
+    // Calculate insertion index: if dragging down, "below" means +1 from current target index
+    // After removal, indices shift, so we need to account for that
+    let insertIndex = targetIndex;
+    if (position === "below") {
+      // Insert after the target
+      insertIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
+    } else {
+      // Insert before the target
+      insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    }
+    reordered.splice(insertIndex, 0, removed);
+
+    // 5. Update sort_order for all items in the reordered list
+    const updates = reordered.map((item, index) => ({
+      id: item.id,
+      sort_order: index,
+    }));
+
+    // 6. Optimistically update the source array with new sort_order values
+    if (type === "task") {
+      setTasks((prev) =>
+        prev.map((task) => {
+          const update = updates.find((u) => u.id === task.id);
+          return update ? { ...task, sort_order: update.sort_order } : task;
+        })
+      );
+    } else {
+      setFocuses((prev) =>
+        prev.map((focus) => {
+          const update = updates.find((u) => u.id === focus.id);
+          return update ? { ...focus, sort_order: update.sort_order } : focus;
+        })
+      );
+    }
+
+    // 7. Persist to database in background
+    const table = type === "task" ? "tasks" : "focuses";
+
+    // Update each item's sort_order
+    for (const { id, sort_order } of updates) {
+      const { error } = await supabase
+        .from(table)
+        .update({ sort_order })
+        .eq("id", id);
+
+      if (error) {
+        console.error("Failed to update sort order:", error);
+        // Revert on error by reloading
+        await fetchAll();
+        return;
+      }
+    }
   }
 
   async function toggleTaskDone(id: string, nextDone: boolean) {
@@ -2871,6 +3117,32 @@ const { error } = await supabase
                         moveTargets={moveTargets}
                         onMove={(id, v) => moveItem("focus", id, v)}
                         onEdit={(x) => openEdit("focus", x)}
+                        showDragHandle={true}
+                        isDragging={draggedItemId === f.id}
+                        isDropTarget={dropTargetId === f.id && draggedItemId !== f.id}
+                        dropPosition={dropTargetId === f.id ? dropPosition : null}
+                        onDragStart={(id) => {
+                          setDraggedItemId(id);
+                          setDraggedItemType("focus");
+                        }}
+                        onDragEnd={() => {
+                          setDraggedItemId(null);
+                          setDraggedItemType(null);
+                          setDropTargetId(null);
+                          setDropPosition(null);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDropTargetId(f.id);
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const midpoint = rect.top + rect.height / 2;
+                          setDropPosition(e.clientY < midpoint ? "above" : "below");
+                        }}
+                        onDrop={() => {
+                          if (draggedItemId && draggedItemType === "focus" && dropPosition) {
+                            reorderItems("focus", draggedItemId, f.id, { window: drawerWindow }, dropPosition);
+                          }
+                        }}
                       />
                     ))}
 
@@ -2882,6 +3154,32 @@ const { error } = await supabase
                         onMove={(id, v) => moveItem("task", id, v)}
                         onToggleDone={toggleTaskDone}
                         onEdit={(x) => openEdit("task", x)}
+                        showDragHandle={true}
+                        isDragging={draggedItemId === t.id}
+                        isDropTarget={dropTargetId === t.id && draggedItemId !== t.id}
+                        dropPosition={dropTargetId === t.id ? dropPosition : null}
+                        onDragStart={(id) => {
+                          setDraggedItemId(id);
+                          setDraggedItemType("task");
+                        }}
+                        onDragEnd={() => {
+                          setDraggedItemId(null);
+                          setDraggedItemType(null);
+                          setDropTargetId(null);
+                          setDropPosition(null);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDropTargetId(t.id);
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const midpoint = rect.top + rect.height / 2;
+                          setDropPosition(e.clientY < midpoint ? "above" : "below");
+                        }}
+                        onDrop={() => {
+                          if (draggedItemId && draggedItemType === "task" && dropPosition) {
+                            reorderItems("task", draggedItemId, t.id, { window: drawerWindow }, dropPosition);
+                          }
+                        }}
                       />
                     ))}
 
@@ -3031,6 +3329,32 @@ const { error } = await supabase
                             moveTargets={moveTargets}
                             onMove={(id, v) => moveItem("focus", id, v)}
                             onEdit={(x) => openEdit("focus", x)}
+                            showDragHandle={true}
+                            isDragging={draggedItemId === f.id}
+                            isDropTarget={dropTargetId === f.id && draggedItemId !== f.id}
+                            dropPosition={dropTargetId === f.id ? dropPosition : null}
+                            onDragStart={(id) => {
+                              setDraggedItemId(id);
+                              setDraggedItemType("focus");
+                            }}
+                            onDragEnd={() => {
+                              setDraggedItemId(null);
+                              setDraggedItemType(null);
+                              setDropTargetId(null);
+                              setDropPosition(null);
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setDropTargetId(f.id);
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const midpoint = rect.top + rect.height / 2;
+                              setDropPosition(e.clientY < midpoint ? "above" : "below");
+                            }}
+                            onDrop={() => {
+                              if (draggedItemId && draggedItemType === "focus" && dropPosition) {
+                                reorderItems("focus", draggedItemId, f.id, { contentTab }, dropPosition);
+                              }
+                            }}
                           />
                         ))}
                       </div>
@@ -3207,6 +3531,32 @@ const { error } = await supabase
                     moveTargets={moveTargets}
                     onMove={(id, v) => moveItem("focus", id, v)}
                     onEdit={(x) => openEdit("focus", x)}
+                    showDragHandle={true}
+                    isDragging={draggedItemId === f.id}
+                    isDropTarget={dropTargetId === f.id && draggedItemId !== f.id}
+                    dropPosition={dropTargetId === f.id ? dropPosition : null}
+                    onDragStart={(id) => {
+                      setDraggedItemId(id);
+                      setDraggedItemType("focus");
+                    }}
+                    onDragEnd={() => {
+                      setDraggedItemId(null);
+                      setDraggedItemType(null);
+                      setDropTargetId(null);
+                      setDropPosition(null);
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDropTargetId(f.id);
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const midpoint = rect.top + rect.height / 2;
+                      setDropPosition(e.clientY < midpoint ? "above" : "below");
+                    }}
+                    onDrop={() => {
+                      if (draggedItemId && draggedItemType === "focus" && dropPosition) {
+                        reorderItems("focus", draggedItemId, f.id, { date: todayIso }, dropPosition);
+                      }
+                    }}
                   />
                 ))}
               </div>
@@ -3226,7 +3576,40 @@ const { error } = await supabase
               )}
               <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                 {(tasksByDay[todayIso] ?? []).map((t) => (
-                  <TaskRow key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
+                  <TaskRow
+                    key={t.id}
+                    task={t}
+                    moveTargets={moveTargets}
+                    onMove={(id, v) => moveItem("task", id, v)}
+                    onToggleDone={toggleTaskDone}
+                    onEdit={(t) => openEdit("task", t)}
+                    showDragHandle={true}
+                    isDragging={draggedItemId === t.id}
+                    isDropTarget={dropTargetId === t.id && draggedItemId !== t.id}
+                    dropPosition={dropTargetId === t.id ? dropPosition : null}
+                    onDragStart={(id) => {
+                      setDraggedItemId(id);
+                      setDraggedItemType("task");
+                    }}
+                    onDragEnd={() => {
+                      setDraggedItemId(null);
+                      setDraggedItemType(null);
+                      setDropTargetId(null);
+                      setDropPosition(null);
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDropTargetId(t.id);
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const midpoint = rect.top + rect.height / 2;
+                      setDropPosition(e.clientY < midpoint ? "above" : "below");
+                    }}
+                    onDrop={() => {
+                      if (draggedItemId && draggedItemType === "task" && dropPosition) {
+                        reorderItems("task", draggedItemId, t.id, { date: todayIso }, dropPosition);
+                      }
+                    }}
+                  />
                 ))}
               </div>
             </div>
@@ -3377,6 +3760,32 @@ const { error } = await supabase
                               moveTargets={moveTargets}
                               onMove={(id, v) => moveItem("focus", id, v)}
                               onEdit={(x) => openEdit("focus", x)}
+                              showDragHandle={true}
+                              isDragging={draggedItemId === f.id}
+                              isDropTarget={dropTargetId === f.id && draggedItemId !== f.id}
+                              dropPosition={dropTargetId === f.id ? dropPosition : null}
+                              onDragStart={(id) => {
+                                setDraggedItemId(id);
+                                setDraggedItemType("focus");
+                              }}
+                              onDragEnd={() => {
+                                setDraggedItemId(null);
+                                setDraggedItemType(null);
+                                setDropTargetId(null);
+                                setDropPosition(null);
+                              }}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setDropTargetId(f.id);
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const midpoint = rect.top + rect.height / 2;
+                                setDropPosition(e.clientY < midpoint ? "above" : "below");
+                              }}
+                              onDrop={() => {
+                                if (draggedItemId && draggedItemType === "focus" && dropPosition) {
+                                  reorderItems("focus", draggedItemId, f.id, { date: iso }, dropPosition);
+                                }
+                              }}
                             />
                           ))}
                         </div>
@@ -3385,7 +3794,41 @@ const { error } = await supabase
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
                           {dayTasks.map((t) => (
-                            <TaskRow compact={isMdUp} key={t.id} task={t} moveTargets={moveTargets} onMove={(id, v) => moveItem("task", id, v)} onToggleDone={toggleTaskDone} onEdit={(t) => openEdit("task", t)} />
+                            <TaskRow
+                              compact={isMdUp}
+                              key={t.id}
+                              task={t}
+                              moveTargets={moveTargets}
+                              onMove={(id, v) => moveItem("task", id, v)}
+                              onToggleDone={toggleTaskDone}
+                              onEdit={(t) => openEdit("task", t)}
+                              showDragHandle={true}
+                              isDragging={draggedItemId === t.id}
+                              isDropTarget={dropTargetId === t.id && draggedItemId !== t.id}
+                              dropPosition={dropTargetId === t.id ? dropPosition : null}
+                              onDragStart={(id) => {
+                                setDraggedItemId(id);
+                                setDraggedItemType("task");
+                              }}
+                              onDragEnd={() => {
+                                setDraggedItemId(null);
+                                setDraggedItemType(null);
+                                setDropTargetId(null);
+                                setDropPosition(null);
+                              }}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setDropTargetId(t.id);
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const midpoint = rect.top + rect.height / 2;
+                                setDropPosition(e.clientY < midpoint ? "above" : "below");
+                              }}
+                              onDrop={() => {
+                                if (draggedItemId && draggedItemType === "task" && dropPosition) {
+                                  reorderItems("task", draggedItemId, t.id, { date: iso }, dropPosition);
+                                }
+                              }}
+                            />
                           ))}
                         </div>
                       </div>
