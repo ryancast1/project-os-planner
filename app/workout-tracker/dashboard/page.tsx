@@ -393,6 +393,10 @@ export default function DashboardPage() {
     </section>
   );
 
+  const RollingCard = (
+    <RollingWorkoutChart dayWorkoutCount={dayWorkoutCount} todayISO={todayISO} />
+  );
+
   const LastCardItem = (w: WorkoutCol, keyPrefix: string) => {
     const last = lastBySlug[w.slug] ?? null;
     return (
@@ -418,10 +422,10 @@ export default function DashboardPage() {
   };
 
   return (
-    <main className="min-h-screen md:h-screen md:overflow-hidden bg-gradient-to-b from-black to-zinc-950 px-4 py-8 text-white">
+    <main className="min-h-screen md:h-screen md:overflow-hidden bg-gradient-to-b from-black to-zinc-950 px-4 py-8 md:py-3 text-white">
       <div className="mx-auto w-full max-w-md md:max-w-7xl md:h-full md:flex md:flex-col">
         <div className="relative">
-          <h1 className="text-3xl font-semibold tracking-tight text-center">Dashboard</h1>
+          <h1 className="text-3xl md:text-2xl font-semibold tracking-tight text-center">Dashboard</h1>
           <Link
             href="/workout-tracker/dashboard/planner"
             className="absolute right-0 top-1/2 -translate-y-1/2 rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-sm font-semibold text-white/85 hover:bg-white/10"
@@ -433,11 +437,12 @@ export default function DashboardPage() {
         {loading ? (
           <div className="mt-8 text-center text-white/60">Loading…</div>
         ) : (
-          <div className="mt-6 md:flex-1 md:overflow-hidden">
+          <div className="mt-6 md:mt-3 md:flex-1 md:overflow-hidden">
             {/* MOBILE (keep old stacking, but add group spacers in the last list) */}
             <div className="space-y-6 md:hidden">
               {MatrixCard}
               {AnyWorkoutCard}
+              {RollingCard}
               {WeightCard}
 
               <div className="space-y-6">
@@ -454,15 +459,18 @@ export default function DashboardPage() {
 
             {/* DESKTOP / HORIZONTAL SCREENS */}
             <div className="hidden md:flex md:flex-col md:h-full md:overflow-hidden">
-              {/* Top row: Matrix | Any workout | Weight */}
-              <div className="grid gap-6 items-start grid-cols-[minmax(380px,460px)_minmax(280px,340px)_minmax(420px,520px)]">
+              {/* Top row: Matrix | Any workout | Weight + Rolling stacked */}
+              <div className="grid gap-4 items-start grid-cols-[minmax(380px,460px)_minmax(280px,340px)_minmax(420px,520px)]">
                 {MatrixCard}
                 {AnyWorkoutCard}
-                {WeightCard}
+                <div className="flex flex-col gap-3">
+                  {WeightCard}
+                  {RollingCard}
+                </div>
               </div>
 
               {/* Bottom half: 4 independent scroll panes (one per grouping) */}
-              <div className="mt-6 flex-1 overflow-hidden">
+              <div className="mt-4 flex-1 overflow-hidden">
                 <div className="h-full grid grid-cols-4 gap-6">
                   {GROUPS.map((g) => (
                     <section
@@ -481,6 +489,180 @@ export default function DashboardPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function RollingWorkoutChart({
+  dayWorkoutCount,
+  todayISO,
+}: {
+  dayWorkoutCount: Map<string, number>;
+  todayISO: string;
+}) {
+  const W = 320;
+  const H = 100; // More compact height
+  const padL = 28;
+  const padR = 10;
+  const padT = 10;
+  const padB = 18;
+
+  // Data started on 2026-01-01, so 7-day rolling can only start on 2026-01-07
+  const FIRST_7DAY_ISO = "2026-01-07";
+
+  // Build arrays for rolling 7-day and 30-day counts
+  const data7: { iso: string; count: number }[] = [];
+  const data30: { iso: string; count: number }[] = [];
+
+  // Generate dates going back 30 days from today
+  const todayDate = utcDateFromISO(todayISO);
+  const datesDesc: string[] = [];
+  for (let i = 0; i < 30; i++) {
+    datesDesc.push(isoFromUTCDate(addDaysUTC(todayDate, -i)));
+  }
+  const datesAsc = datesDesc.reverse(); // oldest to newest
+
+  for (let i = 0; i < datesAsc.length; i++) {
+    const iso = datesAsc[i];
+
+    // 7-day rolling sum (need 6 days before current) - only start from 2026-01-07
+    if (i >= 6 && iso >= FIRST_7DAY_ISO) {
+      let sum7 = 0;
+      for (let j = i - 6; j <= i; j++) {
+        sum7 += dayWorkoutCount.get(datesAsc[j]) ?? 0;
+      }
+      data7.push({ iso, count: sum7 });
+    }
+
+    // 30-day rolling sum (need 29 days before current)
+    if (i >= 29) {
+      let sum30 = 0;
+      for (let j = i - 29; j <= i; j++) {
+        sum30 += dayWorkoutCount.get(datesAsc[j]) ?? 0;
+      }
+      data30.push({ iso, count: sum30 });
+    }
+  }
+
+  // If not enough data for 7-day line, show message
+  if (data7.length < 2) {
+    return (
+      <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3">
+        <div className="text-xs text-white/60 mb-1">Rolling Workout Count</div>
+        <div className="text-center text-white/60 text-sm py-4">
+          Need at least 7 days of data.
+        </div>
+      </section>
+    );
+  }
+
+  // Calculate Y scale based on data
+  const allCounts = [...data7.map((d) => d.count), ...data30.map((d) => d.count)];
+  const minC = Math.min(...allCounts);
+  const maxC = Math.max(...allCounts);
+  const spread = Math.max(1, maxC - minC);
+  const yMin = Math.max(0, minC - spread * 0.1);
+  const yMax = maxC + spread * 0.1;
+
+  const x0 = padL;
+  const x1 = W - padR;
+  const y0 = H - padB;
+  const y1 = padT;
+
+  const n7 = data7.length;
+
+  const xFor7 = (i: number) => (n7 === 1 ? x0 : x0 + (i * (x1 - x0)) / (n7 - 1));
+  const yFor = (c: number) => y0 - ((c - yMin) * (y0 - y1)) / (yMax - yMin);
+
+  const path7 = data7
+    .map((d, i) => {
+      const x = xFor7(i);
+      const y = yFor(d.count);
+      return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(" ");
+
+  // 30-day path (if we have data)
+  let path30 = "";
+  if (data30.length >= 2) {
+    const n30 = data30.length;
+    const xFor30 = (i: number) => (n30 === 1 ? x0 : x0 + (i * (x1 - x0)) / (n30 - 1));
+    path30 = data30
+      .map((d, i) => {
+        const x = xFor30(i);
+        const y = yFor(d.count);
+        return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+      })
+      .join(" ");
+  }
+
+  const fmt = (iso: string) => {
+    const m = Number(iso.slice(5, 7));
+    const d = Number(iso.slice(8, 10));
+    return `${m}/${d}`;
+  };
+
+  const firstDate7 = data7[0]?.iso ?? "";
+  const lastDate7 = data7[data7.length - 1]?.iso ?? "";
+  const latest7 = data7[data7.length - 1]?.count ?? 0;
+  const latest30 = data30.length > 0 ? data30[data30.length - 1]?.count : null;
+
+  return (
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3">
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs text-white/60">Rolling Workout Count</div>
+        <div className="flex items-center gap-3 text-[10px]">
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-0.5 bg-emerald-500 rounded" />
+            <span className="text-white/50">7d: {latest7}</span>
+          </div>
+          {latest30 !== null && (
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-0.5 bg-blue-400 rounded" />
+              <span className="text-white/50">30d: {latest30}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-black/30">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[100px]">
+          {/* Y axis labels */}
+          <text x={padL - 4} y={y1 + 4} textAnchor="end" fontSize="9" fill="rgba(255,255,255,0.50)">
+            {Math.round(yMax)}
+          </text>
+          <text x={padL - 4} y={y0} textAnchor="end" fontSize="9" fill="rgba(255,255,255,0.50)">
+            {Math.round(yMin)}
+          </text>
+
+          {/* Baseline */}
+          <line x1={padL} y1={y0} x2={x1} y2={y0} stroke="rgba(255,255,255,0.10)" />
+
+          {/* 30-day line (behind) */}
+          {path30 && (
+            <path d={path30} fill="none" stroke="rgba(96,165,250,0.7)" strokeWidth="1.5" />
+          )}
+
+          {/* 7-day line (front) */}
+          <path d={path7} fill="none" stroke="rgba(16,185,129,0.95)" strokeWidth="2" />
+
+          {/* Latest point on 7-day line */}
+          {(() => {
+            const i = n7 - 1;
+            const x = xFor7(i);
+            const y = yFor(data7[i].count);
+            return <circle cx={x} cy={y} r="3" fill="rgba(16,185,129,0.95)" />;
+          })()}
+
+          {/* X axis labels */}
+          <text x={padL} y={H - 6} fontSize="9" fill="rgba(255,255,255,0.45)">
+            {fmt(firstDate7)}
+          </text>
+          <text x={x1} y={H - 6} textAnchor="end" fontSize="9" fill="rgba(255,255,255,0.45)">
+            {fmt(lastDate7)}
+          </text>
+        </svg>
+      </div>
+    </section>
   );
 }
 
