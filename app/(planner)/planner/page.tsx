@@ -911,19 +911,6 @@ function ContentTabItem({
       )}
     >
       <div className="flex items-center gap-2">
-        {/* Drag handle */}
-        {onDragStart && (
-          <div className="shrink-0 text-neutral-600 cursor-grab active:cursor-grabbing touch-none">
-            <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
-              <circle cx="3" cy="3" r="1.5" />
-              <circle cx="9" cy="3" r="1.5" />
-              <circle cx="3" cy="8" r="1.5" />
-              <circle cx="9" cy="8" r="1.5" />
-              <circle cx="3" cy="13" r="1.5" />
-              <circle cx="9" cy="13" r="1.5" />
-            </svg>
-          </div>
-        )}
         {/* Checkbox */}
         <button
           onPointerDown={(e) => e.stopPropagation()}
@@ -932,7 +919,7 @@ function ContentTabItem({
             onToggleDone();
           }}
           className={clsx(
-            "shrink-0 h-6 w-6 rounded-md border grid place-items-center",
+            "shrink-0 h-5 w-5 rounded border grid place-items-center text-xs",
             isDone
               ? "border-emerald-400/70 bg-emerald-300 text-neutral-900"
               : "border-neutral-700 bg-neutral-950 text-neutral-200"
@@ -947,7 +934,7 @@ function ContentTabItem({
           onClick={() => setShowDropdown((s) => !s)}
         >
           <div className={clsx(
-            "truncate text-base",
+            "truncate text-sm",
             isDone ? "text-emerald-300 line-through" : "text-neutral-200"
           )}>
             {item.title}
@@ -956,6 +943,19 @@ function ContentTabItem({
             )}
           </div>
         </div>
+        {/* Drag handle on right */}
+        {onDragStart && (
+          <div className="shrink-0 text-neutral-600 cursor-grab active:cursor-grabbing touch-none">
+            <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+              <circle cx="2.5" cy="2.5" r="1.25" />
+              <circle cx="7.5" cy="2.5" r="1.25" />
+              <circle cx="2.5" cy="7" r="1.25" />
+              <circle cx="7.5" cy="7" r="1.25" />
+              <circle cx="2.5" cy="11.5" r="1.25" />
+              <circle cx="7.5" cy="11.5" r="1.25" />
+            </svg>
+          </div>
+        )}
       </div>
       {showDropdown && (
         <div className="mt-2">
@@ -2080,7 +2080,6 @@ const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
   });
 
   const [contentDraft, setContentDraft] = useState("");
-  const [contentIsOngoing, setContentIsOngoing] = useState(false);
   const [editingContentItem, setEditingContentItem] = useState<ContentItemRow | null>(null);
   const [contentDragId, setContentDragId] = useState<string | null>(null);
   const [contentDropTargetId, setContentDropTargetId] = useState<string | null>(null);
@@ -3045,7 +3044,8 @@ setMovieItems(
     const map: Record<string, ContentSessionRow[]> = {};
     for (const d of days) map[toISODate(d)] = [];
     for (const session of contentSessions) {
-      if (map[session.scheduled_for]) {
+      // Only include sessions with specific scheduled_for dates (not parking lot sessions)
+      if (session.scheduled_for && map[session.scheduled_for]) {
         map[session.scheduled_for].push(session);
       }
     }
@@ -3478,7 +3478,7 @@ const { data, error } = await supabase
         title,
         notes: null,
         category: contentTab,
-        is_ongoing: contentIsOngoing,
+        is_ongoing: false,
         status: "active",
         scheduled_for: null,
         window_kind: null,
@@ -3496,7 +3496,6 @@ const { data, error } = await supabase
 
     if (data) setContentItems((p) => [data as ContentItemRow, ...p]);
     setContentDraft("");
-    setContentIsOngoing(false);
   }
 
   // Toggle a scheduled one-off content item done (on day card)
@@ -3574,18 +3573,13 @@ const { data, error } = await supabase
     }
 
     if (item.is_ongoing) {
-      // For ongoing items: create a session (only if scheduling to a specific day)
-      if (!placement.scheduled_for) {
-        // Ongoing items can't go to parking lots - they need specific days for sessions
-        console.warn("scheduleContentItem: ongoing items must be scheduled to specific days");
+      // For ongoing items: create a session (can be a specific day or parking lot)
+      if (!placement.scheduled_for && !placement.window_kind) {
         return;
       }
 
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) {
-        console.warn("scheduleContentItem: no user session");
-        return;
-      }
+      if (!session?.user?.id) return;
 
       const { data, error } = await supabase
         .from("content_sessions")
@@ -3593,42 +3587,63 @@ const { data, error } = await supabase
           content_item_id: itemId,
           movie_tracker_id: null,
           scheduled_for: placement.scheduled_for,
+          window_kind: placement.window_kind,
+          window_start: placement.window_start,
           status: "open",
           user_id: session.user.id,
         })
-        .select("id,content_item_id,movie_tracker_id,scheduled_for,status,created_at,completed_at,user_id")
+        .select("id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,created_at,completed_at,user_id")
         .single();
 
-      if (error) {
-        console.warn("scheduleContentItem (session)", error);
-        return;
-      }
-
+      if (error) return;
       if (data) setContentSessions((p) => [...p, data as ContentSessionRow]);
     } else {
       // For one-offs: update placement fields
+      // Optimistic update first
+      setContentItems((p) =>
+        p.map((i) => (i.id === itemId ? { ...i, ...placement } : i))
+      );
+
       const { error } = await supabase
         .from("content_items")
         .update(placement)
         .eq("id", itemId);
 
       if (error) {
-        console.warn("scheduleContentItem (one-off)", error);
-        return;
+        // Revert on error
+        setContentItems((p) =>
+          p.map((i) => (i.id === itemId ? { ...i, scheduled_for: item.scheduled_for, window_kind: item.window_kind, window_start: item.window_start } : i))
+        );
       }
-
-      setContentItems((p) =>
-        p.map((i) => (i.id === itemId ? { ...i, ...placement } : i))
-      );
     }
   }
 
-  // Schedule a movie to a day (creates a session referencing movie_tracker)
-  async function scheduleMovieToDay(movieId: string, targetDate: string) {
+  // Schedule a movie to a day or parking lot (creates a session referencing movie_tracker)
+  async function scheduleMovie(movieId: string, targetValue: string) {
+    if (targetValue === "__sep" || targetValue === "none") return;
+
+    // Parse target value
+    let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null };
+
+    if (targetValue.startsWith("D|")) {
+      placement = { scheduled_for: targetValue.split("|")[1], window_kind: null, window_start: null };
+    } else if (targetValue.startsWith("P|")) {
+      const [, kind, start] = targetValue.split("|");
+      placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start };
+    } else {
+      // Fallback: treat as date
+      placement = { scheduled_for: targetValue, window_kind: null, window_start: null };
+    }
+
+    if (!placement.scheduled_for && !placement.window_kind) {
+      console.warn("scheduleMovie: need either a day or parking lot");
+      return;
+    }
+
     // Get user_id from session
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) {
-      console.warn("scheduleMovieToDay: no user session");
+      console.warn("scheduleMovie: no user session");
       return;
     }
 
@@ -3637,15 +3652,17 @@ const { data, error } = await supabase
       .insert({
         content_item_id: null,
         movie_tracker_id: movieId,
-        scheduled_for: targetDate,
+        scheduled_for: placement.scheduled_for,
+        window_kind: placement.window_kind,
+        window_start: placement.window_start,
         status: "open",
         user_id: session.user.id,
       })
-      .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,status,created_at,completed_at")
+      .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,created_at,completed_at")
       .single();
 
     if (error) {
-      console.warn("scheduleMovieToDay", error);
+      console.warn("scheduleMovie", error);
       return;
     }
 
@@ -3685,26 +3702,40 @@ const { data, error } = await supabase
     }
   }
 
-  // Reschedule a content session to a different day
-  async function rescheduleContentSession(sessionId: string, targetDate: string) {
+  // Reschedule a content session to a different day or parking lot
+  async function rescheduleContentSession(sessionId: string, targetValue: string) {
     const session = contentSessions.find((s) => s.id === sessionId);
     if (!session) return;
+    if (targetValue === "__sep") return;
+
+    // Parse target value
+    let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null };
+
+    if (targetValue.startsWith("D|")) {
+      placement = { scheduled_for: targetValue.split("|")[1], window_kind: null, window_start: null };
+    } else if (targetValue.startsWith("P|")) {
+      const [, kind, start] = targetValue.split("|");
+      placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start };
+    } else {
+      // Fallback: treat as date string
+      placement = { scheduled_for: targetValue, window_kind: null, window_start: null };
+    }
 
     // Optimistic update
     setContentSessions((p) =>
-      p.map((s) => (s.id === sessionId ? { ...s, scheduled_for: targetDate } : s))
+      p.map((s) => (s.id === sessionId ? { ...s, ...placement } : s))
     );
 
     const { error } = await supabase
       .from("content_sessions")
-      .update({ scheduled_for: targetDate })
+      .update(placement)
       .eq("id", sessionId);
 
     if (error) {
       console.warn("rescheduleContentSession", error);
       // Revert
       setContentSessions((p) =>
-        p.map((s) => (s.id === sessionId ? { ...s, scheduled_for: session.scheduled_for } : s))
+        p.map((s) => (s.id === sessionId ? { ...s, scheduled_for: session.scheduled_for, window_kind: session.window_kind, window_start: session.window_start } : s))
       );
     }
   }
@@ -3815,8 +3846,8 @@ const { data, error } = await supabase
     }
   }
 
-  // Update content item (title/notes)
-  async function updateContentItem(itemId: string, patch: { title?: string; notes?: string | null }) {
+  // Update content item (title/notes/is_ongoing)
+  async function updateContentItem(itemId: string, patch: { title?: string; notes?: string | null; is_ongoing?: boolean }) {
     const item = contentItems.find((i) => i.id === itemId);
     if (!item) return;
 
@@ -4044,7 +4075,7 @@ const { error } = await supabase
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-0 grid min-w-0 gap-3 md:flex-shrink md:min-h-0 md:grid-cols-3 md:flex-[0_0_55%] md:items-stretch lg:gap-4">
+          <div className="mt-0 grid min-w-0 gap-3 md:flex-shrink md:min-h-0 md:grid-cols-3 md:flex-[0_0_60%] md:items-stretch lg:gap-4">
             {/* Parking */}
             <section
               className={clsx(
@@ -4054,10 +4085,10 @@ const { error } = await supabase
             >
               <div className={clsx("flex min-w-0 gap-2 overflow-x-auto", parkingOpen ? "pb-2" : "pb-0")}>
                 {([
-                  ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length + drawerLists.thisWeek.content.length})`],
-                  ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length + drawerLists.thisWeekend.content.length})`],
-                  ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length + drawerLists.nextWeek.content.length})`],
-                  ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length + drawerLists.nextWeekend.content.length})`],
+                  ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length + drawerLists.thisWeek.content.length + drawerLists.thisWeek.session.length})`],
+                  ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length + drawerLists.thisWeekend.content.length + drawerLists.thisWeekend.session.length})`],
+                  ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length + drawerLists.nextWeek.content.length + drawerLists.nextWeek.session.length})`],
+                  ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length + drawerLists.nextWeekend.content.length + drawerLists.nextWeekend.session.length})`],
                   ["open", `Open (${drawerLists.open.task.length + drawerLists.open.plan.length + drawerLists.open.focus.length})`],
                 ] as const).map(([k, label]) => {
                   const active = parkingOpen && drawerWindow === k;
@@ -4265,7 +4296,7 @@ const { error } = await supabase
                       />
                     ))}
 
-                    {/* Content items in parking lot */}
+                    {/* Content items in parking lot (one-offs) */}
                     {drawerLists[drawerWindow].content.length > 0 && (
                       <>
                         <div className="mx-3 my-2 h-px bg-neutral-700/50" />
@@ -4283,7 +4314,33 @@ const { error } = await supabase
                       </>
                     )}
 
-                    {drawerLists[drawerWindow].focus.length + drawerLists[drawerWindow].task.length + drawerLists[drawerWindow].content.length === 0 &&
+                    {/* Content sessions in parking lot (ongoing items and movies) */}
+                    {drawerLists[drawerWindow].session.length > 0 && (
+                      <>
+                        {drawerLists[drawerWindow].content.length === 0 && (
+                          <div className="mx-3 my-2 h-px bg-neutral-700/50" />
+                        )}
+                        {drawerLists[drawerWindow].session.map((session) => (
+                          <ContentRow
+                            key={`session-${session.id}`}
+                            title={getSessionTitle(session)}
+                            isDone={session.status === "done"}
+                            onToggleDone={() => toggleContentSessionDone(session.id)}
+                            currentValue={`P|${session.window_kind}|${session.window_start}`}
+                            onMove={(v) => {
+                              if (v === "none") {
+                                unscheduleContent(session.content_item_id ?? "", true, session.id);
+                              } else {
+                                rescheduleContentSession(session.id, v);
+                              }
+                            }}
+                            moveTargets={moveTargets}
+                          />
+                        ))}
+                      </>
+                    )}
+
+                    {drawerLists[drawerWindow].focus.length + drawerLists[drawerWindow].task.length + drawerLists[drawerWindow].content.length + drawerLists[drawerWindow].session.length === 0 &&
                       drawerLists[drawerWindow].plan.length === 0 && (
                         <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>
                       )}
@@ -4354,16 +4411,6 @@ const { error } = await supabase
                           Add
                         </button>
                       </div>
-                      {/* Ongoing toggle */}
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={contentIsOngoing}
-                          onChange={(e) => setContentIsOngoing(e.target.checked)}
-                          className="h-4 w-4 rounded border-neutral-700 bg-neutral-950 text-emerald-500 focus:ring-emerald-500"
-                        />
-                        <span className="text-xs text-neutral-400">Ongoing</span>
-                      </label>
                     </div>
                   )}
                   <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/25">
@@ -4424,14 +4471,8 @@ const { error } = await supabase
                                       onChange={(v) => {
                                         setMovieDropdownId(null);
                                         if (v === "none") return;
-                                        // Parse target value to get date
-                                        let targetDate: string | null = null;
-                                        if (v.startsWith("D|")) {
-                                          targetDate = v.slice(2);
-                                        } else if (v.startsWith("P|")) {
-                                          targetDate = v.split("|").pop() ?? null;
-                                        }
-                                        if (targetDate) scheduleMovieToDay(m.id, targetDate);
+                                        // Pass full target value - scheduleMovie handles parsing
+                                        scheduleMovie(m.id, v);
                                       }}
                                       moveTargets={moveTargets}
                                     />
@@ -4786,11 +4827,8 @@ const { error } = await supabase
                         if (v === "none") {
                           unscheduleContent(session.content_item_id ?? "", true, session.id);
                         } else {
-                          // Sessions can only move to specific days
-                          let targetDate: string | null = null;
-                          if (v.startsWith("D|")) targetDate = v.slice(2);
-                          else if (v.startsWith("P|")) targetDate = v.split("|").pop() ?? null;
-                          if (targetDate) rescheduleContentSession(session.id, targetDate);
+                          // Pass full target value - rescheduleContentSession handles parsing
+                          rescheduleContentSession(session.id, v);
                         }
                       }}
                       moveTargets={moveTargets}
@@ -5078,11 +5116,8 @@ const { error } = await supabase
                                   if (v === "none") {
                                     unscheduleContent(session.content_item_id ?? "", true, session.id);
                                   } else {
-                                    // Sessions can only move to specific days
-                                    let targetDate: string | null = null;
-                                    if (v.startsWith("D|")) targetDate = v.slice(2);
-                                    else if (v.startsWith("P|")) targetDate = v.split("|").pop() ?? null;
-                                    if (targetDate) rescheduleContentSession(session.id, targetDate);
+                                    // Pass full target value - rescheduleContentSession handles parsing
+                                    rescheduleContentSession(session.id, v);
                                   }
                                 }}
                                 moveTargets={moveTargets}
@@ -5294,6 +5329,17 @@ const { error } = await supabase
               className="min-h-[80px] w-full resize-none rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none mb-4"
             />
 
+            <label className="flex items-center gap-2 cursor-pointer mb-4">
+              <input
+                type="checkbox"
+                checked={editingContentItem.is_ongoing}
+                onChange={(e) => setEditingContentItem({ ...editingContentItem, is_ongoing: e.target.checked })}
+                className="h-4 w-4 rounded border-neutral-700 bg-neutral-950 text-emerald-500 focus:ring-emerald-500"
+              />
+              <span className="text-sm text-neutral-300">Ongoing</span>
+              <span className="text-xs text-neutral-500">(item stays in tab when scheduled)</span>
+            </label>
+
             <div className="flex gap-2">
               <button
                 type="button"
@@ -5308,6 +5354,7 @@ const { error } = await supabase
                   updateContentItem(editingContentItem.id, {
                     title: editingContentItem.title,
                     notes: editingContentItem.notes,
+                    is_ongoing: editingContentItem.is_ongoing,
                   });
                   setEditingContentItem(null);
                 }}
