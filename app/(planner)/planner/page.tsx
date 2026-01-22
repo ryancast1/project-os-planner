@@ -4060,15 +4060,15 @@ const { error } = await supabase
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-0 grid min-w-0 gap-3 md:flex-shrink md:min-h-0 md:grid-cols-3 md:flex-[0_0_60%] md:items-stretch lg:gap-4">
-            {/* Parking */}
+          <div className="mt-0 grid min-w-0 gap-3 md:flex-shrink md:min-h-0 md:grid-cols-3 md:grid-rows-2 md:flex-[0_0_65%] md:items-stretch lg:gap-4">
+            {/* Parking + Content stacked (right column on desktop) */}
             <section
               className={clsx(
-                "order-1 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm md:order-none md:col-start-2 md:row-start-1 md:h-full md:overflow-y-auto md:overscroll-contain",
-                parkingOpen ? "p-4" : "p-2"
+                "order-1 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm md:order-none md:col-start-3 md:row-start-1 md:h-full md:overflow-y-auto md:overscroll-contain",
+                parkingOpen ? "px-3 pt-2 pb-3" : "p-2"
               )}
             >
-              <div className={clsx("flex min-w-0 gap-2 overflow-x-auto", parkingOpen ? "pb-2" : "pb-0")}>
+              <div className="flex min-w-0 gap-1.5 overflow-x-auto">
                 {([
                   ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length + drawerLists.thisWeek.content.length + drawerLists.thisWeek.session.length})`],
                   ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length + drawerLists.thisWeekend.content.length + drawerLists.thisWeekend.session.length})`],
@@ -4092,7 +4092,7 @@ const { error } = await supabase
                         setDrawerWindow(next);
                       }}
                       className={clsx(
-                        "whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                        "whitespace-nowrap rounded-lg border px-2 py-1 text-xs font-semibold",
                         active
                           ? "border-neutral-200 bg-neutral-100 text-neutral-900"
                           : "border-neutral-800 bg-neutral-950 text-neutral-200"
@@ -4106,7 +4106,7 @@ const { error } = await supabase
 
               {parkingOpen && (
                 <>
-                  <div className="mt-2">
+                  <div className="mt-1.5">
                     <div className="mb-2 hidden gap-2 sm:mb-2 sm:gap-2 group-focus-within:flex" />
                     <div className="group">
                       <div className="mb-2 hidden gap-2 group-focus-within:flex">
@@ -4335,13 +4335,14 @@ const { error } = await supabase
             </section>
 
             {/* Content */}
+            {/* Content (stacked below parking on desktop) */}
             <section
   className={clsx(
-    "order-2 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm md:order-none md:col-start-3 md:row-start-1 md:h-full md:overflow-y-auto md:overscroll-contain",
-    contentOpen ? "p-4" : "p-2"
+    "order-2 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm md:order-none md:col-start-3 md:row-start-2 md:h-full md:overflow-y-auto md:overscroll-contain",
+    contentOpen ? "px-3 pt-2 pb-3" : "p-2"
   )}
 >
-<div className={clsx("flex min-w-0 gap-2 overflow-x-auto", contentOpen ? "pb-2" : "pb-0")}>                {([
+<div className="flex min-w-0 gap-1.5 overflow-x-auto">                {([
                   ["cook", "Cook"],
                   ["watch", "Watch"],
                   ["listen", "Listen"],
@@ -4359,7 +4360,7 @@ const { error } = await supabase
                       type="button"
                       onClick={() => handleContentTabClick(k as ContentTab)}
                       className={clsx(
-                        "shrink-0 rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                        "shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold",
                         active
                           ? "border-neutral-200 bg-neutral-100 text-neutral-900"
                           : "border-neutral-800 bg-neutral-950 text-neutral-200"
@@ -4374,7 +4375,7 @@ const { error } = await supabase
               {contentOpen && (
                 <>
                   {contentTab !== "movies" && (
-                    <div className="mt-2 space-y-2">
+                    <div className="mt-1.5 space-y-2">
                       <div className="flex items-center gap-2">
                         <input
                           value={contentDraft}
@@ -4514,7 +4515,7 @@ const { error } = await supabase
             {/* Today */}
             <section
               className={clsx(
-                "order-2 min-w-0 rounded-2xl border border-neutral-800 p-4 shadow-sm md:order-none md:col-start-1 md:row-start-1 md:h-full md:overflow-y-auto md:overscroll-contain",
+                "order-2 min-w-0 rounded-2xl border border-neutral-800 p-4 shadow-sm md:order-none md:col-start-1 md:row-start-1 md:row-span-2 md:h-full md:overflow-y-auto md:overscroll-contain",
                 (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
               )}
             >
@@ -4823,18 +4824,268 @@ const { error } = await supabase
               </div>
             )}
             </section>
+
+            {/* Tomorrow */}
+            {(() => {
+              const tomorrowDay = days[1];
+              const tomorrowIso = toISODate(tomorrowDay);
+              const tomorrowPlans = plansByDay[tomorrowIso] ?? [];
+              const tomorrowTasks = tasksByDay[tomorrowIso] ?? [];
+              const tomorrowFocus = focusesByDay[tomorrowIso] ?? [];
+              const tomorrowIsWeekend = tomorrowDay.getDay() === 0 || tomorrowDay.getDay() === 6;
+
+              return (
+                <section
+                  className={clsx(
+                    "order-3 min-w-0 rounded-2xl border border-neutral-800 p-4 shadow-sm md:order-none md:col-start-2 md:row-start-1 md:row-span-2 md:h-full md:overflow-y-auto md:overscroll-contain",
+                    tomorrowIsWeekend ? "bg-neutral-800/80" : "bg-neutral-900"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="shrink-0">
+                        <div className="text-lg font-semibold">Tomorrow</div>
+                        <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(tomorrowDay)}</div>
+                      </div>
+                      <NotesButton
+                        date={tomorrowIso}
+                        hasNotes={!!dayNotes[tomorrowIso]}
+                        onClick={() => setNotesModalDate(tomorrowIso)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Inline add */}
+                  <div className="mt-3 group">
+                    <div className="mb-2 hidden gap-2 group-focus-within:flex">
+                      {([
+                        ["task", "Task"],
+                        ["plan", "Plan"],
+                        ["focus", "Intention"],
+                      ] as const).map(([k, label]) => (
+                        <button
+                          key={k}
+                          type="button"
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onClick={() => {
+                            ensureDayDraft(tomorrowIso);
+                            setDraftTypeByDay((p) => ({ ...p, [tomorrowIso]: k as ItemType }));
+                          }}
+                          className={clsx(
+                            "rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                            (draftTypeByDay[tomorrowIso] ?? "task") === k
+                              ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                              : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input
+                        value={draftByDay[tomorrowIso]?.[(draftTypeByDay[tomorrowIso] ?? "task") as ItemType] ?? ""}
+                        onFocus={() => ensureDayDraft(tomorrowIso)}
+                        onChange={(e) => {
+                          ensureDayDraft(tomorrowIso);
+                          const type = (draftTypeByDay[tomorrowIso] ?? "task") as ItemType;
+                          setDraftByDay((prev) => ({
+                            ...prev,
+                            [tomorrowIso]: { ...(prev[tomorrowIso] ?? { task: "", plan: "", focus: "" }), [type]: e.target.value },
+                          }));
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addInline(tomorrowIso);
+                          }
+                        }}
+                        placeholder="Add…"
+                        className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                      />
+
+                      <button
+                        type="button"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          addInline(tomorrowIso);
+                        }}
+                        className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Plans */}
+                  <PlanBand
+                    items={tomorrowPlans}
+                    moveTargets={moveTargets}
+                    onMove={(id, v) => moveItem("plan", id, v)}
+                    onEdit={(p) => openEdit("plan", p)}
+                  />
+
+                  {/* Focuses */}
+                  {tomorrowFocus.length ? (
+                    <div className={clsx("mt-3", "overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20")}>
+                      {tomorrowFocus.map((f) => (
+                        <FocusRow
+                          key={f.id}
+                          focus={f}
+                          moveTargets={moveTargets}
+                          onMove={(id, v) => moveItem("focus", id, v)}
+                          onEdit={(x) => openEdit("focus", x)}
+                          showDragHandle={true}
+                          isDragging={draggedItemId === f.id}
+                          isDropTarget={dropTargetId === f.id && draggedItemId !== f.id}
+                          dropPosition={dropTargetId === f.id ? dropPosition : null}
+                          onDragStart={(id) => {
+                            setDraggedItemId(id);
+                            setDraggedItemType("focus");
+                          }}
+                          onDragEnd={() => {
+                            setDraggedItemId(null);
+                            setDraggedItemType(null);
+                            setDropTargetId(null);
+                            setDropPosition(null);
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setDropTargetId(f.id);
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const midpoint = rect.top + rect.height / 2;
+                            setDropPosition(e.clientY < midpoint ? "above" : "below");
+                          }}
+                          onDrop={() => {
+                            if (draggedItemId && draggedItemType === "focus" && dropPosition) {
+                              reorderItems("focus", draggedItemId, f.id, { date: tomorrowIso }, dropPosition);
+                            }
+                          }}
+                          onTouchDragStart={(id) => {
+                            setDraggedItemId(id);
+                            setDraggedItemType("focus");
+                            setIsTouchDragging(true);
+                            touchDragContextRef.current = { type: "focus", context: { date: tomorrowIso } };
+                          }}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {/* Tasks */}
+                  <div className="mt-4">
+                    <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                      {tomorrowTasks.map((t) => (
+                        <TaskRow
+                          key={t.id}
+                          task={t}
+                          moveTargets={moveTargets}
+                          onMove={(id, v) => moveItem("task", id, v)}
+                          onToggleDone={toggleTaskDone}
+                          onEdit={(t) => openEdit("task", t)}
+                          showDragHandle={true}
+                          isDragging={draggedItemId === t.id}
+                          isDropTarget={dropTargetId === t.id && draggedItemId !== t.id}
+                          dropPosition={dropTargetId === t.id ? dropPosition : null}
+                          onDragStart={(id) => {
+                            setDraggedItemId(id);
+                            setDraggedItemType("task");
+                          }}
+                          onDragEnd={() => {
+                            setDraggedItemId(null);
+                            setDraggedItemType(null);
+                            setDropTargetId(null);
+                            setDropPosition(null);
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setDropTargetId(t.id);
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const midpoint = rect.top + rect.height / 2;
+                            setDropPosition(e.clientY < midpoint ? "above" : "below");
+                          }}
+                          onDrop={() => {
+                            if (draggedItemId && draggedItemType === "task" && dropPosition) {
+                              reorderItems("task", draggedItemId, t.id, { date: tomorrowIso }, dropPosition);
+                            }
+                          }}
+                          onTouchDragStart={(id) => {
+                            setDraggedItemId(id);
+                            setDraggedItemType("task");
+                            setIsTouchDragging(true);
+                            touchDragContextRef.current = { type: "task", context: { date: tomorrowIso } };
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Content section (scheduled one-offs and sessions) */}
+                  {((scheduledContentByDay[tomorrowIso] ?? []).length > 0 || (contentSessionsByDay[tomorrowIso] ?? []).length > 0) && (
+                    <div className="mt-4">
+                      <div className="mb-2 h-px bg-neutral-700/50" />
+                      <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                        {(scheduledContentByDay[tomorrowIso] ?? []).map((item) => (
+                          <ContentRow
+                            key={`content-${item.id}`}
+                            title={item.title}
+                            isDone={item.status === "done"}
+                            onToggleDone={() => toggleScheduledContentDone(item.id)}
+                            currentValue={`D|${item.scheduled_for}`}
+                            onMove={(v) => {
+                              scheduleContentItem(item.id, v);
+                            }}
+                            moveTargets={moveTargets}
+                          />
+                        ))}
+                        {(contentSessionsByDay[tomorrowIso] ?? []).map((session) => (
+                          <ContentRow
+                            key={`session-${session.id}`}
+                            title={getSessionTitle(session)}
+                            isDone={session.status === "done"}
+                            onToggleDone={() => toggleContentSessionDone(session.id)}
+                            currentValue={`D|${session.scheduled_for}`}
+                            onMove={(v) => {
+                              if (v === "none") {
+                                unscheduleContent(session.content_item_id ?? "", true, session.id);
+                              } else {
+                                rescheduleContentSession(session.id, v);
+                              }
+                            }}
+                            moveTargets={moveTargets}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
           </div>
 
-          {/* Next 6 days */}
+          {/* Next 5 days */}
           <div className="mt-3 flex flex-col gap-3 md:flex-[1_1_0%] md:min-h-0 md:overflow-hidden md:flex-row md:flex-nowrap md:items-stretch lg:gap-4">
-            {days.slice(1).map((d, i) => {
+            {days.slice(2).map((d, i) => {
               const iso = toISODate(d);
-              const label = fmtDayLabel(d, i + 1);
+              const label = fmtDayLabel(d, i + 2);
               const isOpen = openDayIso === iso;
               const isAnotherOpen = Boolean(bottomOpenIso && bottomOpenIso !== iso);
 
               const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-              const prevDay = days[i];
+              const prevDay = days[i + 1]; // i+1 because we sliced from index 2
               const afterSunday = prevDay.getDay() === 0;
 
               const dayPlans = plansByDay[iso] ?? [];
