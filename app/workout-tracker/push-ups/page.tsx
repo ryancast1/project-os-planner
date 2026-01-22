@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getLastSession, saveSession } from "@/lib/db";
+import RestTimer from "@/components/RestTimer";
 
 
 type PushupLog = {
@@ -216,6 +217,8 @@ await saveSession({
             {status === "saved" ? "Saved ✓" : " "}
           </div>
         </section>
+
+        <RestTimer initialSeconds={150} />
       </div>
     </main>
   );

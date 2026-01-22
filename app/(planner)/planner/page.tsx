@@ -2331,7 +2331,6 @@ function getWindowValue(which: DrawerWindow) {
       dayNotesRes,
       contentItemsRes,
       contentSessionsRes,
-      contentSessionsParkingRes,
     ] = await Promise.all([
       supabase
         .from("tasks")
@@ -2446,18 +2445,11 @@ function getWindowValue(which: DrawerWindow) {
         .eq("status", "active")
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
-      // Sessions scheduled to specific days
+      // Sessions: scheduled to specific days OR in parking lots (combined into one query)
       supabase
         .from("content_sessions")
         .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,created_at,completed_at")
-        .gte("scheduled_for", start)
-        .lte("scheduled_for", end)
-        .order("created_at", { ascending: true }),
-      // Sessions in parking lots
-      supabase
-        .from("content_sessions")
-        .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,created_at,completed_at")
-        .not("window_kind", "is", null)
+        .or(`and(scheduled_for.gte.${start},scheduled_for.lte.${end}),window_kind.not.is.null`)
         .order("created_at", { ascending: true }),
     ]);
 
@@ -2477,7 +2469,6 @@ function getWindowValue(which: DrawerWindow) {
     if (dayNotesRes.error) console.warn("dayNotesRes", dayNotesRes.error);
     if (contentItemsRes.error) console.warn("contentItemsRes", contentItemsRes.error);
     if (contentSessionsRes.error) console.warn("contentSessionsRes", contentSessionsRes.error);
-    if (contentSessionsParkingRes.error) console.warn("contentSessionsParkingRes", contentSessionsParkingRes.error);
     setTasks([
       ...((tasksOverdueRes.data ?? []) as Task[]),
       ...((tasksScheduledRes.data ?? []) as Task[]),
@@ -2505,13 +2496,7 @@ function getWindowValue(which: DrawerWindow) {
 
     // Set new content system state
     setContentItems((contentItemsRes.data ?? []) as ContentItemRow[]);
-    // Merge scheduled and parking lot sessions, deduping by id
-    const allSessions = [
-      ...((contentSessionsRes.data ?? []) as ContentSessionRow[]),
-      ...((contentSessionsParkingRes.data ?? []) as ContentSessionRow[]),
-    ];
-    const uniqueSessions = Array.from(new Map(allSessions.map(s => [s.id, s])).values());
-    setContentSessions(uniqueSessions);
+    setContentSessions((contentSessionsRes.data ?? []) as ContentSessionRow[]);
 
     let habitsData = (habitsRes.data ?? []) as any[];
     if (habitsRes.error) {
