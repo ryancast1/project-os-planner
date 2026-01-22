@@ -72,12 +72,36 @@ type ItemType = "task" | "plan" | "focus";
 
 type DrawerWindow = "thisWeek" | "thisWeekend" | "nextWeek" | "nextWeekend" | "open";
 
-type ContentTab = "cook" | "watch" | "movies" | "city" | "listen" | "read"| "listen" ;
+type ContentTab = "cook" | "watch" | "movies" | "city" | "listen" | "read";
 
-type ContentItem = {
+// New content system types
+type ContentItemRow = {
   id: string;
-  text: string;
-  created_at: string; // ISO
+  user_id: string;
+  title: string;
+  notes: string | null;
+  category: string; // cook, watch, listen, read, city
+  is_ongoing: boolean;
+  status: "active" | "done";
+  scheduled_for: string | null; // YYYY-MM-DD (only for one-offs when scheduled to a specific day)
+  window_kind: WindowKind | null; // for parking lot placement
+  window_start: string | null; // YYYY-MM-DD for parking lot placement
+  sort_order: number;
+  created_at: string;
+  completed_at: string | null;
+};
+
+type ContentSessionRow = {
+  id: string;
+  user_id: string;
+  content_item_id: string | null;
+  movie_tracker_id: string | null;
+  scheduled_for: string | null; // YYYY-MM-DD (null if in parking lot)
+  window_kind: WindowKind | null; // for parking lot placement
+  window_start: string | null; // YYYY-MM-DD for parking lot placement
+  status: "open" | "done";
+  created_at: string;
+  completed_at: string | null;
 };
 
 
@@ -705,6 +729,275 @@ function FocusRow({
         <MoveSelect compact={compact} value={locationValueFor(focus)} onChange={(v) => onMove(focus.id, v)} moveTargets={moveTargets} />
       )}
     </RowShell>
+  );
+}
+
+// ContentRow: Displays a content item on day cards with checkbox
+// Used for both scheduled one-offs and ongoing item sessions
+function ContentRow({
+  title,
+  isDone,
+  onToggleDone,
+  onMove,
+  moveTargets,
+  compact,
+  currentValue = "none",
+}: {
+  title: string;
+  isDone: boolean;
+  onToggleDone: () => void;
+  onMove?: (targetValue: string) => void;
+  moveTargets?: MoveTarget[];
+  compact?: boolean;
+  currentValue?: string;
+}) {
+  const [showMove, setShowMove] = useState(false);
+
+  return (
+    <RowShell compact={compact}>
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleDone();
+        }}
+        className={clsx(
+          compact ? "shrink-0 h-4 w-4 rounded border grid place-items-center" : "shrink-0 h-6 w-6 rounded-md border grid place-items-center",
+          isDone ? "border-emerald-400/70 bg-emerald-300 text-neutral-900" : "border-neutral-700 bg-neutral-950 text-neutral-200"
+        )}
+        aria-label={isDone ? "Mark not done" : "Mark done"}
+        title={isDone ? "Mark not done" : "Mark done"}
+      >
+        {isDone ? "✓" : ""}
+      </button>
+
+      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onMove && setShowMove((s) => !s)}>
+        <div
+          className={clsx(
+            "truncate",
+            compact ? "text-[11px]" : "text-sm",
+            isDone ? "text-emerald-300" : "text-neutral-200"
+          )}
+        >
+          {title}
+        </div>
+      </div>
+
+      {showMove && onMove && moveTargets && (
+        <MoveSelect compact={compact} value={currentValue} onChange={(v) => { setShowMove(false); onMove(v); }} moveTargets={moveTargets} />
+      )}
+    </RowShell>
+  );
+}
+
+// ContentTabItem: Displays a content item in the content tab with schedule dropdown
+function ContentTabItem({
+  item,
+  moveTargets,
+  onSchedule,
+  onToggleDone,
+  onEdit,
+  onDelete,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  isDragging = false,
+  isDropTarget = false,
+  dropPosition,
+}: {
+  item: ContentItemRow;
+  moveTargets: MoveTarget[];
+  onSchedule: (targetDate: string) => void;
+  onToggleDone: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+  onDragOver?: React.DragEventHandler<HTMLDivElement>;
+  onDrop?: () => void;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  dropPosition?: "above" | "below" | null;
+}) {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const isDone = item.status === "done";
+
+  // Determine current value based on scheduled_for or window_kind/window_start
+  const currentValue = useMemo(() => {
+    // Check for parking lot placement first
+    if (item.window_kind && item.window_start) {
+      return `P|${item.window_kind}|${item.window_start}`;
+    }
+    // Check for specific day
+    if (item.scheduled_for) {
+      const dayMatch = moveTargets.find(
+        (t) => t.group === "days" && t.value === `D|${item.scheduled_for}`
+      );
+      if (dayMatch) return dayMatch.value;
+      return `D|${item.scheduled_for}`;
+    }
+    return "none";
+  }, [item.scheduled_for, item.window_kind, item.window_start, moveTargets]);
+
+  // Context menu handlers
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+    setShowContextMenu(true);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    longPressTimer.current = setTimeout(() => {
+      setContextMenuPos({ x: touch.clientX, y: touch.clientY });
+      setShowContextMenu(true);
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleTouchMove = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    if (!showContextMenu) return;
+    const handleClick = () => setShowContextMenu(false);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [showContextMenu]);
+
+  return (
+    <div
+      ref={containerRef}
+      draggable={!!onDragStart}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart?.();
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOver?.(e);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop?.();
+      }}
+      onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
+      className={clsx(
+        "px-3 py-2 relative",
+        isDragging && "opacity-50",
+        isDropTarget && dropPosition === "above" && "border-t-2 border-emerald-500",
+        isDropTarget && dropPosition === "below" && "border-b-2 border-emerald-500"
+      )}
+    >
+      <div className="flex items-center gap-2">
+        {/* Drag handle */}
+        {onDragStart && (
+          <div className="shrink-0 text-neutral-600 cursor-grab active:cursor-grabbing touch-none">
+            <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+              <circle cx="3" cy="3" r="1.5" />
+              <circle cx="9" cy="3" r="1.5" />
+              <circle cx="3" cy="8" r="1.5" />
+              <circle cx="9" cy="8" r="1.5" />
+              <circle cx="3" cy="13" r="1.5" />
+              <circle cx="9" cy="13" r="1.5" />
+            </svg>
+          </div>
+        )}
+        {/* Checkbox */}
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleDone();
+          }}
+          className={clsx(
+            "shrink-0 h-6 w-6 rounded-md border grid place-items-center",
+            isDone
+              ? "border-emerald-400/70 bg-emerald-300 text-neutral-900"
+              : "border-neutral-700 bg-neutral-950 text-neutral-200"
+          )}
+          aria-label={isDone ? "Mark not done" : "Mark done"}
+          title={isDone ? "Mark not done" : "Mark done"}
+        >
+          {isDone ? "✓" : ""}
+        </button>
+        <div
+          className="min-w-0 flex-1 cursor-pointer"
+          onClick={() => setShowDropdown((s) => !s)}
+        >
+          <div className={clsx(
+            "truncate text-base",
+            isDone ? "text-emerald-300 line-through" : "text-neutral-200"
+          )}>
+            {item.title}
+            {item.is_ongoing && (
+              <span className="ml-2 text-xs text-neutral-500">(ongoing)</span>
+            )}
+          </div>
+        </div>
+      </div>
+      {showDropdown && (
+        <div className="mt-2">
+          <MoveSelect
+            value={currentValue}
+            onChange={(v) => {
+              setShowDropdown(false);
+              // Pass the full target value - let the handler parse it
+              onSchedule(v);
+            }}
+            moveTargets={moveTargets}
+          />
+        </div>
+      )}
+      {/* Context menu */}
+      {showContextMenu && (
+        <div
+          className="fixed z-[100] bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl py-1 min-w-[120px]"
+          style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              setShowContextMenu(false);
+              onEdit();
+            }}
+            className="w-full px-4 py-2 text-left text-sm text-neutral-200 hover:bg-neutral-700"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => {
+              setShowContextMenu(false);
+              onDelete();
+            }}
+            className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-neutral-700"
+          >
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1679,6 +1972,9 @@ export default function PlannerPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [focuses, setFocuses] = useState<Focus[]>([]);
+  // New content system state
+  const [contentItems, setContentItems] = useState<ContentItemRow[]>([]);
+  const [contentSessions, setContentSessions] = useState<ContentSessionRow[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [habitDoneIds, setHabitDoneIds] = useState<Set<string>>(new Set());
   const [gymDoneToday, setGymDoneToday] = useState(false);
@@ -1783,27 +2079,47 @@ const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
     return raw === "1";
   });
 
-  const CONTENT_ITEMS_KEY_PREFIX = "planner.content.items.";
-
-  const [contentItemsByTab, setContentItemsByTab] = useState<Record<ContentTab, ContentItem[]>>(() => {
-    if (typeof window === "undefined") {
-      return { cook: [], watch: [], movies: [], listen: [], read: [], city: [] };
-    }
-    const tabs: ContentTab[] = ["cook", "watch", "movies", "listen", "read", "city"];
-    const out: Record<ContentTab, ContentItem[]> = { cook: [], watch: [], movies: [], listen: [], read: [], city: [] };
-    for (const t of tabs) {
-      try {
-        const raw = window.localStorage.getItem(`${CONTENT_ITEMS_KEY_PREFIX}${t}`);
-        out[t] = raw ? (JSON.parse(raw) as ContentItem[]) : [];
-      } catch {
-        out[t] = [];
-      }
-    }
-    return out;
-  });
-
   const [contentDraft, setContentDraft] = useState("");
+  const [contentIsOngoing, setContentIsOngoing] = useState(false);
+  const [editingContentItem, setEditingContentItem] = useState<ContentItemRow | null>(null);
+  const [contentDragId, setContentDragId] = useState<string | null>(null);
+  const [contentDropTargetId, setContentDropTargetId] = useState<string | null>(null);
+  const [contentDropPosition, setContentDropPosition] = useState<"above" | "below" | null>(null);
 
+  // Content items by tab (from new content_items table)
+  // Shows: unscheduled one-offs OR all active ongoing items
+  const contentItemsByCategory = useMemo(() => {
+    const out: Record<ContentTab, ContentItemRow[]> = {
+      cook: [],
+      watch: [],
+      listen: [],
+      read: [],
+      movies: [], // not used - movies come from movie_tracker
+      city: [],
+    };
+
+    for (const item of contentItems) {
+      if (item.status !== "active") continue;
+      const cat = item.category as ContentTab;
+      if (!cat || cat === "movies") continue;
+
+      // One-off: only show if not scheduled (no scheduled_for AND no window_kind)
+      // Ongoing: always show in tab
+      const isScheduled = item.scheduled_for || item.window_kind;
+      if (!item.is_ongoing && isScheduled) continue;
+
+      if (out[cat]) out[cat].push(item);
+    }
+
+    // Sort by sort_order
+    (["cook", "watch", "listen", "read", "city"] as ContentTab[]).forEach((k) => {
+      out[k].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    });
+
+    return out;
+  }, [contentItems]);
+
+  // Legacy: keep contentFocusesByTab for backwards compat during transition
   const contentFocusesByTab = useMemo(() => {
   const out: Record<ContentTab, Focus[]> = {
     cook: [],
@@ -1815,9 +2131,6 @@ const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
   };
 
   for (const f of focuses) {
-
-
-
     const cat = (f as any).content_category as ContentTab | null | undefined;
 
     if (!cat) continue;
@@ -1888,18 +2201,6 @@ const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
     if (typeof window === "undefined") return;
     window.localStorage.setItem(CONTENT_OPEN_KEY, contentOpen ? "1" : "0");
   }, [contentOpen]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const tabs: ContentTab[] = ["cook", "watch", "movies", "listen", "read", "city"];
-    for (const t of tabs) {
-      try {
-        window.localStorage.setItem(`${CONTENT_ITEMS_KEY_PREFIX}${t}`, JSON.stringify(contentItemsByTab[t] ?? []));
-      } catch {
-        // ignore storage errors
-      }
-    }
-  }, [contentItemsByTab]);
 
   // Responsive flag for md (768px+) and up
   const [isMdUp, setIsMdUp] = useState(false);
@@ -2029,6 +2330,9 @@ function getWindowValue(which: DrawerWindow) {
       movieTrackerRes,
       projectGoalsRes,
       dayNotesRes,
+      contentItemsRes,
+      contentSessionsRes,
+      contentSessionsParkingRes,
     ] = await Promise.all([
       supabase
         .from("tasks")
@@ -2136,6 +2440,26 @@ function getWindowValue(which: DrawerWindow) {
         .select("note_date,notes")
         .gte("note_date", start)
         .lte("note_date", end),
+      // New content system queries
+      supabase
+        .from("content_items")
+        .select("id,user_id,title,notes,category,is_ongoing,status,scheduled_for,window_kind,window_start,sort_order,created_at,completed_at")
+        .eq("status", "active")
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true }),
+      // Sessions scheduled to specific days
+      supabase
+        .from("content_sessions")
+        .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,created_at,completed_at")
+        .gte("scheduled_for", start)
+        .lte("scheduled_for", end)
+        .order("created_at", { ascending: true }),
+      // Sessions in parking lots
+      supabase
+        .from("content_sessions")
+        .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,created_at,completed_at")
+        .not("window_kind", "is", null)
+        .order("created_at", { ascending: true }),
     ]);
 
     if (tasksScheduledRes.error) console.warn("tasksScheduledRes", tasksScheduledRes.error);
@@ -2152,6 +2476,9 @@ function getWindowValue(which: DrawerWindow) {
     if (movieTrackerRes.error) console.warn("movieTrackerRes", movieTrackerRes.error);
     if (projectGoalsRes.error) console.warn("projectGoalsRes", projectGoalsRes.error);
     if (dayNotesRes.error) console.warn("dayNotesRes", dayNotesRes.error);
+    if (contentItemsRes.error) console.warn("contentItemsRes", contentItemsRes.error);
+    if (contentSessionsRes.error) console.warn("contentSessionsRes", contentSessionsRes.error);
+    if (contentSessionsParkingRes.error) console.warn("contentSessionsParkingRes", contentSessionsParkingRes.error);
     setTasks([
       ...((tasksOverdueRes.data ?? []) as Task[]),
       ...((tasksScheduledRes.data ?? []) as Task[]),
@@ -2176,6 +2503,16 @@ function getWindowValue(which: DrawerWindow) {
       if (row.notes) notesMap[row.note_date] = row.notes;
     }
     setDayNotes(notesMap);
+
+    // Set new content system state
+    setContentItems((contentItemsRes.data ?? []) as ContentItemRow[]);
+    // Merge scheduled and parking lot sessions, deduping by id
+    const allSessions = [
+      ...((contentSessionsRes.data ?? []) as ContentSessionRow[]),
+      ...((contentSessionsParkingRes.data ?? []) as ContentSessionRow[]),
+    ];
+    const uniqueSessions = Array.from(new Map(allSessions.map(s => [s.id, s])).values());
+    setContentSessions(uniqueSessions);
 
     let habitsData = (habitsRes.data ?? []) as any[];
     if (habitsRes.error) {
@@ -2237,6 +2574,49 @@ setMovieItems(
 
     setLoading(false);
   }
+
+  // Cleanup overdue one-off content items on app load
+  // Clears scheduled_for for one-offs that have past dates (returns them to their tab)
+  async function cleanupOverdueOneOffs() {
+    const todayIso = toISODate(days[0]);
+
+    // Find one-off content items with scheduled_for < today and status = 'active'
+    const { data: overdueItems, error: fetchErr } = await supabase
+      .from("content_items")
+      .select("id")
+      .eq("status", "active")
+      .eq("is_ongoing", false)
+      .not("scheduled_for", "is", null)
+      .lt("scheduled_for", todayIso);
+
+    if (fetchErr) {
+      console.warn("cleanupOverdueOneOffs fetch", fetchErr);
+      return;
+    }
+
+    if (!overdueItems || overdueItems.length === 0) return;
+
+    const ids = overdueItems.map((item) => item.id);
+
+    // Clear scheduled_for for these items (returns them to content tab)
+    const { error: updateErr } = await supabase
+      .from("content_items")
+      .update({ scheduled_for: null })
+      .in("id", ids);
+
+    if (updateErr) {
+      console.warn("cleanupOverdueOneOffs update", updateErr);
+      return;
+    }
+
+    // Update local state
+    setContentItems((prev) =>
+      prev.map((item) =>
+        ids.includes(item.id) ? { ...item, scheduled_for: null } : item
+      )
+    );
+  }
+
   async function toggleHabitDone(habitId: string) {
     const todayIso = toISODate(days[0]);
     const isDone = habitDoneIds.has(habitId);
@@ -2534,7 +2914,9 @@ setMovieItems(
       setAuthReady(true);
       setOpenDayIso(toISODate(days[0]));
       setAuthChecked(true);
-      fetchAll();
+      await fetchAll();
+      // After initial fetch, cleanup any overdue one-off content items
+      cleanupOverdueOneOffs();
 
       unsub = supabase.auth.onAuthStateChange((_event, nextSession) => {
         if (!nextSession) {
@@ -2645,13 +3027,51 @@ setMovieItems(
     return map;
   }, [focuses, days]);
 
+  // Scheduled one-off content items by day (from content_items where scheduled_for is set)
+  const scheduledContentByDay = useMemo(() => {
+    const map: Record<string, ContentItemRow[]> = {};
+    for (const d of days) map[toISODate(d)] = [];
+    for (const item of contentItems) {
+      if (!item.scheduled_for) continue;
+      if (!item.is_ongoing && map[item.scheduled_for]) {
+        map[item.scheduled_for].push(item);
+      }
+    }
+    return map;
+  }, [contentItems, days]);
+
+  // Content sessions by day (from content_sessions - for ongoing items and movies)
+  const contentSessionsByDay = useMemo(() => {
+    const map: Record<string, ContentSessionRow[]> = {};
+    for (const d of days) map[toISODate(d)] = [];
+    for (const session of contentSessions) {
+      if (map[session.scheduled_for]) {
+        map[session.scheduled_for].push(session);
+      }
+    }
+    return map;
+  }, [contentSessions, days]);
+
+  // Helper to get title for a session (looks up content_item or movie)
+  const getSessionTitle = (session: ContentSessionRow): string => {
+    if (session.content_item_id) {
+      const item = contentItems.find((i) => i.id === session.content_item_id);
+      return item?.title ?? "Unknown";
+    }
+    if (session.movie_tracker_id) {
+      const movie = movieItems.find((m) => m.id === session.movie_tracker_id);
+      return movie?.title ?? "Unknown Movie";
+    }
+    return "Unknown";
+  };
+
   const drawerLists = useMemo(() => {
     const out = {
-      thisWeek: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[] },
-      thisWeekend: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[] },
-      nextWeek: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[] },
-      nextWeekend: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[] },
-      open: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[] },
+      thisWeek: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[], content: [] as ContentItemRow[], session: [] as ContentSessionRow[] },
+      thisWeekend: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[], content: [] as ContentItemRow[], session: [] as ContentSessionRow[] },
+      nextWeek: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[], content: [] as ContentItemRow[], session: [] as ContentSessionRow[] },
+      nextWeekend: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[], content: [] as ContentItemRow[], session: [] as ContentSessionRow[] },
+      open: { task: [] as Task[], plan: [] as Plan[], focus: [] as Focus[], content: [] as ContentItemRow[], session: [] as ContentSessionRow[] },
     };
 
     const visibleStart = toISODate(days[0]);
@@ -2719,6 +3139,23 @@ setMovieItems(
       else if (!f.window_kind && !f.window_start && !(f as any).content_category) out.open.focus.push(f);
     }
 
+    // Add content items to parking lots (one-offs only, not ongoing)
+    for (const c of contentItems) {
+      if (c.status !== "active") continue;
+      if (c.is_ongoing) continue; // Ongoing items don't go to parking lots
+
+      const which = matchWindow(c.window_kind, c.window_start);
+      if (which) out[which].content.push(c);
+      // Note: content items without window_kind stay in the content card, not in "open" drawer
+    }
+
+    // Add content sessions to parking lots (for ongoing items and movies)
+    for (const s of contentSessions) {
+      if (s.status === "done") continue;
+      const which = matchWindow(s.window_kind, s.window_start);
+      if (which) out[which].session.push(s);
+    }
+
     const sortBySortOrder = <T extends { sort_order?: number }>(arr: T[]) => {
       arr.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     };
@@ -2727,10 +3164,11 @@ setMovieItems(
     for (const key of Object.keys(out) as (keyof typeof out)[]) {
       sortBySortOrder(out[key].task);
       sortBySortOrder(out[key].focus);
+      sortBySortOrder(out[key].content);
     }
 
     return out;
-  }, [tasks, plans, focuses, windows, days]);
+  }, [tasks, plans, focuses, contentItems, contentSessions, windows, days]);
 
 
   function ensureDayDraft(iso: string) {
@@ -3019,6 +3457,389 @@ const { data, error } = await supabase
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
+  // NEW CONTENT SYSTEM FUNCTIONS
+
+  // Add a new content item to content_items table
+  async function addNewContentItem() {
+    const title = contentDraft.trim();
+    if (!title) return;
+    if (contentTab === "movies") return;
+
+    // Get user_id from session
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      console.warn("addNewContentItem: no user session");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("content_items")
+      .insert({
+        title,
+        notes: null,
+        category: contentTab,
+        is_ongoing: contentIsOngoing,
+        status: "active",
+        scheduled_for: null,
+        window_kind: null,
+        window_start: null,
+        sort_order: 0,
+        user_id: session.user.id,
+      })
+      .select("id,title,notes,category,is_ongoing,status,scheduled_for,window_kind,window_start,sort_order,created_at,completed_at,user_id")
+      .single();
+
+    if (error) {
+      console.warn("addNewContentItem", error);
+      return;
+    }
+
+    if (data) setContentItems((p) => [data as ContentItemRow, ...p]);
+    setContentDraft("");
+    setContentIsOngoing(false);
+  }
+
+  // Toggle a scheduled one-off content item done (on day card)
+  async function toggleScheduledContentDone(itemId: string) {
+    const item = contentItems.find((i) => i.id === itemId);
+    if (!item) return;
+
+    const newStatus = item.status === "done" ? "active" : "done";
+    const completed_at = newStatus === "done" ? new Date().toISOString() : null;
+
+    // Optimistic update
+    setContentItems((p) =>
+      p.map((i) => (i.id === itemId ? { ...i, status: newStatus, completed_at } : i))
+    );
+
+    const { error } = await supabase
+      .from("content_items")
+      .update({ status: newStatus, completed_at })
+      .eq("id", itemId);
+
+    if (error) {
+      console.warn("toggleScheduledContentDone", error);
+      // Revert
+      setContentItems((p) =>
+        p.map((i) => (i.id === itemId ? { ...i, status: item.status, completed_at: item.completed_at } : i))
+      );
+    }
+  }
+
+  // Toggle a content session done (for ongoing items and movies on day card)
+  async function toggleContentSessionDone(sessionId: string) {
+    const session = contentSessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    const newStatus = session.status === "done" ? "open" : "done";
+    const completed_at = newStatus === "done" ? new Date().toISOString() : null;
+
+    // Optimistic update
+    setContentSessions((p) =>
+      p.map((s) => (s.id === sessionId ? { ...s, status: newStatus, completed_at } : s))
+    );
+
+    const { error } = await supabase
+      .from("content_sessions")
+      .update({ status: newStatus, completed_at })
+      .eq("id", sessionId);
+
+    if (error) {
+      console.warn("toggleContentSessionDone", error);
+      // Revert
+      setContentSessions((p) =>
+        p.map((s) => (s.id === sessionId ? { ...s, status: session.status, completed_at: session.completed_at } : s))
+      );
+    }
+  }
+
+  // Schedule a content item to a day or parking lot
+  async function scheduleContentItem(itemId: string, targetValue: string) {
+    const item = contentItems.find((i) => i.id === itemId);
+    if (!item) return;
+    if (targetValue === "__sep") return;
+
+    // Parse target value (same logic as moveItem)
+    let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null };
+
+    if (targetValue === "none") {
+      placement = { scheduled_for: null, window_kind: null, window_start: null };
+    } else if (targetValue.startsWith("D|")) {
+      placement = { scheduled_for: targetValue.split("|")[1], window_kind: null, window_start: null };
+    } else if (targetValue.startsWith("P|")) {
+      const [, kind, start] = targetValue.split("|");
+      placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start };
+    } else {
+      placement = { scheduled_for: null, window_kind: null, window_start: null };
+    }
+
+    if (item.is_ongoing) {
+      // For ongoing items: create a session (only if scheduling to a specific day)
+      if (!placement.scheduled_for) {
+        // Ongoing items can't go to parking lots - they need specific days for sessions
+        console.warn("scheduleContentItem: ongoing items must be scheduled to specific days");
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) {
+        console.warn("scheduleContentItem: no user session");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("content_sessions")
+        .insert({
+          content_item_id: itemId,
+          movie_tracker_id: null,
+          scheduled_for: placement.scheduled_for,
+          status: "open",
+          user_id: session.user.id,
+        })
+        .select("id,content_item_id,movie_tracker_id,scheduled_for,status,created_at,completed_at,user_id")
+        .single();
+
+      if (error) {
+        console.warn("scheduleContentItem (session)", error);
+        return;
+      }
+
+      if (data) setContentSessions((p) => [...p, data as ContentSessionRow]);
+    } else {
+      // For one-offs: update placement fields
+      const { error } = await supabase
+        .from("content_items")
+        .update(placement)
+        .eq("id", itemId);
+
+      if (error) {
+        console.warn("scheduleContentItem (one-off)", error);
+        return;
+      }
+
+      setContentItems((p) =>
+        p.map((i) => (i.id === itemId ? { ...i, ...placement } : i))
+      );
+    }
+  }
+
+  // Schedule a movie to a day (creates a session referencing movie_tracker)
+  async function scheduleMovieToDay(movieId: string, targetDate: string) {
+    // Get user_id from session
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      console.warn("scheduleMovieToDay: no user session");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("content_sessions")
+      .insert({
+        content_item_id: null,
+        movie_tracker_id: movieId,
+        scheduled_for: targetDate,
+        status: "open",
+        user_id: session.user.id,
+      })
+      .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,status,created_at,completed_at")
+      .single();
+
+    if (error) {
+      console.warn("scheduleMovieToDay", error);
+      return;
+    }
+
+    if (data) setContentSessions((p) => [...p, data as ContentSessionRow]);
+  }
+
+  // Unschedule content (move back to "Open")
+  async function unscheduleContent(itemId: string, isSession: boolean, sessionId?: string) {
+    if (isSession && sessionId) {
+      // Delete the session
+      const { error } = await supabase
+        .from("content_sessions")
+        .delete()
+        .eq("id", sessionId);
+
+      if (error) {
+        console.warn("unscheduleContent (session)", error);
+        return;
+      }
+
+      setContentSessions((p) => p.filter((s) => s.id !== sessionId));
+    } else {
+      // Clear scheduled_for on the content item
+      const { error } = await supabase
+        .from("content_items")
+        .update({ scheduled_for: null })
+        .eq("id", itemId);
+
+      if (error) {
+        console.warn("unscheduleContent (one-off)", error);
+        return;
+      }
+
+      setContentItems((p) =>
+        p.map((i) => (i.id === itemId ? { ...i, scheduled_for: null } : i))
+      );
+    }
+  }
+
+  // Reschedule a content session to a different day
+  async function rescheduleContentSession(sessionId: string, targetDate: string) {
+    const session = contentSessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    // Optimistic update
+    setContentSessions((p) =>
+      p.map((s) => (s.id === sessionId ? { ...s, scheduled_for: targetDate } : s))
+    );
+
+    const { error } = await supabase
+      .from("content_sessions")
+      .update({ scheduled_for: targetDate })
+      .eq("id", sessionId);
+
+    if (error) {
+      console.warn("rescheduleContentSession", error);
+      // Revert
+      setContentSessions((p) =>
+        p.map((s) => (s.id === sessionId ? { ...s, scheduled_for: session.scheduled_for } : s))
+      );
+    }
+  }
+
+  // Mark an ongoing content item as fully done (from the tab)
+  async function markContentItemFullyDone(itemId: string) {
+    const { error } = await supabase
+      .from("content_items")
+      .update({ status: "done", completed_at: new Date().toISOString() })
+      .eq("id", itemId);
+
+    if (error) {
+      console.warn("markContentItemFullyDone", error);
+      return;
+    }
+
+    setContentItems((p) => p.filter((i) => i.id !== itemId));
+  }
+
+  // Delete a content item
+  async function deleteContentItem(itemId: string) {
+    const { error } = await supabase
+      .from("content_items")
+      .delete()
+      .eq("id", itemId);
+
+    if (error) {
+      console.warn("deleteContentItem", error);
+      return;
+    }
+
+    setContentItems((p) => p.filter((i) => i.id !== itemId));
+  }
+
+  // Toggle content item done in the content card (for checking off items)
+  async function toggleContentItemDone(itemId: string) {
+    const item = contentItems.find((i) => i.id === itemId);
+    if (!item) return;
+
+    const newStatus = item.status === "done" ? "active" : "done";
+    const completed_at = newStatus === "done" ? new Date().toISOString() : null;
+
+    // Optimistic update
+    setContentItems((p) =>
+      p.map((i) => (i.id === itemId ? { ...i, status: newStatus, completed_at } : i))
+    );
+
+    const { error } = await supabase
+      .from("content_items")
+      .update({ status: newStatus, completed_at })
+      .eq("id", itemId);
+
+    if (error) {
+      console.warn("toggleContentItemDone", error);
+      // Revert
+      setContentItems((p) =>
+        p.map((i) => (i.id === itemId ? { ...i, status: item.status, completed_at: item.completed_at } : i))
+      );
+    }
+  }
+
+  // Reorder content items within a category
+  async function reorderContentItems(draggedId: string, targetId: string, position: "above" | "below") {
+    const category = contentItems.find((i) => i.id === draggedId)?.category;
+    if (!category) return;
+
+    // Get items in this category, sorted by sort_order
+    const categoryItems = contentItems
+      .filter((i) => i.category === category && i.status === "active")
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+    const draggedIndex = categoryItems.findIndex((i) => i.id === draggedId);
+    const targetIndex = categoryItems.findIndex((i) => i.id === targetId);
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    // Remove dragged item and insert at new position
+    const reordered = [...categoryItems];
+    const [removed] = reordered.splice(draggedIndex, 1);
+    let insertIndex: number;
+    if (position === "below") {
+      insertIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
+    } else {
+      insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    }
+    reordered.splice(insertIndex, 0, removed);
+
+    // Update sort_order for all items
+    const updates = reordered.map((item, index) => ({
+      id: item.id,
+      sort_order: index,
+    }));
+
+    // Optimistic update
+    setContentItems((prev) =>
+      prev.map((item) => {
+        const update = updates.find((u) => u.id === item.id);
+        return update ? { ...item, sort_order: update.sort_order } : item;
+      })
+    );
+
+    // Persist to database
+    for (const { id, sort_order } of updates) {
+      const { error } = await supabase
+        .from("content_items")
+        .update({ sort_order })
+        .eq("id", id);
+      if (error) console.warn("reorderContentItems", error);
+    }
+  }
+
+  // Update content item (title/notes)
+  async function updateContentItem(itemId: string, patch: { title?: string; notes?: string | null }) {
+    const item = contentItems.find((i) => i.id === itemId);
+    if (!item) return;
+
+    // Optimistic update
+    setContentItems((p) =>
+      p.map((i) => (i.id === itemId ? { ...i, ...patch } : i))
+    );
+
+    const { error } = await supabase
+      .from("content_items")
+      .update(patch)
+      .eq("id", itemId);
+
+    if (error) {
+      console.warn("updateContentItem", error);
+      // Revert
+      setContentItems((p) =>
+        p.map((i) => (i.id === itemId ? item : i))
+      );
+    }
+  }
+
+  // LEGACY: Keep old functions for backward compatibility during transition
   async function addContentItem() {
   const title = contentDraft.trim();
   if (!title) return;
@@ -3059,7 +3880,14 @@ const { data, error } = await supabase
   setFocuses((p) => p.filter((f) => f.id !== id));
 }
 
-  const contentItems = useMemo(() => {
+  // Items to show in the current content tab (from new content_items table)
+  const currentTabContentItems = useMemo(() => {
+    if (contentTab === "movies") return [] as ContentItemRow[];
+    return (contentItemsByCategory[contentTab] ?? []) as ContentItemRow[];
+  }, [contentTab, contentItemsByCategory]);
+
+  // Legacy: Keep old memo for any remaining legacy code
+  const contentItemsLegacy = useMemo(() => {
     if (contentTab === "movies") return [] as Focus[];
     return (contentFocusesByTab[contentTab] ?? []) as Focus[];
   }, [contentTab, contentFocusesByTab]);
@@ -3216,7 +4044,7 @@ const { error } = await supabase
         <div className="mt-3 text-sm text-neutral-400">Loading…</div>
       ) : (
         <>
-          <div className="mt-0 grid min-w-0 gap-3 md:flex-shrink md:min-h-0 md:grid-cols-3 md:min-h-[450px] md:flex-[1_1_60%] md:items-stretch lg:gap-4">
+          <div className="mt-0 grid min-w-0 gap-3 md:flex-shrink md:min-h-0 md:grid-cols-3 md:flex-[0_0_55%] md:items-stretch lg:gap-4">
             {/* Parking */}
             <section
               className={clsx(
@@ -3226,10 +4054,10 @@ const { error } = await supabase
             >
               <div className={clsx("flex min-w-0 gap-2 overflow-x-auto", parkingOpen ? "pb-2" : "pb-0")}>
                 {([
-                  ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length})`],
-                  ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length})`],
-                  ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length})`],
-                  ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length})`],
+                  ["thisWeek", `This Week (${drawerLists.thisWeek.task.length + drawerLists.thisWeek.plan.length + drawerLists.thisWeek.focus.length + drawerLists.thisWeek.content.length})`],
+                  ["thisWeekend", `This Weekend (${drawerLists.thisWeekend.task.length + drawerLists.thisWeekend.plan.length + drawerLists.thisWeekend.focus.length + drawerLists.thisWeekend.content.length})`],
+                  ["nextWeek", `Next Week (${drawerLists.nextWeek.task.length + drawerLists.nextWeek.plan.length + drawerLists.nextWeek.focus.length + drawerLists.nextWeek.content.length})`],
+                  ["nextWeekend", `Next Weekend (${drawerLists.nextWeekend.task.length + drawerLists.nextWeekend.plan.length + drawerLists.nextWeekend.focus.length + drawerLists.nextWeekend.content.length})`],
                   ["open", `Open (${drawerLists.open.task.length + drawerLists.open.plan.length + drawerLists.open.focus.length})`],
                 ] as const).map(([k, label]) => {
                   const active = parkingOpen && drawerWindow === k;
@@ -3437,7 +4265,25 @@ const { error } = await supabase
                       />
                     ))}
 
-                    {drawerLists[drawerWindow].focus.length + drawerLists[drawerWindow].task.length === 0 &&
+                    {/* Content items in parking lot */}
+                    {drawerLists[drawerWindow].content.length > 0 && (
+                      <>
+                        <div className="mx-3 my-2 h-px bg-neutral-700/50" />
+                        {drawerLists[drawerWindow].content.map((item) => (
+                          <ContentRow
+                            key={`content-${item.id}`}
+                            title={item.title}
+                            isDone={item.status === "done"}
+                            onToggleDone={() => toggleContentItemDone(item.id)}
+                            currentValue={`P|${item.window_kind}|${item.window_start}`}
+                            onMove={(v) => scheduleContentItem(item.id, v)}
+                            moveTargets={moveTargets}
+                          />
+                        ))}
+                      </>
+                    )}
+
+                    {drawerLists[drawerWindow].focus.length + drawerLists[drawerWindow].task.length + drawerLists[drawerWindow].content.length === 0 &&
                       drawerLists[drawerWindow].plan.length === 0 && (
                         <div className="px-3 py-2 text-sm text-neutral-500">Empty.</div>
                       )}
@@ -3461,7 +4307,8 @@ const { error } = await supabase
                   ["city", "City"],
                   ["movies", "Movies"],
                 ] as const).map(([k, label]) => {
-                  const count = k === "movies" ? movieItems.length : (contentFocusesByTab[k]?.length ?? 0);
+                  // Use new content system count
+                  const count = k === "movies" ? movieItems.length : (contentItemsByCategory[k]?.length ?? 0);
                   // active only if contentOpen and contentTab match
                   const active = contentOpen && contentTab === k;
                   return (
@@ -3485,26 +4332,38 @@ const { error } = await supabase
               {contentOpen && (
                 <>
                   {contentTab !== "movies" && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <input
-                        value={contentDraft}
-                        onChange={(e) => setContentDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addContentItem();
-                          }
-                        }}
-                        placeholder="Add…"
-                        className="h-10 w-full flex-1 rounded-xl border border-neutral-800 bg-neutral-950 px-3 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={addContentItem}
-                        className="shrink-0 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
-                      >
-                        Add
-                      </button>
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={contentDraft}
+                          onChange={(e) => setContentDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addNewContentItem();
+                            }
+                          }}
+                          placeholder="Add…"
+                          className="h-10 w-full flex-1 rounded-xl border border-neutral-800 bg-neutral-950 px-3 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={addNewContentItem}
+                          className="shrink-0 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      {/* Ongoing toggle */}
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={contentIsOngoing}
+                          onChange={(e) => setContentIsOngoing(e.target.checked)}
+                          className="h-4 w-4 rounded border-neutral-700 bg-neutral-950 text-emerald-500 focus:ring-emerald-500"
+                        />
+                        <span className="text-xs text-neutral-400">Ongoing</span>
+                      </label>
                     </div>
                   )}
                   <div className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/25">
@@ -3562,7 +4421,18 @@ const { error } = await supabase
                                   <div className="px-3 pb-2">
                                     <MoveSelect
                                       value="none"
-                                      onChange={(v) => scheduleMovieAsIntention(m.id, v)}
+                                      onChange={(v) => {
+                                        setMovieDropdownId(null);
+                                        if (v === "none") return;
+                                        // Parse target value to get date
+                                        let targetDate: string | null = null;
+                                        if (v.startsWith("D|")) {
+                                          targetDate = v.slice(2);
+                                        } else if (v.startsWith("P|")) {
+                                          targetDate = v.split("|").pop() ?? null;
+                                        }
+                                        if (targetDate) scheduleMovieToDay(m.id, targetDate);
+                                      }}
                                       moveTargets={moveTargets}
                                     />
                                   </div>
@@ -3572,49 +4442,40 @@ const { error } = await supabase
                           })}
                         </div>
                       )
-                    ) : contentItems.length === 0 ? (
+                    ) : currentTabContentItems.length === 0 ? (
                       <div className="px-3 py-3 text-xs text-neutral-400">No items yet.</div>
                     ) : (
-                      <div>
-                        {contentItems.map((f) => (
-                          <FocusRow
-                            key={f.id}
-                            focus={f}
+                      <div className="divide-y divide-neutral-800/60">
+                        {currentTabContentItems.map((item) => (
+                          <ContentTabItem
+                            key={item.id}
+                            item={item}
                             moveTargets={moveTargets}
-                            onMove={(id, v) => moveItem("focus", id, v)}
-                            onEdit={(x) => openEdit("focus", x)}
-                            showDragHandle={true}
-                            isDragging={draggedItemId === f.id}
-                            isDropTarget={dropTargetId === f.id && draggedItemId !== f.id}
-                            dropPosition={dropTargetId === f.id ? dropPosition : null}
-                            onDragStart={(id) => {
-                              setDraggedItemId(id);
-                              setDraggedItemType("focus");
-                            }}
+                            onSchedule={(targetValue) => scheduleContentItem(item.id, targetValue)}
+                            onToggleDone={() => toggleContentItemDone(item.id)}
+                            onEdit={() => setEditingContentItem(item)}
+                            onDelete={() => deleteContentItem(item.id)}
+                            onDragStart={() => setContentDragId(item.id)}
                             onDragEnd={() => {
-                              setDraggedItemId(null);
-                              setDraggedItemType(null);
-                              setDropTargetId(null);
-                              setDropPosition(null);
+                              setContentDragId(null);
+                              setContentDropTargetId(null);
+                              setContentDropPosition(null);
                             }}
                             onDragOver={(e) => {
                               e.preventDefault();
-                              setDropTargetId(f.id);
+                              setContentDropTargetId(item.id);
                               const rect = e.currentTarget.getBoundingClientRect();
                               const midpoint = rect.top + rect.height / 2;
-                              setDropPosition(e.clientY < midpoint ? "above" : "below");
+                              setContentDropPosition(e.clientY < midpoint ? "above" : "below");
                             }}
                             onDrop={() => {
-                              if (draggedItemId && draggedItemType === "focus" && dropPosition) {
-                                reorderItems("focus", draggedItemId, f.id, { contentTab }, dropPosition);
+                              if (contentDragId && contentDropPosition && contentDragId !== item.id) {
+                                reorderContentItems(contentDragId, item.id, contentDropPosition);
                               }
                             }}
-                            onTouchDragStart={(id) => {
-                              setDraggedItemId(id);
-                              setDraggedItemType("focus");
-                              setIsTouchDragging(true);
-                              touchDragContextRef.current = { type: "focus", context: { contentTab } };
-                            }}
+                            isDragging={contentDragId === item.id}
+                            isDropTarget={contentDropTargetId === item.id && contentDragId !== item.id}
+                            dropPosition={contentDropTargetId === item.id ? contentDropPosition : null}
                           />
                         ))}
                       </div>
@@ -3892,11 +4753,57 @@ const { error } = await supabase
                 ))}
               </div>
             </div>
+
+            {/* Content section (scheduled one-offs and sessions) */}
+            {((scheduledContentByDay[todayIso] ?? []).length > 0 || (contentSessionsByDay[todayIso] ?? []).length > 0) && (
+              <div className="mt-4">
+                <div className="mb-2 h-px bg-neutral-700/50" />
+                <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                  {/* Scheduled one-off content items */}
+                  {(scheduledContentByDay[todayIso] ?? []).map((item) => (
+                    <ContentRow
+                      key={`content-${item.id}`}
+                      title={item.title}
+                      isDone={item.status === "done"}
+                      onToggleDone={() => toggleScheduledContentDone(item.id)}
+                      currentValue={`D|${item.scheduled_for}`}
+                      onMove={(v) => {
+                        // Pass full target value - scheduleContentItem handles parsing
+                        scheduleContentItem(item.id, v);
+                      }}
+                      moveTargets={moveTargets}
+                    />
+                  ))}
+                  {/* Content sessions (ongoing items and movies) */}
+                  {(contentSessionsByDay[todayIso] ?? []).map((session) => (
+                    <ContentRow
+                      key={`session-${session.id}`}
+                      title={getSessionTitle(session)}
+                      isDone={session.status === "done"}
+                      onToggleDone={() => toggleContentSessionDone(session.id)}
+                      currentValue={`D|${session.scheduled_for}`}
+                      onMove={(v) => {
+                        if (v === "none") {
+                          unscheduleContent(session.content_item_id ?? "", true, session.id);
+                        } else {
+                          // Sessions can only move to specific days
+                          let targetDate: string | null = null;
+                          if (v.startsWith("D|")) targetDate = v.slice(2);
+                          else if (v.startsWith("P|")) targetDate = v.split("|").pop() ?? null;
+                          if (targetDate) rescheduleContentSession(session.id, targetDate);
+                        }
+                      }}
+                      moveTargets={moveTargets}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             </section>
           </div>
 
           {/* Next 6 days */}
-          <div className="mt-3 flex flex-col gap-3 md:flex-shrink md:min-h-0 md:overflow-y-auto md:flex-row md:flex-nowrap md:items-stretch md:basis-[40%] lg:gap-4">
+          <div className="mt-3 flex flex-col gap-3 md:flex-[1_1_0%] md:min-h-0 md:overflow-hidden md:flex-row md:flex-nowrap md:items-stretch lg:gap-4">
             {days.slice(1).map((d, i) => {
               const iso = toISODate(d);
               const label = fmtDayLabel(d, i + 1);
@@ -4138,6 +5045,52 @@ const { error } = await supabase
                           ))}
                         </div>
                       </div>
+
+                      {/* Content section (scheduled one-offs and sessions) */}
+                      {((scheduledContentByDay[iso] ?? []).length > 0 || (contentSessionsByDay[iso] ?? []).length > 0) && (
+                        <div className="mt-4">
+                          <div className="mb-2 h-px bg-neutral-700/50" />
+                          <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                            {(scheduledContentByDay[iso] ?? []).map((item) => (
+                              <ContentRow
+                                key={`content-${item.id}`}
+                                compact={isMdUp}
+                                title={item.title}
+                                isDone={item.status === "done"}
+                                onToggleDone={() => toggleScheduledContentDone(item.id)}
+                                currentValue={`D|${item.scheduled_for}`}
+                                onMove={(v) => {
+                                  // Pass full target value - scheduleContentItem handles parsing
+                                  scheduleContentItem(item.id, v);
+                                }}
+                                moveTargets={moveTargets}
+                              />
+                            ))}
+                            {(contentSessionsByDay[iso] ?? []).map((session) => (
+                              <ContentRow
+                                key={`session-${session.id}`}
+                                compact={isMdUp}
+                                title={getSessionTitle(session)}
+                                isDone={session.status === "done"}
+                                onToggleDone={() => toggleContentSessionDone(session.id)}
+                                currentValue={`D|${session.scheduled_for}`}
+                                onMove={(v) => {
+                                  if (v === "none") {
+                                    unscheduleContent(session.content_item_id ?? "", true, session.id);
+                                  } else {
+                                    // Sessions can only move to specific days
+                                    let targetDate: string | null = null;
+                                    if (v.startsWith("D|")) targetDate = v.slice(2);
+                                    else if (v.startsWith("P|")) targetDate = v.split("|").pop() ?? null;
+                                    if (targetDate) rescheduleContentSession(session.id, targetDate);
+                                  }
+                                }}
+                                moveTargets={moveTargets}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <>
@@ -4180,6 +5133,33 @@ const { error } = await supabase
                           />
                         ))}
                       </div>
+
+                      {/* Content section (collapsed view) */}
+                      {((scheduledContentByDay[iso] ?? []).length > 0 || (contentSessionsByDay[iso] ?? []).length > 0) && (
+                        <div className="mt-3">
+                          <div className="mb-2 h-px bg-neutral-700/50" />
+                          <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
+                            {(scheduledContentByDay[iso] ?? []).map((item) => (
+                              <ContentRow
+                                key={`content-${item.id}`}
+                                compact
+                                title={item.title}
+                                isDone={item.status === "done"}
+                                onToggleDone={() => toggleScheduledContentDone(item.id)}
+                              />
+                            ))}
+                            {(contentSessionsByDay[iso] ?? []).map((session) => (
+                              <ContentRow
+                                key={`session-${session.id}`}
+                                compact
+                                title={getSessionTitle(session)}
+                                isDone={session.status === "done"}
+                                onToggleDone={() => toggleContentSessionDone(session.id)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                   </section>
@@ -4287,6 +5267,58 @@ const { error } = await supabase
           </div>
         </div>
       ) : null}
+
+      {/* Content Item Edit Modal */}
+      {editingContentItem && (
+        <div className="fixed inset-0 z-50 grid place-items-center px-5">
+          <div
+            className="absolute inset-0 bg-black/70"
+            onClick={() => setEditingContentItem(null)}
+          />
+          <div className="relative w-full max-w-md rounded-2xl border border-neutral-700 bg-neutral-950 p-4 shadow-2xl">
+            <div className="text-lg font-semibold mb-4">Edit Content Item</div>
+
+            <label className="block text-xs text-neutral-400 mb-1">Title</label>
+            <input
+              type="text"
+              value={editingContentItem.title}
+              onChange={(e) => setEditingContentItem({ ...editingContentItem, title: e.target.value })}
+              className="h-11 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none mb-4"
+            />
+
+            <label className="block text-xs text-neutral-400 mb-1">Notes</label>
+            <textarea
+              value={editingContentItem.notes ?? ""}
+              onChange={(e) => setEditingContentItem({ ...editingContentItem, notes: e.target.value || null })}
+              placeholder="Optional notes..."
+              className="min-h-[80px] w-full resize-none rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none mb-4"
+            />
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingContentItem(null)}
+                className="h-11 flex-1 rounded-xl border border-neutral-700 bg-neutral-800/50 text-neutral-100 font-semibold hover:bg-neutral-700/50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  updateContentItem(editingContentItem.id, {
+                    title: editingContentItem.title,
+                    notes: editingContentItem.notes,
+                  });
+                  setEditingContentItem(null);
+                }}
+                className="h-11 flex-1 rounded-xl bg-white text-black font-semibold hover:bg-neutral-100 transition"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
