@@ -36,10 +36,19 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-5 py-8 text-white">
       <div className="mx-auto w-full max-w-md">
-        <header className="mb-3">
-         <h1 className="text-2xl font-semibold tracking-tight text-center">
-  Workout Tracker
-</h1>
+        <header className="mb-3 relative">
+          <h1 className="text-2xl font-semibold tracking-tight text-center">
+            Workout Tracker
+          </h1>
+          <Link
+            href="/"
+            className="absolute right-0 top-1/2 -translate-y-1/2 h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 active:scale-[0.97] transition"
+            aria-label="Home"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+              <path fillRule="evenodd" d="M9.293 2.293a1 1 0 0 1 1.414 0l7 7A1 1 0 0 1 17 11h-1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6H3a1 1 0 0 1-.707-1.707l7-7Z" clipRule="evenodd" />
+            </svg>
+          </Link>
         </header>
 
         <section className="rounded-2xl border border-white/10 bg-white/5 p-4">

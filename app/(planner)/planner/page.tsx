@@ -87,6 +87,7 @@ type ContentItemRow = {
   window_kind: WindowKind | null; // for parking lot placement
   window_start: string | null; // YYYY-MM-DD for parking lot placement
   sort_order: number;
+  day_sort_order: number | null; // for sorting within a specific day
   created_at: string;
   completed_at: string | null;
 };
@@ -100,6 +101,7 @@ type ContentSessionRow = {
   window_kind: WindowKind | null; // for parking lot placement
   window_start: string | null; // YYYY-MM-DD for parking lot placement
   status: "open" | "done";
+  day_sort_order: number | null; // for sorting within a specific day
   created_at: string;
   completed_at: string | null;
 };
@@ -742,6 +744,19 @@ function ContentRow({
   moveTargets,
   compact,
   currentValue = "none",
+  showDragHandle = false,
+  isDragging = false,
+  isDropTarget = false,
+  dropPosition,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  onTouchDragStart,
+  itemId,
+  contentType,
+  onEdit,
+  onDelete,
 }: {
   title: string;
   isDone: boolean;
@@ -750,43 +765,161 @@ function ContentRow({
   moveTargets?: MoveTarget[];
   compact?: boolean;
   currentValue?: string;
+  showDragHandle?: boolean;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  dropPosition?: "above" | "below" | null;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+  onDragOver?: React.DragEventHandler<HTMLDivElement>;
+  onDrop?: () => void;
+  onTouchDragStart?: () => void;
+  itemId?: string;
+  contentType?: "item" | "session";
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   const [showMove, setShowMove] = useState(false);
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const hasContextMenu = onEdit || onDelete;
+
+  // Context menu handlers
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (!hasContextMenu) return;
+    e.preventDefault();
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+    setShowContextMenu(true);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!hasContextMenu) return;
+    const touch = e.touches[0];
+    longPressTimer.current = setTimeout(() => {
+      setContextMenuPos({ x: touch.clientX, y: touch.clientY });
+      setShowContextMenu(true);
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleTouchMove = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    if (!showContextMenu) return;
+    const handleClick = () => setShowContextMenu(false);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [showContextMenu]);
 
   return (
-    <RowShell compact={compact}>
-      <button
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleDone();
-        }}
-        className={clsx(
-          compact ? "shrink-0 h-4 w-4 rounded border grid place-items-center" : "shrink-0 h-6 w-6 rounded-md border grid place-items-center",
-          isDone ? "border-emerald-400/70 bg-emerald-300 text-neutral-900" : "border-neutral-700 bg-neutral-950 text-neutral-200"
-        )}
-        aria-label={isDone ? "Mark not done" : "Mark done"}
-        title={isDone ? "Mark not done" : "Mark done"}
-      >
-        {isDone ? "✓" : ""}
-      </button>
-
-      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onMove && setShowMove((s) => !s)}>
-        <div
-          className={clsx(
-            "truncate",
-            compact ? "text-[11px]" : "text-sm",
-            isDone ? "text-emerald-300" : "text-neutral-200"
-          )}
-        >
-          {title}
-        </div>
-      </div>
-
-      {showMove && onMove && moveTargets && (
-        <MoveSelect compact={compact} value={currentValue} onChange={(v) => { setShowMove(false); onMove(v); }} moveTargets={moveTargets} />
+    <div
+      data-drag-item-id={itemId}
+      data-drag-content-type={contentType}
+      draggable={showDragHandle}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart?.();
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop?.();
+      }}
+      onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
+      className={clsx(
+        isDragging && "opacity-50",
+        isDropTarget && dropPosition === "above" && "border-t-2 border-t-blue-400",
+        isDropTarget && dropPosition === "below" && "border-b-2 border-b-blue-400"
       )}
-    </RowShell>
+    >
+      <RowShell compact={compact}>
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleDone();
+          }}
+          className={clsx(
+            compact ? "shrink-0 h-4 w-4 rounded border grid place-items-center" : "shrink-0 h-6 w-6 rounded-md border grid place-items-center",
+            isDone ? "border-emerald-400/70 bg-emerald-300 text-neutral-900" : "border-neutral-700 bg-neutral-950 text-neutral-200"
+          )}
+          aria-label={isDone ? "Mark not done" : "Mark done"}
+          title={isDone ? "Mark not done" : "Mark done"}
+        >
+          {isDone ? "✓" : ""}
+        </button>
+
+        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onMove && setShowMove((s) => !s)}>
+          <div
+            className={clsx(
+              "truncate",
+              compact ? "text-[11px]" : "text-sm",
+              isDone ? "text-emerald-300" : "text-neutral-200"
+            )}
+          >
+            {title}
+          </div>
+        </div>
+
+        {showMove && onMove && moveTargets && (
+          <MoveSelect compact={compact} value={currentValue} onChange={(v) => { setShowMove(false); onMove(v); }} moveTargets={moveTargets} />
+        )}
+
+        {showDragHandle && (
+          <DragHandle className={compact ? "ml-1" : "ml-2"} onTouchDragStart={onTouchDragStart} />
+        )}
+      </RowShell>
+
+      {/* Context menu */}
+      {showContextMenu && hasContextMenu && (
+        <div
+          className="fixed z-[100] bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl py-1 min-w-[120px]"
+          style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {onEdit && (
+            <button
+              onClick={() => {
+                setShowContextMenu(false);
+                onEdit();
+              }}
+              className="w-full px-4 py-2 text-left text-sm text-neutral-200 hover:bg-neutral-700"
+            >
+              Edit
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={() => {
+                setShowContextMenu(false);
+                onDelete();
+              }}
+              className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-neutral-700"
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -802,6 +935,7 @@ function ContentTabItem({
   onDragEnd,
   onDragOver,
   onDrop,
+  onTouchDragStart,
   isDragging = false,
   isDropTarget = false,
   dropPosition,
@@ -816,6 +950,7 @@ function ContentTabItem({
   onDragEnd?: () => void;
   onDragOver?: React.DragEventHandler<HTMLDivElement>;
   onDrop?: () => void;
+  onTouchDragStart?: () => void;
   isDragging?: boolean;
   isDropTarget?: boolean;
   dropPosition?: "above" | "below" | null;
@@ -885,6 +1020,8 @@ function ContentTabItem({
   return (
     <div
       ref={containerRef}
+      data-drag-item-id={item.id}
+      data-drag-item-type="content"
       draggable={!!onDragStart}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = "move";
@@ -945,16 +1082,7 @@ function ContentTabItem({
         </div>
         {/* Drag handle on right */}
         {onDragStart && (
-          <div className="shrink-0 text-neutral-600 cursor-grab active:cursor-grabbing touch-none">
-            <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-              <circle cx="2.5" cy="2.5" r="1.25" />
-              <circle cx="7.5" cy="2.5" r="1.25" />
-              <circle cx="2.5" cy="7" r="1.25" />
-              <circle cx="7.5" cy="7" r="1.25" />
-              <circle cx="2.5" cy="11.5" r="1.25" />
-              <circle cx="7.5" cy="11.5" r="1.25" />
-            </svg>
-          </div>
+          <DragHandle className="ml-1" onTouchDragStart={onTouchDragStart} />
         )}
       </div>
       {showDropdown && (
@@ -1994,11 +2122,18 @@ export default function PlannerPage() {
   const [draggedItemType, setDraggedItemType] = useState<"task" | "focus" | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"above" | "below" | null>(null);
+  const [dropTargetContentType, setDropTargetContentType] = useState<"item" | "session" | null>(null);
   const [isTouchDragging, setIsTouchDragging] = useState(false);
-  const touchDragContextRef = useRef<{ type: "task" | "focus"; context: { date?: string; window?: string; contentTab?: string } } | null>(null);
+  const touchDragContextRef = useRef<{ type: "task" | "focus" | "content" | "dayContent"; context: { date?: string; window?: string; contentTab?: string }; itemType?: "item" | "session" } | null>(null);
 
   // Touch drag handlers - reorder function reference for use in effect
   const reorderItemsRef = useRef<((type: "task" | "focus", draggedId: string, targetId: string, context: { date?: string; window?: string; contentTab?: string }, position: "above" | "below") => void) | null>(null);
+  const reorderContentItemsRef = useRef<((draggedId: string, targetId: string, position: "above" | "below") => void) | null>(null);
+  const reorderDayContentRef = useRef<((draggedId: string, draggedType: "item" | "session", targetId: string, targetType: "item" | "session", date: string, position: "above" | "below") => void) | null>(null);
+
+  // Refs to hold current state values for use in touch handlers (avoids stale closure issues)
+  const dragStateRef = useRef({ draggedItemId, dropTargetId, dropTargetContentType, dropPosition });
+  dragStateRef.current = { draggedItemId, dropTargetId, dropTargetContentType, dropPosition };
 
   useEffect(() => {
     if (!isTouchDragging) return;
@@ -2013,29 +2148,40 @@ export default function PlannerPage() {
 
       if (targetRow) {
         const targetId = targetRow.getAttribute("data-drag-item-id");
-        if (targetId && targetId !== draggedItemId) {
+        const targetContentType = targetRow.getAttribute("data-drag-content-type") as "item" | "session" | null;
+        if (targetId && targetId !== dragStateRef.current.draggedItemId) {
           setDropTargetId(targetId);
+          setDropTargetContentType(targetContentType);
           const rect = targetRow.getBoundingClientRect();
           const midpoint = rect.top + rect.height / 2;
           setDropPosition(touch.clientY < midpoint ? "above" : "below");
         }
       } else {
         setDropTargetId(null);
+        setDropTargetContentType(null);
         setDropPosition(null);
       }
     };
 
     const handleTouchEnd = () => {
+      const { draggedItemId: dragId, dropTargetId: dropId, dropTargetContentType: dropContentType, dropPosition: dropPos } = dragStateRef.current;
       // Perform reorder if we have valid drop target
-      if (draggedItemId && dropTargetId && dropPosition && touchDragContextRef.current && reorderItemsRef.current) {
-        const { type, context } = touchDragContextRef.current;
-        reorderItemsRef.current(type, draggedItemId, dropTargetId, context, dropPosition);
+      if (dragId && dropId && dropPos && touchDragContextRef.current) {
+        const { type, context, itemType } = touchDragContextRef.current;
+        if (type === "dayContent" && reorderDayContentRef.current && itemType && dropContentType && context.date) {
+          reorderDayContentRef.current(dragId, itemType, dropId, dropContentType, context.date, dropPos);
+        } else if (type === "content" && reorderContentItemsRef.current) {
+          reorderContentItemsRef.current(dragId, dropId, dropPos);
+        } else if ((type === "task" || type === "focus") && reorderItemsRef.current) {
+          reorderItemsRef.current(type, dragId, dropId, context, dropPos);
+        }
       }
       // Clean up state
       setIsTouchDragging(false);
       setDraggedItemId(null);
       setDraggedItemType(null);
       setDropTargetId(null);
+      setDropTargetContentType(null);
       setDropPosition(null);
       touchDragContextRef.current = null;
     };
@@ -2049,7 +2195,7 @@ export default function PlannerPage() {
       document.removeEventListener("touchend", handleTouchEnd);
       document.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, [isTouchDragging, draggedItemId, dropTargetId, dropPosition]);
+  }, [isTouchDragging]);
 
   const [draftByDay, setDraftByDay] = useState<Record<string, Record<ItemType, string>>>({});
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
@@ -2441,15 +2587,16 @@ function getWindowValue(which: DrawerWindow) {
       // New content system queries
       supabase
         .from("content_items")
-        .select("id,user_id,title,notes,category,is_ongoing,status,scheduled_for,window_kind,window_start,sort_order,created_at,completed_at")
+        .select("id,user_id,title,notes,category,is_ongoing,status,scheduled_for,window_kind,window_start,sort_order,day_sort_order,created_at,completed_at")
         .eq("status", "active")
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
       // Sessions: scheduled to specific days OR in parking lots (combined into one query)
       supabase
         .from("content_sessions")
-        .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,created_at,completed_at")
+        .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,day_sort_order,created_at,completed_at")
         .or(`and(scheduled_for.gte.${start},scheduled_for.lte.${end}),window_kind.not.is.null`)
+        .order("day_sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
     ]);
 
@@ -3021,6 +3168,10 @@ setMovieItems(
         map[item.scheduled_for].push(item);
       }
     }
+    // Sort each day's items by day_sort_order
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => (a.day_sort_order ?? 0) - (b.day_sort_order ?? 0));
+    }
     return map;
   }, [contentItems, days]);
 
@@ -3034,8 +3185,47 @@ setMovieItems(
         map[session.scheduled_for].push(session);
       }
     }
+    // Sort each day's sessions by day_sort_order
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => (a.day_sort_order ?? 0) - (b.day_sort_order ?? 0));
+    }
     return map;
   }, [contentSessions, days]);
+
+  // Unified content for each day (items + sessions sorted together by day_sort_order)
+  type UnifiedDayContent =
+    | { kind: "item"; item: ContentItemRow }
+    | { kind: "session"; session: ContentSessionRow };
+
+  const unifiedContentByDay = useMemo(() => {
+    const map: Record<string, UnifiedDayContent[]> = {};
+    for (const d of days) map[toISODate(d)] = [];
+
+    // Add scheduled one-off content items
+    for (const item of contentItems) {
+      if (!item.scheduled_for) continue;
+      if (!item.is_ongoing && map[item.scheduled_for]) {
+        map[item.scheduled_for].push({ kind: "item", item });
+      }
+    }
+
+    // Add content sessions
+    for (const session of contentSessions) {
+      if (session.scheduled_for && map[session.scheduled_for]) {
+        map[session.scheduled_for].push({ kind: "session", session });
+      }
+    }
+
+    // Sort each day by day_sort_order
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => {
+        const aOrder = a.kind === "item" ? (a.item.day_sort_order ?? 0) : (a.session.day_sort_order ?? 0);
+        const bOrder = b.kind === "item" ? (b.item.day_sort_order ?? 0) : (b.session.day_sort_order ?? 0);
+        return aOrder - bOrder;
+      });
+    }
+    return map;
+  }, [contentItems, contentSessions, days]);
 
   // Helper to get title for a session (looks up content_item or movie)
   const getSessionTitle = (session: ContentSessionRow): string => {
@@ -3368,6 +3558,8 @@ const { data, error } = await supabase
 
   // Keep ref updated for touch drag effect
   reorderItemsRef.current = reorderItems;
+  reorderContentItemsRef.current = reorderContentItems;
+  reorderDayContentRef.current = reorderDayContent;
 
   async function toggleTaskDone(id: string, nextDone: boolean) {
     const nextStatus = nextDone ? "done" : "open";
@@ -3537,6 +3729,18 @@ const { data, error } = await supabase
     }
   }
 
+  // Helper to get next day_sort_order for a specific day
+  function getNextDaySortOrder(date: string): number {
+    const existingContent = unifiedContentByDay[date] ?? [];
+    if (existingContent.length === 0) return 0;
+    const maxOrder = Math.max(
+      ...existingContent.map((e) =>
+        e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0)
+      )
+    );
+    return maxOrder + 1;
+  }
+
   // Schedule a content item to a day or parking lot
   async function scheduleContentItem(itemId: string, targetValue: string) {
     const item = contentItems.find((i) => i.id === itemId);
@@ -3544,17 +3748,18 @@ const { data, error } = await supabase
     if (targetValue === "__sep") return;
 
     // Parse target value (same logic as moveItem)
-    let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null };
+    let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null; day_sort_order: number | null };
 
     if (targetValue === "none") {
-      placement = { scheduled_for: null, window_kind: null, window_start: null };
+      placement = { scheduled_for: null, window_kind: null, window_start: null, day_sort_order: null };
     } else if (targetValue.startsWith("D|")) {
-      placement = { scheduled_for: targetValue.split("|")[1], window_kind: null, window_start: null };
+      const date = targetValue.split("|")[1];
+      placement = { scheduled_for: date, window_kind: null, window_start: null, day_sort_order: getNextDaySortOrder(date) };
     } else if (targetValue.startsWith("P|")) {
       const [, kind, start] = targetValue.split("|");
-      placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start };
+      placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start, day_sort_order: null };
     } else {
-      placement = { scheduled_for: null, window_kind: null, window_start: null };
+      placement = { scheduled_for: null, window_kind: null, window_start: null, day_sort_order: null };
     }
 
     if (item.is_ongoing) {
@@ -3574,10 +3779,11 @@ const { data, error } = await supabase
           scheduled_for: placement.scheduled_for,
           window_kind: placement.window_kind,
           window_start: placement.window_start,
+          day_sort_order: placement.day_sort_order,
           status: "open",
           user_id: session.user.id,
         })
-        .select("id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,created_at,completed_at,user_id")
+        .select("id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,day_sort_order,created_at,completed_at,user_id")
         .single();
 
       if (error) return;
@@ -3597,7 +3803,7 @@ const { data, error } = await supabase
       if (error) {
         // Revert on error
         setContentItems((p) =>
-          p.map((i) => (i.id === itemId ? { ...i, scheduled_for: item.scheduled_for, window_kind: item.window_kind, window_start: item.window_start } : i))
+          p.map((i) => (i.id === itemId ? { ...i, scheduled_for: item.scheduled_for, window_kind: item.window_kind, window_start: item.window_start, day_sort_order: item.day_sort_order } : i))
         );
       }
     }
@@ -3608,16 +3814,17 @@ const { data, error } = await supabase
     if (targetValue === "__sep" || targetValue === "none") return;
 
     // Parse target value
-    let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null };
+    let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null; day_sort_order: number | null };
 
     if (targetValue.startsWith("D|")) {
-      placement = { scheduled_for: targetValue.split("|")[1], window_kind: null, window_start: null };
+      const date = targetValue.split("|")[1];
+      placement = { scheduled_for: date, window_kind: null, window_start: null, day_sort_order: getNextDaySortOrder(date) };
     } else if (targetValue.startsWith("P|")) {
       const [, kind, start] = targetValue.split("|");
-      placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start };
+      placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start, day_sort_order: null };
     } else {
       // Fallback: treat as date
-      placement = { scheduled_for: targetValue, window_kind: null, window_start: null };
+      placement = { scheduled_for: targetValue, window_kind: null, window_start: null, day_sort_order: getNextDaySortOrder(targetValue) };
     }
 
     if (!placement.scheduled_for && !placement.window_kind) {
@@ -3640,10 +3847,11 @@ const { data, error } = await supabase
         scheduled_for: placement.scheduled_for,
         window_kind: placement.window_kind,
         window_start: placement.window_start,
+        day_sort_order: placement.day_sort_order,
         status: "open",
         user_id: session.user.id,
       })
-      .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,created_at,completed_at")
+      .select("id,user_id,content_item_id,movie_tracker_id,scheduled_for,window_kind,window_start,status,day_sort_order,created_at,completed_at")
       .single();
 
     if (error) {
@@ -3694,16 +3902,17 @@ const { data, error } = await supabase
     if (targetValue === "__sep") return;
 
     // Parse target value
-    let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null };
+    let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null; day_sort_order: number | null };
 
     if (targetValue.startsWith("D|")) {
-      placement = { scheduled_for: targetValue.split("|")[1], window_kind: null, window_start: null };
+      const date = targetValue.split("|")[1];
+      placement = { scheduled_for: date, window_kind: null, window_start: null, day_sort_order: getNextDaySortOrder(date) };
     } else if (targetValue.startsWith("P|")) {
       const [, kind, start] = targetValue.split("|");
-      placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start };
+      placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start, day_sort_order: null };
     } else {
       // Fallback: treat as date string
-      placement = { scheduled_for: targetValue, window_kind: null, window_start: null };
+      placement = { scheduled_for: targetValue, window_kind: null, window_start: null, day_sort_order: getNextDaySortOrder(targetValue) };
     }
 
     // Optimistic update
@@ -3720,7 +3929,7 @@ const { data, error } = await supabase
       console.warn("rescheduleContentSession", error);
       // Revert
       setContentSessions((p) =>
-        p.map((s) => (s.id === sessionId ? { ...s, scheduled_for: session.scheduled_for, window_kind: session.window_kind, window_start: session.window_start } : s))
+        p.map((s) => (s.id === sessionId ? { ...s, scheduled_for: session.scheduled_for, window_kind: session.window_kind, window_start: session.window_start, day_sort_order: session.day_sort_order } : s))
       );
     }
   }
@@ -3828,6 +4037,84 @@ const { data, error } = await supabase
         .update({ sort_order })
         .eq("id", id);
       if (error) console.warn("reorderContentItems", error);
+    }
+  }
+
+  // Reorder content on a specific day (unified list of content items and sessions)
+  async function reorderDayContent(
+    draggedId: string,
+    draggedType: "item" | "session",
+    targetId: string,
+    targetType: "item" | "session",
+    date: string,
+    position: "above" | "below"
+  ) {
+    // Use the unified list (already sorted by day_sort_order)
+    type UnifiedItem = { id: string; type: "item" | "session"; day_sort_order: number };
+    const dayItems: UnifiedItem[] = (unifiedContentByDay[date] ?? []).map((entry) => ({
+      id: entry.kind === "item" ? entry.item.id : entry.session.id,
+      type: entry.kind,
+      day_sort_order: entry.kind === "item" ? (entry.item.day_sort_order ?? 0) : (entry.session.day_sort_order ?? 0),
+    }));
+
+    // Find indices
+    const draggedIndex = dayItems.findIndex((i) => i.id === draggedId && i.type === draggedType);
+    const targetIndex = dayItems.findIndex((i) => i.id === targetId && i.type === targetType);
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    // Reorder
+    const reordered = [...dayItems];
+    const [removed] = reordered.splice(draggedIndex, 1);
+    let insertIndex: number;
+    if (position === "below") {
+      insertIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
+    } else {
+      insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    }
+    reordered.splice(insertIndex, 0, removed);
+
+    // Build updates
+    const itemUpdates: { id: string; day_sort_order: number }[] = [];
+    const sessionUpdates: { id: string; day_sort_order: number }[] = [];
+
+    reordered.forEach((item, index) => {
+      if (item.type === "item") {
+        itemUpdates.push({ id: item.id, day_sort_order: index });
+      } else {
+        sessionUpdates.push({ id: item.id, day_sort_order: index });
+      }
+    });
+
+    // Optimistic update for content items
+    setContentItems((prev) =>
+      prev.map((item) => {
+        const update = itemUpdates.find((u) => u.id === item.id);
+        return update ? { ...item, day_sort_order: update.day_sort_order } : item;
+      })
+    );
+
+    // Optimistic update for content sessions
+    setContentSessions((prev) =>
+      prev.map((session) => {
+        const update = sessionUpdates.find((u) => u.id === session.id);
+        return update ? { ...session, day_sort_order: update.day_sort_order } : session;
+      })
+    );
+
+    // Persist to database
+    for (const { id, day_sort_order } of itemUpdates) {
+      const { error } = await supabase
+        .from("content_items")
+        .update({ day_sort_order })
+        .eq("id", id);
+      if (error) console.warn("reorderDayContent (item)", error);
+    }
+    for (const { id, day_sort_order } of sessionUpdates) {
+      const { error } = await supabase
+        .from("content_sessions")
+        .update({ day_sort_order })
+        .eq("id", id);
+      if (error) console.warn("reorderDayContent (session)", error);
     }
   }
 
@@ -4500,9 +4787,14 @@ const { error } = await supabase
                                 reorderContentItems(contentDragId, item.id, contentDropPosition);
                               }
                             }}
-                            isDragging={contentDragId === item.id}
-                            isDropTarget={contentDropTargetId === item.id && contentDragId !== item.id}
-                            dropPosition={contentDropTargetId === item.id ? contentDropPosition : null}
+                            onTouchDragStart={() => {
+                              setDraggedItemId(item.id);
+                              setIsTouchDragging(true);
+                              touchDragContextRef.current = { type: "content", context: { contentTab } };
+                            }}
+                            isDragging={contentDragId === item.id || draggedItemId === item.id}
+                            isDropTarget={(contentDropTargetId === item.id && contentDragId !== item.id) || (dropTargetId === item.id && draggedItemId !== item.id)}
+                            dropPosition={contentDropTargetId === item.id ? contentDropPosition : (dropTargetId === item.id ? dropPosition : null)}
                           />
                         ))}
                       </div>
@@ -4782,44 +5074,125 @@ const { error } = await supabase
             </div>
 
             {/* Content section (scheduled one-offs and sessions) */}
-            {((scheduledContentByDay[todayIso] ?? []).length > 0 || (contentSessionsByDay[todayIso] ?? []).length > 0) && (
+            {(unifiedContentByDay[todayIso] ?? []).length > 0 && (
               <div className="mt-4">
                 <div className="mb-2 h-px bg-neutral-700/50" />
-                <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                  {/* Scheduled one-off content items */}
-                  {(scheduledContentByDay[todayIso] ?? []).map((item) => (
-                    <ContentRow
-                      key={`content-${item.id}`}
-                      title={item.title}
-                      isDone={item.status === "done"}
-                      onToggleDone={() => toggleScheduledContentDone(item.id)}
-                      currentValue={`D|${item.scheduled_for}`}
-                      onMove={(v) => {
-                        // Pass full target value - scheduleContentItem handles parsing
-                        scheduleContentItem(item.id, v);
-                      }}
-                      moveTargets={moveTargets}
-                    />
-                  ))}
-                  {/* Content sessions (ongoing items and movies) */}
-                  {(contentSessionsByDay[todayIso] ?? []).map((session) => (
-                    <ContentRow
-                      key={`session-${session.id}`}
-                      title={getSessionTitle(session)}
-                      isDone={session.status === "done"}
-                      onToggleDone={() => toggleContentSessionDone(session.id)}
-                      currentValue={`D|${session.scheduled_for}`}
-                      onMove={(v) => {
-                        if (v === "none") {
-                          unscheduleContent(session.content_item_id ?? "", true, session.id);
-                        } else {
-                          // Pass full target value - rescheduleContentSession handles parsing
-                          rescheduleContentSession(session.id, v);
-                        }
-                      }}
-                      moveTargets={moveTargets}
-                    />
-                  ))}
+                <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20 divide-y divide-neutral-800/60">
+                  {(unifiedContentByDay[todayIso] ?? []).map((entry) =>
+                    entry.kind === "item" ? (
+                      <ContentRow
+                        key={`content-${entry.item.id}`}
+                        itemId={entry.item.id}
+                        contentType="item"
+                        title={entry.item.title}
+                        isDone={entry.item.status === "done"}
+                        onToggleDone={() => toggleScheduledContentDone(entry.item.id)}
+                        currentValue={`D|${entry.item.scheduled_for}`}
+                        onMove={(v) => {
+                          scheduleContentItem(entry.item.id, v);
+                        }}
+                        moveTargets={moveTargets}
+                        showDragHandle={true}
+                        isDragging={draggedItemId === entry.item.id}
+                        isDropTarget={dropTargetId === entry.item.id && draggedItemId !== entry.item.id}
+                        dropPosition={dropTargetId === entry.item.id ? dropPosition : null}
+                        onDragStart={() => {
+                          setDraggedItemId(entry.item.id);
+                          touchDragContextRef.current = { type: "dayContent", context: { date: todayIso }, itemType: "item" };
+                        }}
+                        onDragEnd={() => {
+                          setDraggedItemId(null);
+                          setDropTargetId(null);
+                          setDropTargetContentType(null);
+                          setDropPosition(null);
+                          touchDragContextRef.current = null;
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDropTargetId(entry.item.id);
+                          setDropTargetContentType("item");
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const midpoint = rect.top + rect.height / 2;
+                          setDropPosition(e.clientY < midpoint ? "above" : "below");
+                        }}
+                        onDrop={() => {
+                          if (draggedItemId && dropPosition && draggedItemId !== entry.item.id && touchDragContextRef.current?.itemType) {
+                            reorderDayContent(draggedItemId, touchDragContextRef.current.itemType, entry.item.id, "item", todayIso, dropPosition);
+                          }
+                        }}
+                        onTouchDragStart={() => {
+                          setDraggedItemId(entry.item.id);
+                          setIsTouchDragging(true);
+                          touchDragContextRef.current = { type: "dayContent", context: { date: todayIso }, itemType: "item" };
+                        }}
+                        onEdit={() => setEditingContentItem(entry.item)}
+                        onDelete={() => deleteContentItem(entry.item.id)}
+                      />
+                    ) : (
+                      <ContentRow
+                        key={`session-${entry.session.id}`}
+                        itemId={entry.session.id}
+                        contentType="session"
+                        title={getSessionTitle(entry.session)}
+                        isDone={entry.session.status === "done"}
+                        onToggleDone={() => toggleContentSessionDone(entry.session.id)}
+                        currentValue={`D|${entry.session.scheduled_for}`}
+                        onMove={(v) => {
+                          if (v === "none") {
+                            unscheduleContent(entry.session.content_item_id ?? "", true, entry.session.id);
+                          } else {
+                            rescheduleContentSession(entry.session.id, v);
+                          }
+                        }}
+                        moveTargets={moveTargets}
+                        showDragHandle={true}
+                        isDragging={draggedItemId === entry.session.id}
+                        isDropTarget={dropTargetId === entry.session.id && draggedItemId !== entry.session.id}
+                        dropPosition={dropTargetId === entry.session.id ? dropPosition : null}
+                        onDragStart={() => {
+                          setDraggedItemId(entry.session.id);
+                          touchDragContextRef.current = { type: "dayContent", context: { date: todayIso }, itemType: "session" };
+                        }}
+                        onDragEnd={() => {
+                          setDraggedItemId(null);
+                          setDropTargetId(null);
+                          setDropTargetContentType(null);
+                          setDropPosition(null);
+                          touchDragContextRef.current = null;
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDropTargetId(entry.session.id);
+                          setDropTargetContentType("session");
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const midpoint = rect.top + rect.height / 2;
+                          setDropPosition(e.clientY < midpoint ? "above" : "below");
+                        }}
+                        onDrop={() => {
+                          if (draggedItemId && dropPosition && draggedItemId !== entry.session.id && touchDragContextRef.current?.itemType) {
+                            reorderDayContent(draggedItemId, touchDragContextRef.current.itemType, entry.session.id, "session", todayIso, dropPosition);
+                          }
+                        }}
+                        onTouchDragStart={() => {
+                          setDraggedItemId(entry.session.id);
+                          setIsTouchDragging(true);
+                          touchDragContextRef.current = { type: "dayContent", context: { date: todayIso }, itemType: "session" };
+                        }}
+                        onEdit={() => {
+                          // For sessions, find the underlying content item to edit
+                          if (entry.session.content_item_id) {
+                            const item = contentItems.find((i) => i.id === entry.session.content_item_id);
+                            if (item) setEditingContentItem(item);
+                          }
+                        }}
+                        onDelete={() => {
+                          if (entry.session.content_item_id) {
+                            deleteContentItem(entry.session.content_item_id);
+                          }
+                        }}
+                      />
+                    )
+                  )}
                 </div>
               </div>
             )}
@@ -5034,40 +5407,123 @@ const { error } = await supabase
                   </div>
 
                   {/* Content section (scheduled one-offs and sessions) */}
-                  {((scheduledContentByDay[tomorrowIso] ?? []).length > 0 || (contentSessionsByDay[tomorrowIso] ?? []).length > 0) && (
+                  {(unifiedContentByDay[tomorrowIso] ?? []).length > 0 && (
                     <div className="mt-4">
                       <div className="mb-2 h-px bg-neutral-700/50" />
-                      <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                        {(scheduledContentByDay[tomorrowIso] ?? []).map((item) => (
-                          <ContentRow
-                            key={`content-${item.id}`}
-                            title={item.title}
-                            isDone={item.status === "done"}
-                            onToggleDone={() => toggleScheduledContentDone(item.id)}
-                            currentValue={`D|${item.scheduled_for}`}
-                            onMove={(v) => {
-                              scheduleContentItem(item.id, v);
-                            }}
-                            moveTargets={moveTargets}
-                          />
-                        ))}
-                        {(contentSessionsByDay[tomorrowIso] ?? []).map((session) => (
-                          <ContentRow
-                            key={`session-${session.id}`}
-                            title={getSessionTitle(session)}
-                            isDone={session.status === "done"}
-                            onToggleDone={() => toggleContentSessionDone(session.id)}
-                            currentValue={`D|${session.scheduled_for}`}
-                            onMove={(v) => {
-                              if (v === "none") {
-                                unscheduleContent(session.content_item_id ?? "", true, session.id);
-                              } else {
-                                rescheduleContentSession(session.id, v);
-                              }
-                            }}
-                            moveTargets={moveTargets}
-                          />
-                        ))}
+                      <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20 divide-y divide-neutral-800/60">
+                        {(unifiedContentByDay[tomorrowIso] ?? []).map((entry) =>
+                          entry.kind === "item" ? (
+                            <ContentRow
+                              key={`content-${entry.item.id}`}
+                              itemId={entry.item.id}
+                              contentType="item"
+                              title={entry.item.title}
+                              isDone={entry.item.status === "done"}
+                              onToggleDone={() => toggleScheduledContentDone(entry.item.id)}
+                              currentValue={`D|${entry.item.scheduled_for}`}
+                              onMove={(v) => {
+                                scheduleContentItem(entry.item.id, v);
+                              }}
+                              moveTargets={moveTargets}
+                              showDragHandle={true}
+                              isDragging={draggedItemId === entry.item.id}
+                              isDropTarget={dropTargetId === entry.item.id && draggedItemId !== entry.item.id}
+                              dropPosition={dropTargetId === entry.item.id ? dropPosition : null}
+                              onDragStart={() => {
+                                setDraggedItemId(entry.item.id);
+                                touchDragContextRef.current = { type: "dayContent", context: { date: tomorrowIso }, itemType: "item" };
+                              }}
+                              onDragEnd={() => {
+                                setDraggedItemId(null);
+                                setDropTargetId(null);
+                                setDropTargetContentType(null);
+                                setDropPosition(null);
+                                touchDragContextRef.current = null;
+                              }}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setDropTargetId(entry.item.id);
+                                setDropTargetContentType("item");
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const midpoint = rect.top + rect.height / 2;
+                                setDropPosition(e.clientY < midpoint ? "above" : "below");
+                              }}
+                              onDrop={() => {
+                                if (draggedItemId && dropPosition && draggedItemId !== entry.item.id && touchDragContextRef.current?.itemType) {
+                                  reorderDayContent(draggedItemId, touchDragContextRef.current.itemType, entry.item.id, "item", tomorrowIso, dropPosition);
+                                }
+                              }}
+                              onTouchDragStart={() => {
+                                setDraggedItemId(entry.item.id);
+                                setIsTouchDragging(true);
+                                touchDragContextRef.current = { type: "dayContent", context: { date: tomorrowIso }, itemType: "item" };
+                              }}
+                              onEdit={() => setEditingContentItem(entry.item)}
+                            />
+                          ) : (
+                            <ContentRow
+                              key={`session-${entry.session.id}`}
+                              itemId={entry.session.id}
+                              contentType="session"
+                              title={getSessionTitle(entry.session)}
+                              isDone={entry.session.status === "done"}
+                              onToggleDone={() => toggleContentSessionDone(entry.session.id)}
+                              currentValue={`D|${entry.session.scheduled_for}`}
+                              onMove={(v) => {
+                                if (v === "none") {
+                                  unscheduleContent(entry.session.content_item_id ?? "", true, entry.session.id);
+                                } else {
+                                  rescheduleContentSession(entry.session.id, v);
+                                }
+                              }}
+                              moveTargets={moveTargets}
+                              showDragHandle={true}
+                              isDragging={draggedItemId === entry.session.id}
+                              isDropTarget={dropTargetId === entry.session.id && draggedItemId !== entry.session.id}
+                              dropPosition={dropTargetId === entry.session.id ? dropPosition : null}
+                              onDragStart={() => {
+                                setDraggedItemId(entry.session.id);
+                                touchDragContextRef.current = { type: "dayContent", context: { date: tomorrowIso }, itemType: "session" };
+                              }}
+                              onDragEnd={() => {
+                                setDraggedItemId(null);
+                                setDropTargetId(null);
+                                setDropTargetContentType(null);
+                                setDropPosition(null);
+                                touchDragContextRef.current = null;
+                              }}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setDropTargetId(entry.session.id);
+                                setDropTargetContentType("session");
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const midpoint = rect.top + rect.height / 2;
+                                setDropPosition(e.clientY < midpoint ? "above" : "below");
+                              }}
+                              onDrop={() => {
+                                if (draggedItemId && dropPosition && draggedItemId !== entry.session.id && touchDragContextRef.current?.itemType) {
+                                  reorderDayContent(draggedItemId, touchDragContextRef.current.itemType, entry.session.id, "session", tomorrowIso, dropPosition);
+                                }
+                              }}
+                              onTouchDragStart={() => {
+                                setDraggedItemId(entry.session.id);
+                                setIsTouchDragging(true);
+                                touchDragContextRef.current = { type: "dayContent", context: { date: tomorrowIso }, itemType: "session" };
+                              }}
+                              onEdit={() => {
+                                if (entry.session.content_item_id) {
+                                  const item = contentItems.find((i) => i.id === entry.session.content_item_id);
+                                  if (item) setEditingContentItem(item);
+                                }
+                              }}
+                              onDelete={() => {
+                                if (entry.session.content_item_id) {
+                                  deleteContentItem(entry.session.content_item_id);
+                                }
+                              }}
+                            />
+                          )
+                        )}
                       </div>
                     </div>
                   )}
@@ -5321,44 +5777,125 @@ const { error } = await supabase
                       </div>
 
                       {/* Content section (scheduled one-offs and sessions) */}
-                      {((scheduledContentByDay[iso] ?? []).length > 0 || (contentSessionsByDay[iso] ?? []).length > 0) && (
+                      {(unifiedContentByDay[iso] ?? []).length > 0 && (
                         <div className="mt-4">
                           <div className="mb-2 h-px bg-neutral-700/50" />
-                          <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                            {(scheduledContentByDay[iso] ?? []).map((item) => (
-                              <ContentRow
-                                key={`content-${item.id}`}
-                                compact={isMdUp}
-                                title={item.title}
-                                isDone={item.status === "done"}
-                                onToggleDone={() => toggleScheduledContentDone(item.id)}
-                                currentValue={`D|${item.scheduled_for}`}
-                                onMove={(v) => {
-                                  // Pass full target value - scheduleContentItem handles parsing
-                                  scheduleContentItem(item.id, v);
-                                }}
-                                moveTargets={moveTargets}
-                              />
-                            ))}
-                            {(contentSessionsByDay[iso] ?? []).map((session) => (
-                              <ContentRow
-                                key={`session-${session.id}`}
-                                compact={isMdUp}
-                                title={getSessionTitle(session)}
-                                isDone={session.status === "done"}
-                                onToggleDone={() => toggleContentSessionDone(session.id)}
-                                currentValue={`D|${session.scheduled_for}`}
-                                onMove={(v) => {
-                                  if (v === "none") {
-                                    unscheduleContent(session.content_item_id ?? "", true, session.id);
-                                  } else {
-                                    // Pass full target value - rescheduleContentSession handles parsing
-                                    rescheduleContentSession(session.id, v);
-                                  }
-                                }}
-                                moveTargets={moveTargets}
-                              />
-                            ))}
+                          <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20 divide-y divide-neutral-800/60">
+                            {(unifiedContentByDay[iso] ?? []).map((entry) =>
+                              entry.kind === "item" ? (
+                                <ContentRow
+                                  key={`content-${entry.item.id}`}
+                                  itemId={entry.item.id}
+                                  contentType="item"
+                                  compact={isMdUp}
+                                  title={entry.item.title}
+                                  isDone={entry.item.status === "done"}
+                                  onToggleDone={() => toggleScheduledContentDone(entry.item.id)}
+                                  currentValue={`D|${entry.item.scheduled_for}`}
+                                  onMove={(v) => {
+                                    scheduleContentItem(entry.item.id, v);
+                                  }}
+                                  moveTargets={moveTargets}
+                                  showDragHandle={true}
+                                  isDragging={draggedItemId === entry.item.id}
+                                  isDropTarget={dropTargetId === entry.item.id && draggedItemId !== entry.item.id}
+                                  dropPosition={dropTargetId === entry.item.id ? dropPosition : null}
+                                  onDragStart={() => {
+                                    setDraggedItemId(entry.item.id);
+                                    touchDragContextRef.current = { type: "dayContent", context: { date: iso }, itemType: "item" };
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedItemId(null);
+                                    setDropTargetId(null);
+                                    setDropTargetContentType(null);
+                                    setDropPosition(null);
+                                    touchDragContextRef.current = null;
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    setDropTargetId(entry.item.id);
+                                    setDropTargetContentType("item");
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const midpoint = rect.top + rect.height / 2;
+                                    setDropPosition(e.clientY < midpoint ? "above" : "below");
+                                  }}
+                                  onDrop={() => {
+                                    if (draggedItemId && dropPosition && draggedItemId !== entry.item.id && touchDragContextRef.current?.itemType) {
+                                      reorderDayContent(draggedItemId, touchDragContextRef.current.itemType, entry.item.id, "item", iso, dropPosition);
+                                    }
+                                  }}
+                                  onTouchDragStart={() => {
+                                    setDraggedItemId(entry.item.id);
+                                    setIsTouchDragging(true);
+                                    touchDragContextRef.current = { type: "dayContent", context: { date: iso }, itemType: "item" };
+                                  }}
+                                  onEdit={() => setEditingContentItem(entry.item)}
+                                />
+                              ) : (
+                                <ContentRow
+                                  key={`session-${entry.session.id}`}
+                                  itemId={entry.session.id}
+                                  contentType="session"
+                                  compact={isMdUp}
+                                  title={getSessionTitle(entry.session)}
+                                  isDone={entry.session.status === "done"}
+                                  onToggleDone={() => toggleContentSessionDone(entry.session.id)}
+                                  currentValue={`D|${entry.session.scheduled_for}`}
+                                  onMove={(v) => {
+                                    if (v === "none") {
+                                      unscheduleContent(entry.session.content_item_id ?? "", true, entry.session.id);
+                                    } else {
+                                      rescheduleContentSession(entry.session.id, v);
+                                    }
+                                  }}
+                                  moveTargets={moveTargets}
+                                  showDragHandle={true}
+                                  isDragging={draggedItemId === entry.session.id}
+                                  isDropTarget={dropTargetId === entry.session.id && draggedItemId !== entry.session.id}
+                                  dropPosition={dropTargetId === entry.session.id ? dropPosition : null}
+                                  onDragStart={() => {
+                                    setDraggedItemId(entry.session.id);
+                                    touchDragContextRef.current = { type: "dayContent", context: { date: iso }, itemType: "session" };
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedItemId(null);
+                                    setDropTargetId(null);
+                                    setDropTargetContentType(null);
+                                    setDropPosition(null);
+                                    touchDragContextRef.current = null;
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    setDropTargetId(entry.session.id);
+                                    setDropTargetContentType("session");
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const midpoint = rect.top + rect.height / 2;
+                                    setDropPosition(e.clientY < midpoint ? "above" : "below");
+                                  }}
+                                  onDrop={() => {
+                                    if (draggedItemId && dropPosition && draggedItemId !== entry.session.id && touchDragContextRef.current?.itemType) {
+                                      reorderDayContent(draggedItemId, touchDragContextRef.current.itemType, entry.session.id, "session", iso, dropPosition);
+                                    }
+                                  }}
+                                  onTouchDragStart={() => {
+                                    setDraggedItemId(entry.session.id);
+                                    setIsTouchDragging(true);
+                                    touchDragContextRef.current = { type: "dayContent", context: { date: iso }, itemType: "session" };
+                                  }}
+                                  onEdit={() => {
+                                    if (entry.session.content_item_id) {
+                                      const item = contentItems.find((i) => i.id === entry.session.content_item_id);
+                                      if (item) setEditingContentItem(item);
+                                    }
+                                  }}
+                                  onDelete={() => {
+                                    if (entry.session.content_item_id) {
+                                      deleteContentItem(entry.session.content_item_id);
+                                    }
+                                  }}
+                                />
+                              )
+                            )}
                           </div>
                         </div>
                       )}
