@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 
 const WORKOUT_GROUPS = [
   // Day 0
@@ -33,10 +36,48 @@ const WORKOUT_GROUPS = [
 ] as const;
 
 export default function Home() {
+  const [qrOpen, setQrOpen] = useState(false);
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-5 py-8 text-white">
       <div className="mx-auto w-full max-w-md">
+        {qrOpen && (
+          <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={() => setQrOpen(false)}
+              className="absolute inset-0 h-full w-full"
+              aria-label="Close"
+            />
+
+            <div className="relative mx-auto flex h-full max-w-md items-center justify-center px-5">
+              <div className="relative w-full">
+                <img
+                  src="/qr.jpeg"
+                  alt="Gym QR"
+                  className="mx-auto w-full max-w-[360px] rounded-2xl border border-white/10 bg-white/5"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setQrOpen(false)}
+                  className="absolute -top-3 -right-3 h-10 w-10 rounded-2xl border border-white/10 bg-black/60 grid place-items-center text-white/80 hover:text-white hover:bg-black/70 active:scale-[0.97] transition"
+                  aria-label="Close"
+                >
+                  <span className="text-lg leading-none">×</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <header className="mb-3 relative">
+          <button
+            type="button"
+            onClick={() => setQrOpen(true)}
+            className="absolute left-0 top-1/2 -translate-y-1/2 h-9 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-semibold text-white/80 hover:text-white hover:bg-white/10 active:scale-[0.97] transition"
+          >
+            QR
+          </button>
           <h1 className="text-2xl font-semibold tracking-tight text-center">
             Workout Tracker
           </h1>
