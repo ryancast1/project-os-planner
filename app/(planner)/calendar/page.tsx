@@ -29,6 +29,23 @@ type Focus = {
   sort_order?: number | null;
 };
 
+type ContentItem = {
+  id: string;
+  title: string;
+  category: string;
+  is_ongoing: boolean;
+  status: string;
+  scheduled_for: string | null;
+};
+
+type ContentSession = {
+  id: string;
+  content_item_id: string | null;
+  movie_tracker_id: string | null;
+  scheduled_for: string;
+  status: string;
+};
+
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -271,6 +288,9 @@ export default function CalendarPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [focuses, setFocuses] = useState<Focus[]>([]);
   const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
+  const [contentItems, setContentItems] = useState<ContentItem[]>([]);
+  const [contentSessions, setContentSessions] = useState<ContentSession[]>([]);
+  const [movieLookup, setMovieLookup] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
 
   const [openIso, setOpenIso] = useState<string | null>(null);
@@ -295,7 +315,7 @@ export default function CalendarPage() {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [plansRes, tasksRes, focusRes, dayNotesRes] = await Promise.all([
+      const [plansRes, tasksRes, focusRes, dayNotesRes, contentItemsRes, contentSessionsRes, movieLookupRes] = await Promise.all([
         supabase
           .from("plans")
           .select("id,title,scheduled_for,end_date,starts_at,status,day_off")
@@ -325,6 +345,23 @@ export default function CalendarPage() {
           .select("note_date,notes")
           .gte("note_date", range.start)
           .lte("note_date", range.end),
+        // Content items scheduled to specific days
+        supabase
+          .from("content_items")
+          .select("id,title,category,is_ongoing,status,scheduled_for")
+          .not("scheduled_for", "is", null)
+          .gte("scheduled_for", range.start)
+          .lte("scheduled_for", range.end),
+        // Content sessions (for ongoing items and movies)
+        supabase
+          .from("content_sessions")
+          .select("id,content_item_id,movie_tracker_id,scheduled_for,status")
+          .gte("scheduled_for", range.start)
+          .lte("scheduled_for", range.end),
+        // All movies for title lookup
+        supabase
+          .from("movie_tracker")
+          .select("id,title"),
       ]);
 
       if (!alive) return;
@@ -332,10 +369,23 @@ export default function CalendarPage() {
       if (tasksRes.error) console.error(tasksRes.error);
       if (focusRes.error) console.error(focusRes.error);
       if (dayNotesRes.error) console.error(dayNotesRes.error);
+      if (contentItemsRes.error) console.error(contentItemsRes.error);
+      if (contentSessionsRes.error) console.error(contentSessionsRes.error);
+      if (movieLookupRes.error) console.error(movieLookupRes.error);
 
       setPlans((plansRes.data ?? []) as Plan[]);
       setTasks((tasksRes.data ?? []) as Task[]);
       setFocuses((focusRes.data ?? []) as Focus[]);
+      setContentItems((contentItemsRes.data ?? []) as ContentItem[]);
+      setContentSessions((contentSessionsRes.data ?? []) as ContentSession[]);
+
+      // Build movie lookup map
+      const allMovies = (movieLookupRes.data ?? []) as { id: string; title: string }[];
+      const lookupMap = new Map<string, string>();
+      for (const m of allMovies) {
+        lookupMap.set(String(m.id), String(m.title ?? ""));
+      }
+      setMovieLookup(lookupMap);
 
       // Process day notes into a lookup by date
       const notesMap: Record<string, string> = {};
@@ -408,6 +458,48 @@ export default function CalendarPage() {
     }
     return m;
   }, [focuses]);
+
+  // Build content by day - combines one-off items (scheduled_for) and sessions
+  type ContentEntry = { kind: "item"; item: ContentItem } | { kind: "session"; session: ContentSession };
+  const contentByDay = useMemo(() => {
+    const m: Record<string, ContentEntry[]> = {};
+    // Add one-off content items (scheduled directly to a day)
+    for (const item of contentItems) {
+      if (!item.scheduled_for) continue;
+      (m[item.scheduled_for] ||= []).push({ kind: "item", item });
+    }
+    // Add sessions (for ongoing items and movies)
+    for (const session of contentSessions) {
+      if (!session.scheduled_for) continue;
+      (m[session.scheduled_for] ||= []).push({ kind: "session", session });
+    }
+    return m;
+  }, [contentItems, contentSessions]);
+
+  // Helper to get title for a content entry
+  const getContentTitle = (entry: ContentEntry): string => {
+    if (entry.kind === "item") {
+      return entry.item.title;
+    }
+    // Session - look up from content_item or movie
+    const session = entry.session;
+    if (session.content_item_id) {
+      const item = contentItems.find((i) => i.id === session.content_item_id);
+      return item?.title ?? "Unknown";
+    }
+    if (session.movie_tracker_id) {
+      return movieLookup.get(session.movie_tracker_id) ?? "Unknown Movie";
+    }
+    return "Unknown";
+  };
+
+  // Helper to check if content entry is done
+  const isContentDone = (entry: ContentEntry): boolean => {
+    if (entry.kind === "item") {
+      return entry.item.status === "done";
+    }
+    return entry.session.status === "done";
+  };
 
   const multiDayPlans = useMemo(() => {
     return plans
@@ -503,6 +595,7 @@ export default function CalendarPage() {
     const dayFocus = (focusByDay[iso] ?? []).filter(
       (f) => String(f.status ?? "").toLowerCase() !== "archived"
     );
+    const dayContent = contentByDay[iso] ?? [];
     const notes = dayNotes[iso] ?? "";
 
     return (
@@ -570,6 +663,31 @@ export default function CalendarPage() {
             </div>
           ) : null}
 
+          {dayContent.length > 0 ? (
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Content</div>
+              <div className="space-y-1.5">
+                {dayContent.map((entry) => {
+                  const done = isContentDone(entry);
+                  const title = getContentTitle(entry);
+                  const key = entry.kind === "item" ? `item-${entry.item.id}` : `session-${entry.session.id}`;
+                  return (
+                    <div
+                      key={key}
+                      className={clsx(
+                        "truncate text-sm font-medium",
+                        done ? "text-emerald-400" : "text-neutral-50"
+                      )}
+                    >
+                      {done ? "✓ " : ""}
+                      {title}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           {notes ? (
             <div>
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Notes</div>
@@ -577,7 +695,7 @@ export default function CalendarPage() {
             </div>
           ) : null}
 
-          {!notes && dayFocus.length === 0 && dayPlans.length === 0 && dayTasks.length === 0 ? (
+          {!notes && dayFocus.length === 0 && dayPlans.length === 0 && dayTasks.length === 0 && dayContent.length === 0 ? (
             <div className="text-sm text-neutral-400">Nothing scheduled.</div>
           ) : null}
         </div>

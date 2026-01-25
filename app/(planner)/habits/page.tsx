@@ -625,11 +625,12 @@ export default function HabitsPage() {
 
               <div>
                 <div className="mb-1 text-xs text-neutral-400">Notes</div>
-                <input
+                <textarea
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
                   placeholder=""
-                  className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
+                  rows={3}
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 outline-none resize-none sm:text-sm"
                 />
               </div>
 

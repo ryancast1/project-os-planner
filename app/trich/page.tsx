@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-const START_DATE = "2026-01-10";
 const PACIFIC_TZ = "America/Los_Angeles";
 
 type DailyRow = { date: string; t1: number; t2: number };
@@ -40,6 +39,54 @@ export default function Home() {
   const [dailyRows, setDailyRows] = useState<DailyRow[]>([]);
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
+
+  // Calculate weighted rolling index for chart
+  // Weights: today = 1.0, yesterday = 0.95, -2d = 0.90, ..., -18d = 0.10, -19d = 0.05, -20d = 0.025
+  // Uses T1 + T2 total for each day
+  const indexData = useMemo(() => {
+    // dailyRows is ordered newest first, so reverse to get chronological order
+    const chronological = [...dailyRows].reverse();
+    if (chronological.length < 21) return []; // Need at least 21 days for full calculation
+
+    const weights = [
+      1.0,    // day 0 (current day in window)
+      0.95,   // day -1
+      0.90,   // day -2
+      0.85,   // day -3
+      0.80,   // day -4
+      0.75,   // day -5
+      0.70,   // day -6
+      0.65,   // day -7
+      0.60,   // day -8
+      0.55,   // day -9
+      0.50,   // day -10
+      0.45,   // day -11
+      0.40,   // day -12
+      0.35,   // day -13
+      0.30,   // day -14
+      0.25,   // day -15
+      0.20,   // day -16
+      0.15,   // day -17
+      0.10,   // day -18
+      0.05,   // day -19
+      0.025,  // day -20
+    ];
+
+    const result: { date: string; index: number }[] = [];
+
+    // Start from day 20 (21st day, 0-indexed) since we need 21 days of history
+    for (let i = 20; i < chronological.length; i++) {
+      let sum = 0;
+      for (let j = 0; j < 21; j++) {
+        const dayData = chronological[i - j];
+        const total = dayData.t1 + dayData.t2;
+        sum += total * weights[j];
+      }
+      result.push({ date: chronological[i].date, index: sum });
+    }
+
+    return result;
+  }, [dailyRows]);
 
   // Keep "today" updated (Pacific midnight boundary)
   useEffect(() => {
@@ -83,7 +130,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, today]);
 
-  async function fetchAllEventsSince(uid: string) {
+  async function fetchAllEvents(uid: string) {
     const pageSize = 1000;
     let from = 0;
 
@@ -94,7 +141,6 @@ export default function Home() {
         .from("trich_events")
         .select("occurred_on, trich")
         .eq("user_id", uid)
-        .gte("occurred_on", START_DATE)
         .order("occurred_on", { ascending: false })
         .range(from, from + pageSize - 1);
 
@@ -117,7 +163,7 @@ export default function Home() {
     setStatus("loading");
 
     try {
-      const events = await fetchAllEventsSince(uid);
+      const events = await fetchAllEvents(uid);
 
       // Aggregate by occurred_on (Pacific-day bucket)
       const byDay = new Map<string, { t1: number; t2: number }>();
@@ -129,9 +175,13 @@ export default function Home() {
         byDay.set(day, cur);
       }
 
-      // Build continuous daily rows from Pacific "today" back to START_DATE
+      // Find the earliest date with data
+      const allDates = Array.from(byDay.keys()).sort();
+      const startDateISO = allDates.length > 0 ? allDates[0] : today;
+
+      // Build continuous daily rows from Pacific "today" back to start date
       const out: DailyRow[] = [];
-      const start = dateFromISO(START_DATE);
+      const start = dateFromISO(startDateISO);
       let d = dateFromISO(today);
 
       for (; d >= start; d = new Date(d.getTime() - 86400000)) {
@@ -188,8 +238,7 @@ export default function Home() {
       const q = supabase
         .from("trich_events")
         .select(sel)
-        .eq("user_id", uid)
-        .gte("occurred_on", START_DATE);
+        .eq("user_id", uid);
 
       // Order by timestamp if available, otherwise by occurred_on.
       const ordered = tsCol ? q.order(tsCol, { ascending: true }) : q.order("occurred_on", { ascending: true });
@@ -202,7 +251,6 @@ export default function Home() {
         .from("trich_events")
         .select(`occurred_on,trich,${c}`)
         .eq("user_id", uid)
-        .gte("occurred_on", START_DATE)
         .order("occurred_on", { ascending: false })
         .range(0, 0);
 
@@ -385,7 +433,78 @@ export default function Home() {
 
           {exportErr && <div className="mt-3 text-center text-sm text-red-300">{exportErr}</div>}
         </section>
+
+        {/* Weighted Index Chart */}
+        {indexData.length >= 2 && (
+          <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-xs text-white/60">21-Day Weighted Index</div>
+              <div className="text-xs text-white/50">
+                Current: {indexData.length > 0 ? indexData[indexData.length - 1].index.toFixed(1) : "—"}
+              </div>
+            </div>
+            <TrichIndexChart data={indexData} />
+          </section>
+        )}
       </div>
     </main>
+  );
+}
+
+function TrichIndexChart({ data }: { data: { date: string; index: number }[] }) {
+  const indices = data.map((d) => d.index);
+  const minIdx = Math.min(...indices);
+  const maxIdx = Math.max(...indices);
+  const spread = Math.max(1, maxIdx - minIdx);
+  const yMin = Math.max(0, minIdx - spread * 0.1);
+  const yMax = maxIdx + spread * 0.1;
+
+  const n = data.length;
+
+  const fmt = (iso: string) => {
+    const m = Number(iso.slice(5, 7));
+    const d = Number(iso.slice(8, 10));
+    return `${m}/${d}`;
+  };
+
+  const firstDate = data[0]?.date ?? "";
+  const lastDate = data[data.length - 1]?.date ?? "";
+
+  return (
+    <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 relative h-[200px]">
+      {/* Y axis labels - HTML positioned */}
+      <div className="absolute left-1 top-1 text-[9px] text-white/50">{Math.round(yMax)}</div>
+      <div className="absolute left-1 bottom-5 text-[9px] text-white/50">{Math.round(yMin)}</div>
+
+      {/* X axis labels - HTML positioned */}
+      <div className="absolute left-7 bottom-1 text-[9px] text-white/45">{fmt(firstDate)}</div>
+      <div className="absolute right-2 bottom-1 text-[9px] text-white/45">{fmt(lastDate)}</div>
+
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
+        {/* Baseline */}
+        <line x1="8" y1="92" x2="97" y2="92" stroke="rgba(255,255,255,0.10)" />
+
+        {/* Index line */}
+        <polyline
+          fill="none"
+          stroke="rgba(251,146,60,0.9)"
+          strokeWidth="0.6"
+          points={data
+            .map((d, i) => {
+              const xPct = 8 + (i / (n - 1)) * 89;
+              const yPct = 92 - ((d.index - yMin) / (yMax - yMin)) * 84;
+              return `${xPct},${yPct}`;
+            })
+            .join(" ")}
+        />
+
+        {/* Latest point */}
+        {(() => {
+          const xPct = 97;
+          const yPct = 92 - ((data[n - 1].index - yMin) / (yMax - yMin)) * 84;
+          return <circle cx={xPct} cy={yPct} r="1" fill="rgba(251,146,60,0.95)" />;
+        })()}
+      </svg>
+    </div>
   );
 }

@@ -2213,6 +2213,8 @@ export default function PlannerPage() {
     return allowed.includes(raw as ContentTab) ? (raw as ContentTab) : "cook";
   });
 const [movieItems, setMovieItems] = useState<MovieTrackerItem[]>([]);
+// Lookup map for ALL movies (including watched) - used for session title display
+const [movieLookup, setMovieLookup] = useState<Map<string, string>>(new Map());
 const [watchingMovieId, setWatchingMovieId] = useState<string | null>(null);
 const [watchedDate, setWatchedDate] = useState<string>("");
 const [watchedNote, setWatchedNote] = useState<string>("");
@@ -2473,6 +2475,7 @@ function getWindowValue(which: DrawerWindow) {
       workoutSessionsTodayRes,
       trichEventsTodayRes,
       movieTrackerRes,
+      movieLookupRes,
       projectGoalsRes,
       dayNotesRes,
       contentItemsRes,
@@ -2573,6 +2576,10 @@ function getWindowValue(which: DrawerWindow) {
   .neq("priority", 99)
   .order("priority", { ascending: true })
   .order("title", { ascending: true }),
+      // Fetch ALL movies for lookup (including watched) - used for session title display
+      supabase
+        .from("movie_tracker")
+        .select("id,title"),
       supabase
         .from("projects_goals")
         .select("id,goal,bucket,archived,created_at")
@@ -2612,6 +2619,7 @@ function getWindowValue(which: DrawerWindow) {
     if (workoutSessionsTodayRes.error) console.warn("workoutSessionsTodayRes", workoutSessionsTodayRes.error);
     if (trichEventsTodayRes.error) console.warn("trichEventsTodayRes", trichEventsTodayRes.error);
     if (movieTrackerRes.error) console.warn("movieTrackerRes", movieTrackerRes.error);
+    if (movieLookupRes.error) console.warn("movieLookupRes", movieLookupRes.error);
     if (projectGoalsRes.error) console.warn("projectGoalsRes", projectGoalsRes.error);
     if (dayNotesRes.error) console.warn("dayNotesRes", dayNotesRes.error);
     if (contentItemsRes.error) console.warn("contentItemsRes", contentItemsRes.error);
@@ -2702,6 +2710,14 @@ setMovieItems(
     priority: (m.priority ?? null) as number | null,
   }))
 );
+
+    // Build movie lookup map from ALL movies (including watched)
+    const allMovies = (movieLookupRes.error ? [] : (movieLookupRes.data ?? [])) as any[];
+    const lookupMap = new Map<string, string>();
+    for (const m of allMovies) {
+      lookupMap.set(String(m.id), String(m.title ?? ""));
+    }
+    setMovieLookup(lookupMap);
 
     setLoading(false);
   }
@@ -3234,8 +3250,9 @@ setMovieItems(
       return item?.title ?? "Unknown";
     }
     if (session.movie_tracker_id) {
-      const movie = movieItems.find((m) => m.id === session.movie_tracker_id);
-      return movie?.title ?? "Unknown Movie";
+      // Use movieLookup which includes ALL movies (including watched)
+      const title = movieLookup.get(session.movie_tracker_id);
+      return title ?? "Unknown Movie";
     }
     return "Unknown";
   };
@@ -4808,7 +4825,7 @@ const { error } = await supabase
             <section
               className={clsx(
                 "order-2 min-w-0 rounded-2xl border border-neutral-800 p-4 shadow-sm md:order-none md:col-start-1 md:row-start-1 md:row-span-2 md:h-full md:overflow-y-auto md:overscroll-contain",
-                (days[0].getDay() === 0 || days[0].getDay() === 6) ? "bg-neutral-800/80" : "bg-neutral-900"
+                (days[0].getDay() === 0 || days[0].getDay() === 6 || (plansByDay[todayIso] ?? []).some((p) => p.day_off)) ? "bg-neutral-800" : "bg-neutral-900"
               )}
             >
             <div className="flex items-start justify-between gap-2">
@@ -5206,12 +5223,13 @@ const { error } = await supabase
               const tomorrowTasks = tasksByDay[tomorrowIso] ?? [];
               const tomorrowFocus = focusesByDay[tomorrowIso] ?? [];
               const tomorrowIsWeekend = tomorrowDay.getDay() === 0 || tomorrowDay.getDay() === 6;
+              const tomorrowIsDayOff = tomorrowPlans.some((p) => p.day_off);
 
               return (
                 <section
                   className={clsx(
                     "order-3 min-w-0 rounded-2xl border border-neutral-800 p-4 shadow-sm md:order-none md:col-start-2 md:row-start-1 md:row-span-2 md:h-full md:overflow-y-auto md:overscroll-contain",
-                    tomorrowIsWeekend ? "bg-neutral-800/80" : "bg-neutral-900"
+                    (tomorrowIsWeekend || tomorrowIsDayOff) ? "bg-neutral-800" : "bg-neutral-900"
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -5555,7 +5573,7 @@ const { error } = await supabase
                       "rounded-2xl border border-neutral-800 p-4 shadow-sm md:min-w-0 md:overflow-y-auto md:h-full",
                       // Flex sizing on desktop/iPad: open card grows, others shrink slightly
                       isOpen ? "md:flex-[2]" : isAnotherOpen ? "md:flex-[0.85]" : "md:flex-1",
-                      isWeekend ? "bg-neutral-800/80" : "bg-neutral-900"
+                      (isWeekend || dayPlans.some((p) => p.day_off)) ? "bg-neutral-800" : "bg-neutral-900"
                     )}
                   >
                   <div className="flex w-full items-center justify-between">
