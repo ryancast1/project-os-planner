@@ -119,10 +119,10 @@ export default function DashboardPage() {
   const [weightSeries, setWeightSeries] = useState<{ performed_on: string; weight: number }[]>([]);
   const [weightLoading, setWeightLoading] = useState(false);
 
-  // Matrix sizing
-  const DATE_COL = 42;
-  const CELL = 23;
-  const SPACER = 8;
+  // Matrix sizing - more compact for 4-column layout
+  const DATE_COL = 32;
+  const CELL = 18;
+  const SPACER = 6;
   const matrixCols = MATRIX_COLS.map((c) =>
     c.kind === "date" ? `${DATE_COL}px` : c.kind === "spacer" ? `${SPACER}px` : `${CELL}px`
   ).join(" ");
@@ -237,54 +237,59 @@ export default function DashboardPage() {
 
   const todayISO = isoTodayInTZ(DASH_TZ);
 
+  // Limit dayList to 3 weeks (21 days) for the matrix card
+  const dayListLimited = useMemo(() => {
+    return dayList.slice(0, 21);
+  }, [dayList]);
+
   const MatrixCard = (
-    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3">
-      <div className="mt-2">
-        <div className="grid gap-0" style={{ gridTemplateColumns: matrixCols }}>
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 md:h-[420px] md:flex md:flex-col md:items-center">
+      <div className="mt-1 md:flex-1 md:overflow-hidden md:flex md:flex-col w-fit">
+        <div className="grid gap-0 shrink-0" style={{ gridTemplateColumns: matrixCols }}>
           {MATRIX_COLS.map((c, i) => {
             if (c.kind === "date") {
               return (
-                <div key="date" className="h-[22px] px-1 flex items-center justify-center text-[11px] text-white/70">
+                <div key="date" className="h-[18px] px-0.5 flex items-center justify-center text-[9px] text-white/70">
                   Date
                 </div>
               );
             }
-            if (c.kind === "spacer") return <div key={`sp-h-${i}`} className="py-2" />;
+            if (c.kind === "spacer") return <div key={`sp-h-${i}`} className="py-1" />;
             return (
-              <div key={c.slug} className="py-2 text-[11px] text-white/70 text-center" title={c.slug}>
+              <div key={c.slug} className="py-1 text-[9px] text-white/70 text-center" title={c.slug}>
                 {c.label}
               </div>
             );
           })}
         </div>
 
-        <div className="mt-1">
-          {dayList.map((iso) => (
+        <div className="mt-1 md:flex-1 md:overflow-y-auto">
+          {dayListLimited.map((iso) => (
             <div
               key={iso}
               className={[
                 "grid gap-0",
                 // add a subtle week break above Mondays (Mon follows Sun), e.g. between 1/4 and 1/5
-                utcDateFromISO(iso).getUTCDay() === 0 && iso !== dayList[0] ? "mt-2" : "mt-0",
+                utcDateFromISO(iso).getUTCDay() === 0 && iso !== dayListLimited[0] ? "mt-1.5" : "mt-0",
               ].join(" ")}
               style={{ gridTemplateColumns: matrixCols }}
             >
               {MATRIX_COLS.map((c, i) => {
                 if (c.kind === "date") {
                   return (
-                    <div key={`d-${iso}`} className="h-[22px] px-1 flex items-center justify-center text-[11px] text-white/70">
+                    <div key={`d-${iso}`} className="h-[18px] px-0.5 flex items-center justify-center text-[9px] text-white/70">
                       {fmtMD(iso)}
                     </div>
                   );
                 }
-                if (c.kind === "spacer") return <div key={`sp-${iso}-${i}`} className="h-[22px]" />;
+                if (c.kind === "spacer") return <div key={`sp-${iso}-${i}`} className="h-[18px]" />;
 
                 const filled = doneSet.has(`${iso}|${c.slug}`);
                 return (
                   <div
                     key={`${iso}-${c.slug}`}
                     className={[
-                      "h-[22px] border rounded-sm",
+                      "h-[18px] border rounded-sm",
                       filled ? "bg-emerald-500/80 border-emerald-400/60" : "bg-white/5 border-white/10",
                     ].join(" ")}
                   />
@@ -298,25 +303,25 @@ export default function DashboardPage() {
   );
 
   const AnyWorkoutCard = (
-    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4">
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 md:h-[420px]">
       <div
-        className="mt-2 grid gap-0 text-[11px] text-white/60"
-        style={{ gridTemplateColumns: "repeat(7, 1fr) 28px" }}
+        className="mt-1 grid gap-0 text-[9px] text-white/60"
+        style={{ gridTemplateColumns: "repeat(7, 1fr) 22px" }}
       >
         {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-          <div key={`${d}-${i}`} className="text-center py-1">
+          <div key={`${d}-${i}`} className="text-center py-0.5">
             {d}
           </div>
         ))}
         <div />
       </div>
 
-      <div className="mt-1 space-y-1">
+      <div className="mt-1 space-y-0.5">
         {weekRows.map((row, idx) => (
           <div
             key={idx}
             className="grid gap-0"
-            style={{ gridTemplateColumns: "repeat(7, 1fr) 28px" }}
+            style={{ gridTemplateColumns: "repeat(7, 1fr) 22px" }}
           >
             {row.map((iso) => {
               const isBeforeStart = iso < START_ISO;
@@ -337,7 +342,7 @@ export default function DashboardPage() {
                 <div
                   key={iso}
                   className={[
-                    "h-8 border rounded-sm flex items-center justify-center text-[10px]",
+                    "h-6 border rounded-sm flex items-center justify-center text-[9px]",
                     cls,
                     filled ? "text-black/80" : "text-white/35",
                   ].join(" ")}
@@ -353,7 +358,7 @@ export default function DashboardPage() {
               }, 0);
 
               return (
-                <div className="h-8 flex items-center justify-center text-[11px] text-white/70">
+                <div className="h-6 flex items-center justify-center text-[9px] text-white/70">
                   {weekCount}
                 </div>
               );
@@ -365,13 +370,13 @@ export default function DashboardPage() {
   );
 
   const WeightCard = (
-    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4">
-      <div className="mt-1">
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 md:h-[420px] md:flex md:flex-col">
+      <div className="shrink-0">
         <div className="mb-1 text-xs text-white/60 text-center">Exercise</div>
         <select
           value={weightSlug}
           onChange={(e) => setWeightSlug(e.target.value)}
-          className="h-11 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-white"
+          className="h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-white text-sm"
         >
           {WEIGHT_WORKOUTS.map((w) => (
             <option key={w.slug} value={w.slug}>
@@ -381,7 +386,7 @@ export default function DashboardPage() {
         </select>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-3 md:flex-1 md:min-h-0">
         {weightLoading ? (
           <div className="text-center text-white/60 text-sm py-8">Loading…</div>
         ) : weightSeries.length < 2 ? (
@@ -459,26 +464,24 @@ export default function DashboardPage() {
 
             {/* DESKTOP / HORIZONTAL SCREENS */}
             <div className="hidden md:flex md:flex-col md:h-full md:overflow-hidden">
-              {/* Top row: Matrix | Any workout | Weight + Rolling stacked */}
-              <div className="grid gap-4 items-start grid-cols-[minmax(380px,460px)_minmax(280px,340px)_minmax(420px,520px)]">
+              {/* Top row: 4 columns - Matrix | Any workout | Weight | Rolling */}
+              <div className="grid gap-3 items-stretch grid-cols-[minmax(280px,320px)_minmax(180px,220px)_1fr_1fr] shrink-0">
                 {MatrixCard}
                 {AnyWorkoutCard}
-                <div className="flex flex-col gap-3">
-                  {WeightCard}
-                  {RollingCard}
-                </div>
+                {WeightCard}
+                {RollingCard}
               </div>
 
-              {/* Bottom half: 4 independent scroll panes (one per grouping) */}
-              <div className="mt-4 flex-1 overflow-hidden">
-                <div className="h-full grid grid-cols-4 gap-6">
+              {/* Bottom row: 4 columns, fills remaining space */}
+              <div className="mt-3 flex-1 min-h-0">
+                <div className="h-full grid grid-cols-4 gap-3">
                   {GROUPS.map((g) => (
                     <section
                       key={g.id}
-                      className="rounded-2xl border border-white/10 bg-white/5 p-4 overflow-hidden flex flex-col"
+                      className="rounded-2xl border border-white/10 bg-white/5 p-3 overflow-hidden flex flex-col"
                     >
-                      <div className="flex-1 overflow-y-auto pr-2">
-                        <div className="space-y-3">{g.items.map((w) => LastCardItem(w, `d-${g.id}`))}</div>
+                      <div className="flex-1 overflow-y-auto pr-1">
+                        <div className="space-y-2">{g.items.map((w) => LastCardItem(w, `d-${g.id}`))}</div>
                       </div>
                     </section>
                   ))}
@@ -499,12 +502,6 @@ function RollingWorkoutChart({
   dayWorkoutCount: Map<string, number>;
   todayISO: string;
 }) {
-  const W = 320;
-  const H = 100; // More compact height
-  const padL = 28;
-  const padR = 10;
-  const padT = 10;
-  const padB = 18;
 
   // Data started on 2026-01-01, so 7-day rolling can only start on 2026-01-07
   const FIRST_7DAY_ISO = "2026-01-07";
@@ -563,37 +560,7 @@ function RollingWorkoutChart({
   const yMin = Math.max(0, minC - spread * 0.1);
   const yMax = maxC + spread * 0.1;
 
-  const x0 = padL;
-  const x1 = W - padR;
-  const y0 = H - padB;
-  const y1 = padT;
-
   const n7 = data7.length;
-
-  const xFor7 = (i: number) => (n7 === 1 ? x0 : x0 + (i * (x1 - x0)) / (n7 - 1));
-  const yFor = (c: number) => y0 - ((c - yMin) * (y0 - y1)) / (yMax - yMin);
-
-  const path7 = data7
-    .map((d, i) => {
-      const x = xFor7(i);
-      const y = yFor(d.count);
-      return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
-    .join(" ");
-
-  // 30-day path (if we have data)
-  let path30 = "";
-  if (data30.length >= 2) {
-    const n30 = data30.length;
-    const xFor30 = (i: number) => (n30 === 1 ? x0 : x0 + (i * (x1 - x0)) / (n30 - 1));
-    path30 = data30
-      .map((d, i) => {
-        const x = xFor30(i);
-        const y = yFor(d.count);
-        return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
-      })
-      .join(" ");
-  }
 
   const fmt = (iso: string) => {
     const m = Number(iso.slice(5, 7));
@@ -607,8 +574,8 @@ function RollingWorkoutChart({
   const latest30 = data30.length > 0 ? data30[data30.length - 1]?.count : null;
 
   return (
-    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3">
-      <div className="flex items-center justify-between mb-1">
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 md:h-[420px] md:flex md:flex-col">
+      <div className="flex items-center justify-between mb-1 shrink-0">
         <div className="text-xs text-white/60">Rolling Workout Count</div>
         <div className="flex items-center gap-3 text-[10px]">
           <div className="flex items-center gap-1">
@@ -624,42 +591,55 @@ function RollingWorkoutChart({
         </div>
       </div>
 
-      <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-black/30">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[100px]">
-          {/* Y axis labels */}
-          <text x={padL - 4} y={y1 + 4} textAnchor="end" fontSize="9" fill="rgba(255,255,255,0.50)">
-            {Math.round(yMax)}
-          </text>
-          <text x={padL - 4} y={y0} textAnchor="end" fontSize="9" fill="rgba(255,255,255,0.50)">
-            {Math.round(yMin)}
-          </text>
+      <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 md:flex-1 relative">
+        {/* Y axis labels - HTML positioned */}
+        <div className="absolute left-1 top-1 text-[9px] text-white/50">{Math.round(yMax)}</div>
+        <div className="absolute left-1 bottom-5 text-[9px] text-white/50">{Math.round(yMin)}</div>
 
+        {/* X axis labels - HTML positioned */}
+        <div className="absolute left-7 bottom-1 text-[9px] text-white/45">{fmt(firstDate7)}</div>
+        <div className="absolute right-2 bottom-1 text-[9px] text-white/45">{fmt(lastDate7)}</div>
+
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-[280px] md:h-full">
           {/* Baseline */}
-          <line x1={padL} y1={y0} x2={x1} y2={y0} stroke="rgba(255,255,255,0.10)" />
+          <line x1="8" y1="92" x2="97" y2="92" stroke="rgba(255,255,255,0.10)" />
 
           {/* 30-day line (behind) */}
-          {path30 && (
-            <path d={path30} fill="none" stroke="rgba(96,165,250,0.7)" strokeWidth="1.5" />
+          {data30.length >= 2 && (
+            <polyline
+              fill="none"
+              stroke="rgba(96,165,250,0.7)"
+              strokeWidth="0.5"
+              points={data30
+                .map((d, i) => {
+                  const xPct = 8 + (i / (data30.length - 1)) * 89;
+                  const yPct = 92 - ((d.count - yMin) / (yMax - yMin)) * 84;
+                  return `${xPct},${yPct}`;
+                })
+                .join(" ")}
+            />
           )}
 
           {/* 7-day line (front) */}
-          <path d={path7} fill="none" stroke="rgba(16,185,129,0.95)" strokeWidth="2" />
+          <polyline
+            fill="none"
+            stroke="rgba(16,185,129,0.95)"
+            strokeWidth="0.6"
+            points={data7
+              .map((d, i) => {
+                const xPct = 8 + (i / (n7 - 1)) * 89;
+                const yPct = 92 - ((d.count - yMin) / (yMax - yMin)) * 84;
+                return `${xPct},${yPct}`;
+              })
+              .join(" ")}
+          />
 
           {/* Latest point on 7-day line */}
           {(() => {
-            const i = n7 - 1;
-            const x = xFor7(i);
-            const y = yFor(data7[i].count);
-            return <circle cx={x} cy={y} r="3" fill="rgba(16,185,129,0.95)" />;
+            const xPct = 97;
+            const yPct = 92 - ((data7[n7 - 1].count - yMin) / (yMax - yMin)) * 84;
+            return <circle cx={xPct} cy={yPct} r="1" fill="rgba(16,185,129,0.95)" />;
           })()}
-
-          {/* X axis labels */}
-          <text x={padL} y={H - 6} fontSize="9" fill="rgba(255,255,255,0.45)">
-            {fmt(firstDate7)}
-          </text>
-          <text x={x1} y={H - 6} textAnchor="end" fontSize="9" fill="rgba(255,255,255,0.45)">
-            {fmt(lastDate7)}
-          </text>
         </svg>
       </div>
     </section>
@@ -667,13 +647,6 @@ function RollingWorkoutChart({
 }
 
 function WeightLineChart({ data }: { data: { performed_on: string; weight: number }[] }) {
-  const W = 320;
-  const H = 180;
-  const padL = 32;
-  const padR = 10;
-  const padT = 10;
-  const padB = 22;
-
   const weights = data.map((d) => Number(d.weight)).filter((x) => Number.isFinite(x));
   const minW = Math.min(...weights);
   const maxW = Math.max(...weights);
@@ -681,23 +654,7 @@ function WeightLineChart({ data }: { data: { performed_on: string; weight: numbe
   const yMin = minW - spread * 0.08;
   const yMax = maxW + spread * 0.08;
 
-  const x0 = padL;
-  const x1 = W - padR;
-  const y0 = H - padB;
-  const y1 = padT;
-
   const n = data.length;
-
-  const xFor = (i: number) => (n === 1 ? x0 : x0 + (i * (x1 - x0)) / (n - 1));
-  const yFor = (w: number) => y0 - ((w - yMin) * (y0 - y1)) / (yMax - yMin);
-
-  const path = data
-    .map((d, i) => {
-      const x = xFor(i);
-      const y = yFor(Number(d.weight));
-      return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
-    .join(" ");
 
   const fmt = (iso: string) => {
     const m = Number(iso.slice(5, 7));
@@ -709,37 +666,44 @@ function WeightLineChart({ data }: { data: { performed_on: string; weight: numbe
   const lastDate = data[data.length - 1]?.performed_on ?? "";
 
   return (
-    <div className="w-full">
-      <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-black/30">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[200px]">
-          <text x={padL - 6} y={y1 + 10} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.55)">
-            {Math.round(yMax)}
-          </text>
-          <text x={padL - 6} y={y0} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.55)">
-            {Math.round(yMin)}
-          </text>
+    <div className="w-full h-full flex flex-col">
+      <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 flex-1 relative">
+        {/* Y axis labels - HTML positioned */}
+        <div className="absolute left-1 top-1 text-[9px] text-white/50">{Math.round(yMax)}</div>
+        <div className="absolute left-1 bottom-5 text-[9px] text-white/50">{Math.round(yMin)}</div>
 
-          <line x1={padL} y1={y0} x2={x1} y2={y0} stroke="rgba(255,255,255,0.10)" />
+        {/* X axis labels - HTML positioned */}
+        <div className="absolute left-7 bottom-1 text-[9px] text-white/45">{fmt(firstDate)}</div>
+        <div className="absolute right-2 bottom-1 text-[9px] text-white/45">{fmt(lastDate)}</div>
 
-          <path d={path} fill="none" stroke="rgba(16,185,129,0.95)" strokeWidth="2" />
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-[200px] md:h-full">
+          {/* Baseline */}
+          <line x1="8" y1="92" x2="97" y2="92" stroke="rgba(255,255,255,0.10)" />
 
+          {/* Weight line */}
+          <polyline
+            fill="none"
+            stroke="rgba(16,185,129,0.95)"
+            strokeWidth="0.6"
+            points={data
+              .map((d, i) => {
+                const xPct = 8 + (i / (n - 1)) * 89;
+                const yPct = 92 - ((Number(d.weight) - yMin) / (yMax - yMin)) * 84;
+                return `${xPct},${yPct}`;
+              })
+              .join(" ")}
+          />
+
+          {/* Latest point */}
           {(() => {
-            const i = n - 1;
-            const x = xFor(i);
-            const y = yFor(Number(data[i].weight));
-            return <circle cx={x} cy={y} r="3.5" fill="rgba(16,185,129,0.95)" />;
+            const xPct = 97;
+            const yPct = 92 - ((Number(data[n - 1].weight) - yMin) / (yMax - yMin)) * 84;
+            return <circle cx={xPct} cy={yPct} r="1" fill="rgba(16,185,129,0.95)" />;
           })()}
-
-          <text x={padL} y={H - 6} fontSize="10" fill="rgba(255,255,255,0.50)">
-            {fmt(firstDate)}
-          </text>
-          <text x={x1} y={H - 6} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.50)">
-            {fmt(lastDate)}
-          </text>
         </svg>
       </div>
 
-      <div className="mt-2 text-center text-xs text-white/50">
+      <div className="mt-1 text-center text-xs text-white/50 shrink-0">
         {n} points • {Math.round(minW)}–{Math.round(maxW)}
       </div>
     </div>
