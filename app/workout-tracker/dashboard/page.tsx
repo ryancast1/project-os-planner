@@ -119,12 +119,17 @@ export default function DashboardPage() {
   const [weightSeries, setWeightSeries] = useState<{ performed_on: string; weight: number }[]>([]);
   const [weightLoading, setWeightLoading] = useState(false);
 
-  // Matrix sizing - more compact for 4-column layout
-  const DATE_COL = 32;
-  const CELL = 18;
-  const SPACER = 6;
-  const matrixCols = MATRIX_COLS.map((c) =>
-    c.kind === "date" ? `${DATE_COL}px` : c.kind === "spacer" ? `${SPACER}px` : `${CELL}px`
+  // Matrix sizing - compact fixed sizes for desktop 4-column layout
+  const DATE_COL_DESKTOP = 32;
+  const CELL_DESKTOP = 18;
+  const SPACER_DESKTOP = 6;
+  const matrixColsDesktop = MATRIX_COLS.map((c) =>
+    c.kind === "date" ? `${DATE_COL_DESKTOP}px` : c.kind === "spacer" ? `${SPACER_DESKTOP}px` : `${CELL_DESKTOP}px`
+  ).join(" ");
+
+  // Matrix sizing - flexible for mobile (cells expand to fill width)
+  const matrixColsMobile = MATRIX_COLS.map((c) =>
+    c.kind === "date" ? "38px" : c.kind === "spacer" ? "8px" : "1fr"
   ).join(" ");
 
   useEffect(() => {
@@ -242,54 +247,57 @@ export default function DashboardPage() {
     return dayList.slice(0, 21);
   }, [dayList]);
 
-  const MatrixCard = (
-    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 md:h-[420px] md:flex md:flex-col md:items-center">
-      <div className="mt-1 md:flex-1 md:overflow-hidden md:flex md:flex-col w-fit">
-        <div className="grid gap-0 shrink-0" style={{ gridTemplateColumns: matrixCols }}>
+  const MatrixCardContent = (isMobile: boolean) => {
+    const cols = isMobile ? matrixColsMobile : matrixColsDesktop;
+    const cellH = isMobile ? "h-[22px]" : "h-[18px]";
+    const textSize = isMobile ? "text-[10px]" : "text-[9px]";
+
+    return (
+      <>
+        <div className="grid gap-0 shrink-0" style={{ gridTemplateColumns: cols }}>
           {MATRIX_COLS.map((c, i) => {
             if (c.kind === "date") {
               return (
-                <div key="date" className="h-[18px] px-0.5 flex items-center justify-center text-[9px] text-white/70">
+                <div key="date" className={`${cellH} px-0.5 flex items-center justify-center ${textSize} text-white/70`}>
                   Date
                 </div>
               );
             }
             if (c.kind === "spacer") return <div key={`sp-h-${i}`} className="py-1" />;
             return (
-              <div key={c.slug} className="py-1 text-[9px] text-white/70 text-center" title={c.slug}>
+              <div key={c.slug} className={`py-1 ${textSize} text-white/70 text-center`} title={c.slug}>
                 {c.label}
               </div>
             );
           })}
         </div>
 
-        <div className="mt-1 md:flex-1 md:overflow-y-auto">
+        <div className={isMobile ? "mt-1" : "mt-1 flex-1 overflow-y-auto"}>
           {dayListLimited.map((iso) => (
             <div
               key={iso}
               className={[
                 "grid gap-0",
-                // add a subtle week break above Mondays (Mon follows Sun), e.g. between 1/4 and 1/5
                 utcDateFromISO(iso).getUTCDay() === 0 && iso !== dayListLimited[0] ? "mt-1.5" : "mt-0",
               ].join(" ")}
-              style={{ gridTemplateColumns: matrixCols }}
+              style={{ gridTemplateColumns: cols }}
             >
               {MATRIX_COLS.map((c, i) => {
                 if (c.kind === "date") {
                   return (
-                    <div key={`d-${iso}`} className="h-[18px] px-0.5 flex items-center justify-center text-[9px] text-white/70">
+                    <div key={`d-${iso}`} className={`${cellH} px-0.5 flex items-center justify-center ${textSize} text-white/70`}>
                       {fmtMD(iso)}
                     </div>
                   );
                 }
-                if (c.kind === "spacer") return <div key={`sp-${iso}-${i}`} className="h-[18px]" />;
+                if (c.kind === "spacer") return <div key={`sp-${iso}-${i}`} className={cellH} />;
 
                 const filled = doneSet.has(`${iso}|${c.slug}`);
                 return (
                   <div
                     key={`${iso}-${c.slug}`}
                     className={[
-                      "h-[18px] border rounded-sm",
+                      `${cellH} border rounded-sm`,
                       filled ? "bg-emerald-500/80 border-emerald-400/60" : "bg-white/5 border-white/10",
                     ].join(" ")}
                   />
@@ -298,6 +306,19 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
+      </>
+    );
+  };
+
+  const MatrixCard = (
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 md:h-[420px] md:flex md:flex-col md:items-center">
+      {/* Mobile version */}
+      <div className="mt-1 md:hidden">
+        {MatrixCardContent(true)}
+      </div>
+      {/* Desktop version */}
+      <div className="hidden md:flex md:flex-1 md:overflow-hidden md:flex-col w-fit mt-1">
+        {MatrixCardContent(false)}
       </div>
     </section>
   );
