@@ -412,13 +412,16 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {dailyRows.map((r) => (
-                  <tr key={r.date} className="border-t border-white/5">
-                    <td className="px-3 py-2 text-left text-white/80">{isoToMDY(r.date)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-white/90">{r.t1}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-white/90">{r.t2}</td>
+                {dailyRows.map((r) => {
+                  const isZeroDay = r.t1 === 0 && r.t2 === 0;
+                  return (
+                  <tr key={r.date} className={`border-t border-white/5 ${isZeroDay ? "bg-emerald-500/20" : ""}`}>
+                    <td className={`px-3 py-2 text-left ${isZeroDay ? "text-emerald-300" : "text-white/80"}`}>{isoToMDY(r.date)}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${isZeroDay ? "text-emerald-300" : "text-white/90"}`}>{r.t1}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${isZeroDay ? "text-emerald-300" : "text-white/90"}`}>{r.t2}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

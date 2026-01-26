@@ -134,6 +134,7 @@ export default function HabitsPage() {
   const [gridLoading, setGridLoading] = useState(false);
   const [doneByDate, setDoneByDate] = useState<Record<string, Record<string, true>>>({});
   const [gymDoneByDate, setGymDoneByDate] = useState<Record<string, true>>({});
+  const [t2ZeroByDate, setT2ZeroByDate] = useState<Record<string, true>>({});
 
   // Add bar
   const [draftLabel, setDraftLabel] = useState("");
@@ -177,6 +178,7 @@ export default function HabitsPage() {
       if (activeHabits.length === 0) {
         setDoneByDate({});
         setGymDoneByDate({});
+        setT2ZeroByDate({});
         return;
       }
 
@@ -201,6 +203,13 @@ export default function HabitsPage() {
         .gte("performed_on", START_ISO)
         .lte("performed_on", todayIso);
 
+      // 3) trich_events for T2 column - fetch all events to count T2 per day
+      const trichRes = await supabase
+        .from("trich_events")
+        .select("occurred_on,trich")
+        .gte("occurred_on", START_ISO)
+        .lte("occurred_on", todayIso);
+
       if (!alive) return;
 
       if (logsRes.error) {
@@ -210,6 +219,11 @@ export default function HabitsPage() {
 
       if (workoutsRes.error) {
         console.warn(workoutsRes.error);
+        // don't fail the whole grid for this
+      }
+
+      if (trichRes.error) {
+        console.warn(trichRes.error);
         // don't fail the whole grid for this
       }
 
@@ -232,8 +246,35 @@ export default function HabitsPage() {
         }
       }
 
+      // Count T2 events per day
+      const t2CountByDate: Record<string, number> = {};
+      if (!trichRes.error) {
+        for (const r of (trichRes.data ?? []) as any[]) {
+          const iso = typeof r.occurred_on === "string" ? r.occurred_on : null;
+          const trich = Number(r.trich);
+          if (!iso || iso < START_ISO || iso > todayIso) continue;
+          if (trich === 2) {
+            t2CountByDate[iso] = (t2CountByDate[iso] ?? 0) + 1;
+          }
+        }
+      }
+
+      // Mark days with 0 T2 as "done" (green)
+      const nextT2Zero: Record<string, true> = {};
+      // For each date in dateRows, check if T2 count is 0
+      const d = new Date();
+      while (true) {
+        const iso = toISODate(d);
+        if (iso < START_ISO) break;
+        if (iso >= "2026-01-04" && iso <= todayIso && (t2CountByDate[iso] ?? 0) === 0) {
+          nextT2Zero[iso] = true;
+        }
+        d.setDate(d.getDate() - 1);
+      }
+
       setDoneByDate(nextDoneByDate);
       setGymDoneByDate(nextGymDone);
+      setT2ZeroByDate(nextT2Zero);
       setGridLoading(false);
     })();
 
@@ -532,11 +573,12 @@ export default function HabitsPage() {
                 <div
                   className="grid gap-0"
                   style={{
-                    gridTemplateColumns: `56px repeat(${activeHabits.length}, 28px)`,
+                    gridTemplateColumns: `56px 28px repeat(${activeHabits.length}, 28px)`,
                   }}
                 >
                   {/* Header */}
                   <div className="text-[11px] font-semibold text-neutral-400">Date</div>
+                  <div className="text-center text-[11px] font-semibold text-neutral-400">T2</div>
                   {activeHabits.map((h) => (
                     <div
                       key={h.id}
@@ -552,12 +594,24 @@ export default function HabitsPage() {
                     // dateRows are rendered from today downward (descending). Week breaks should appear
                     // between Sunday and Monday, which in descending order means inserting a gap after Monday.
                     const isMonday = dt.getDay() === 1;
+                    const t2Zero = !!t2ZeroByDate[iso];
 
                     return (
                       <div key={iso} className="contents">
                         <div className="pt-[2px] text-[11px] font-semibold text-neutral-400">
                           {fmtMD(iso)}
                         </div>
+
+                        {/* T2 column */}
+                        <div
+                          className={clsx(
+                            "h-7 w-7 rounded-lg border",
+                            "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
+                            t2Zero
+                              ? "border-emerald-200/30 bg-emerald-400/75"
+                              : "border-neutral-800 bg-neutral-950/60"
+                          )}
+                        />
 
                         {activeHabits.map((h) => {
                           const isGym = gymHabitId && h.id === gymHabitId;
@@ -582,6 +636,7 @@ export default function HabitsPage() {
                         {isMonday && iso !== dateRows[dateRows.length - 1] ? (
                           <>
                             <div className="h-2" />
+                            <div className="h-2" /> {/* T2 column gap */}
                             {activeHabits.map((h) => (
                               <div key={`gap-${iso}-${h.id}`} className="h-2" />
                             ))}

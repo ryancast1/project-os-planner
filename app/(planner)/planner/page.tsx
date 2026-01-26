@@ -3583,11 +3583,19 @@ const { data, error } = await supabase
     const patch: any = { status: nextStatus };
     patch.completed_at = nextDone ? new Date().toISOString() : null;
 
+    // When marking done, move to top of list by setting sort_order to min - 1
+    const task = tasks.find((t) => t.id === id);
+    if (nextDone && task?.scheduled_for) {
+      const dayTasks = tasksByDay[task.scheduled_for] ?? [];
+      const minOrder = dayTasks.length > 0 ? Math.min(...dayTasks.map((t) => t.sort_order ?? 0)) : 0;
+      patch.sort_order = minOrder - 1;
+    }
+
     const { error } = await supabase.from("tasks").update(patch).eq("id", id);
     if (error) return console.error(error);
 
     setTasks((p) =>
-      p.map((t) => (t.id === id ? ({ ...t, status: nextStatus, completed_at: patch.completed_at } as Task) : t))
+      p.map((t) => (t.id === id ? ({ ...t, status: nextStatus, completed_at: patch.completed_at, sort_order: patch.sort_order ?? t.sort_order } as Task) : t))
     );
   }
 
@@ -3700,21 +3708,31 @@ const { data, error } = await supabase
     const newStatus = item.status === "done" ? "active" : "done";
     const completed_at = newStatus === "done" ? new Date().toISOString() : null;
 
+    // When marking done, move to top of day's content list
+    let newDaySortOrder = item.day_sort_order;
+    if (newStatus === "done" && item.scheduled_for) {
+      const dayContent = unifiedContentByDay[item.scheduled_for] ?? [];
+      const minOrder = dayContent.length > 0
+        ? Math.min(...dayContent.map((e) => e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0)))
+        : 0;
+      newDaySortOrder = minOrder - 1;
+    }
+
     // Optimistic update
     setContentItems((p) =>
-      p.map((i) => (i.id === itemId ? { ...i, status: newStatus, completed_at } : i))
+      p.map((i) => (i.id === itemId ? { ...i, status: newStatus, completed_at, day_sort_order: newDaySortOrder } : i))
     );
 
     const { error } = await supabase
       .from("content_items")
-      .update({ status: newStatus, completed_at })
+      .update({ status: newStatus, completed_at, day_sort_order: newDaySortOrder })
       .eq("id", itemId);
 
     if (error) {
       console.warn("toggleScheduledContentDone", error);
       // Revert
       setContentItems((p) =>
-        p.map((i) => (i.id === itemId ? { ...i, status: item.status, completed_at: item.completed_at } : i))
+        p.map((i) => (i.id === itemId ? { ...i, status: item.status, completed_at: item.completed_at, day_sort_order: item.day_sort_order } : i))
       );
     }
   }
@@ -3727,21 +3745,31 @@ const { data, error } = await supabase
     const newStatus = session.status === "done" ? "open" : "done";
     const completed_at = newStatus === "done" ? new Date().toISOString() : null;
 
+    // When marking done, move to top of day's content list
+    let newDaySortOrder = session.day_sort_order;
+    if (newStatus === "done" && session.scheduled_for) {
+      const dayContent = unifiedContentByDay[session.scheduled_for] ?? [];
+      const minOrder = dayContent.length > 0
+        ? Math.min(...dayContent.map((e) => e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0)))
+        : 0;
+      newDaySortOrder = minOrder - 1;
+    }
+
     // Optimistic update
     setContentSessions((p) =>
-      p.map((s) => (s.id === sessionId ? { ...s, status: newStatus, completed_at } : s))
+      p.map((s) => (s.id === sessionId ? { ...s, status: newStatus, completed_at, day_sort_order: newDaySortOrder } : s))
     );
 
     const { error } = await supabase
       .from("content_sessions")
-      .update({ status: newStatus, completed_at })
+      .update({ status: newStatus, completed_at, day_sort_order: newDaySortOrder })
       .eq("id", sessionId);
 
     if (error) {
       console.warn("toggleContentSessionDone", error);
       // Revert
       setContentSessions((p) =>
-        p.map((s) => (s.id === sessionId ? { ...s, status: session.status, completed_at: session.completed_at } : s))
+        p.map((s) => (s.id === sessionId ? { ...s, status: session.status, completed_at: session.completed_at, day_sort_order: session.day_sort_order } : s))
       );
     }
   }

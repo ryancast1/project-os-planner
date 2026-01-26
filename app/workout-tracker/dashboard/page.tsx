@@ -242,10 +242,8 @@ export default function DashboardPage() {
 
   const todayISO = isoTodayInTZ(DASH_TZ);
 
-  // Limit dayList to 3 weeks (21 days) for the matrix card
-  const dayListLimited = useMemo(() => {
-    return dayList.slice(0, 21);
-  }, [dayList]);
+  // Use full dayList (today backwards to 1/1) - scrollable container will limit visible area
+  const dayListFull = dayList;
 
   const MatrixCardContent = (isMobile: boolean) => {
     const cols = isMobile ? matrixColsMobile : matrixColsDesktop;
@@ -273,12 +271,12 @@ export default function DashboardPage() {
         </div>
 
         <div className={isMobile ? "mt-1" : "mt-1 flex-1 overflow-y-auto"}>
-          {dayListLimited.map((iso) => (
+          {dayListFull.map((iso) => (
             <div
               key={iso}
               className={[
                 "grid gap-0",
-                utcDateFromISO(iso).getUTCDay() === 0 && iso !== dayListLimited[0] ? "mt-1.5" : "mt-0",
+                utcDateFromISO(iso).getUTCDay() === 0 && iso !== dayListFull[0] ? "mt-1.5" : "mt-0",
               ].join(" ")}
               style={{ gridTemplateColumns: cols }}
             >
@@ -451,6 +449,15 @@ export default function DashboardPage() {
     <main className="min-h-screen md:h-screen md:overflow-hidden bg-gradient-to-b from-black to-zinc-950 px-4 py-8 md:py-3 text-white">
       <div className="mx-auto w-full max-w-md md:max-w-7xl md:h-full md:flex md:flex-col">
         <div className="relative">
+          <Link
+            href="/"
+            className="absolute left-0 top-1/2 -translate-y-1/2 h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 active:scale-[0.97] transition"
+            aria-label="Home"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+              <path fillRule="evenodd" d="M9.293 2.293a1 1 0 0 1 1.414 0l7 7A1 1 0 0 1 17 11h-1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6H3a1 1 0 0 1-.707-1.707l7-7Z" clipRule="evenodd" />
+            </svg>
+          </Link>
           <h1 className="text-3xl md:text-2xl font-semibold tracking-tight text-center">Dashboard</h1>
           <Link
             href="/workout-tracker/dashboard/planner"
