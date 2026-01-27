@@ -1836,18 +1836,31 @@ function NotesModal({
   );
 }
 
+// Helper to convert time string to minutes
+function timeToMinutes(timeStr: string): number {
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+}
+
+// Helper to check if two time ranges overlap
+function timesOverlap(start1: number, end1: number, start2: number, end2: number): boolean {
+  return start1 < end2 && end1 > start2;
+}
+
 function ScheduleItemBlock({
   item,
   position,
   onOpenEditModal,
   onResize,
   pixelsPerHour,
+  siblingItems,
 }: {
   item: DayScheduleItem;
   position: { top: number; height: number };
   onOpenEditModal: () => void;
   onResize: (newEndTime: string) => void;
   pixelsPerHour: number;
+  siblingItems: DayScheduleItem[];
 }) {
   const [localHeight, setLocalHeight] = useState(position.height);
   const [isResizing, setIsResizing] = useState(false);
@@ -1868,6 +1881,24 @@ function ScheduleItemBlock({
     setIsResizing(true);
   };
 
+  // Calculate max height before hitting next item
+  const maxHeight = useMemo(() => {
+    const itemStartMinutes = timeToMinutes(item.starts_at);
+    // Find the next item that starts after this one
+    let nextStart = Infinity;
+    for (const sibling of siblingItems) {
+      const siblingStart = timeToMinutes(sibling.starts_at);
+      if (siblingStart > itemStartMinutes && siblingStart < nextStart) {
+        nextStart = siblingStart;
+      }
+    }
+    if (nextStart === Infinity) {
+      return Infinity; // No constraint
+    }
+    // Max height in pixels = (nextStart - itemStart) minutes * pixelsPerHour / 60
+    return ((nextStart - itemStartMinutes) / 60) * pixelsPerHour;
+  }, [item.starts_at, siblingItems, pixelsPerHour]);
+
   useEffect(() => {
     if (!isResizing) return;
 
@@ -1875,10 +1906,14 @@ function ScheduleItemBlock({
       if (!resizeRef.current) return;
       const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
       const deltaY = clientY - resizeRef.current.startY;
-      const newHeight = Math.max(pixelsPerHour / 4, resizeRef.current.startHeight + deltaY);
+      let newHeight = Math.max(pixelsPerHour / 4, resizeRef.current.startHeight + deltaY);
+      // Constrain to not overlap with next item
+      if (maxHeight !== Infinity) {
+        newHeight = Math.min(newHeight, maxHeight);
+      }
       const snapSize = pixelsPerHour / 4;
       const snappedHeight = Math.round(newHeight / snapSize) * snapSize;
-      setLocalHeight(snappedHeight);
+      setLocalHeight(Math.min(snappedHeight, maxHeight === Infinity ? snappedHeight : maxHeight));
     };
 
     const handleEnd = () => {
@@ -1904,7 +1939,7 @@ function ScheduleItemBlock({
       window.removeEventListener('touchend', handleEnd);
       window.removeEventListener('mouseup', handleEnd);
     };
-  }, [isResizing, localHeight, item.starts_at, onResize, pixelsPerHour]);
+  }, [isResizing, localHeight, item.starts_at, onResize, pixelsPerHour, maxHeight]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1942,7 +1977,7 @@ function ScheduleItemBlock({
       onTouchMove={handleTouchMove}
     >
       <div className="px-2 py-1">
-        <div className="text-sm text-neutral-100 truncate">{item.title}</div>
+        <div className="text-sm text-neutral-100 truncate text-center">{item.title}</div>
       </div>
 
       {/* Resize handle */}
@@ -2046,9 +2081,27 @@ function DayScheduleView({
 }) {
   const LEFT_START_HOUR = 7;
   const RIGHT_START_HOUR = 15;
-  const PIXELS_PER_HOUR = 80; // Taller layout
   const HOURS_PER_COLUMN = 8;
-  const COLUMN_HEIGHT = HOURS_PER_COLUMN * PIXELS_PER_HOUR;
+
+  // Dynamic height calculation
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    const updateHeight = () => {
+      if (containerRef.current) {
+        setContainerHeight(containerRef.current.clientHeight);
+      }
+    };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, [open]);
+
+  // Calculate pixels per hour to fill the available space
+  const PIXELS_PER_HOUR = containerHeight > 0 ? containerHeight / HOURS_PER_COLUMN : 80;
+  const COLUMN_HEIGHT = containerHeight > 0 ? containerHeight : HOURS_PER_COLUMN * 80;
 
   const leftHours = Array.from({ length: 8 }, (_, i) => LEFT_START_HOUR + i);
   const rightHours = Array.from({ length: 8 }, (_, i) => RIGHT_START_HOUR + i);
@@ -2062,9 +2115,46 @@ function DayScheduleView({
     return hour >= 15 && hour < 23;
   });
 
-  const [addingAt, setAddingAt] = useState<{ time: string; column: 'left' | 'right' } | null>(null);
+  const [addingAt, setAddingAt] = useState<{ time: string; column: 'left' | 'right'; duration: number } | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [editingItem, setEditingItem] = useState<DayScheduleItem | null>(null);
+
+  // Long-press + drag state for creating events
+  const [draggingNew, setDraggingNew] = useState<{
+    column: 'left' | 'right';
+    startY: number;
+    startTime: string;
+    startMinutes: number;
+    currentHeight: number;
+    maxHeight: number;
+  } | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const pendingDragRef = useRef<{
+    column: 'left' | 'right';
+    startY: number;
+    startTime: string;
+    startMinutes: number;
+    maxMinutes: number;
+  } | null>(null);
+
+  // Calculate "now" line position (captured at load time)
+  const now = useMemo(() => {
+    const d = new Date();
+    const h = d.getHours();
+    const m = d.getMinutes();
+    const totalMinutes = h * 60 + m;
+    // Determine which column and position
+    if (h >= LEFT_START_HOUR && h < RIGHT_START_HOUR) {
+      // Left column (7am-3pm)
+      const top = ((totalMinutes - LEFT_START_HOUR * 60) / 60) * PIXELS_PER_HOUR;
+      return { column: 'left' as const, top };
+    } else if (h >= RIGHT_START_HOUR && h < 23) {
+      // Right column (3pm-11pm)
+      const top = ((totalMinutes - RIGHT_START_HOUR * 60) / 60) * PIXELS_PER_HOUR;
+      return { column: 'right' as const, top };
+    }
+    return null; // Outside schedule hours
+  }, [PIXELS_PER_HOUR]);
 
   const getPosition = (startsAt: string, endsAt: string, columnStartHour: number) => {
     const [startH, startM] = startsAt.split(':').map(Number);
@@ -2084,20 +2174,140 @@ function DayScheduleView({
     return ((minutes - columnStartMinutes) / 60) * PIXELS_PER_HOUR;
   };
 
-  const handleColumnClick = (e: React.MouseEvent, column: 'left' | 'right') => {
-    if (addingAt) return;
+  // Calculate max available minutes from a given start time
+  const getMaxMinutes = (startMinutes: number, column: 'left' | 'right') => {
+    const columnItems = column === 'left' ? leftItems : rightItems;
+    const columnEndMinutes = column === 'left' ? RIGHT_START_HOUR * 60 : 23 * 60;
+
+    let nextItemStart = columnEndMinutes;
+    for (const existingItem of columnItems) {
+      const existingStart = timeToMinutes(existingItem.starts_at);
+      if (existingStart > startMinutes && existingStart < nextItemStart) {
+        nextItemStart = existingStart;
+      }
+    }
+    return nextItemStart - startMinutes;
+  };
+
+  // Check if a time overlaps with any existing item
+  const isTimeBlocked = (minutes: number, column: 'left' | 'right') => {
+    const columnItems = column === 'left' ? leftItems : rightItems;
+    for (const existingItem of columnItems) {
+      const existingStart = timeToMinutes(existingItem.starts_at);
+      const existingEnd = timeToMinutes(existingItem.ends_at);
+      if (minutes >= existingStart && minutes < existingEnd) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const handlePointerDown = (e: React.PointerEvent, column: 'left' | 'right') => {
+    if (addingAt || draggingNew) return;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const columnStartHour = column === 'left' ? LEFT_START_HOUR : RIGHT_START_HOUR;
     const minutesFromColumnStart = Math.floor((y / PIXELS_PER_HOUR) * 60);
     const snappedMinutes = Math.floor(minutesFromColumnStart / 15) * 15;
     const totalMinutes = columnStartHour * 60 + snappedMinutes;
+
+    // Check if this position overlaps with an existing item
+    if (isTimeBlocked(totalMinutes, column)) {
+      return;
+    }
+
+    const maxMinutes = getMaxMinutes(totalMinutes, column);
+    if (maxMinutes < 15) {
+      return; // Not enough space
+    }
+
     const hours = Math.floor(totalMinutes / 60);
     const mins = totalMinutes % 60;
     const timeStr = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`;
-    setAddingAt({ time: timeStr, column });
-    setInputValue("");
+
+    // Store pending drag info
+    pendingDragRef.current = {
+      column,
+      startY: y,
+      startTime: timeStr,
+      startMinutes: totalMinutes,
+      maxMinutes,
+    };
+
+    // Start long-press timer
+    longPressTimerRef.current = window.setTimeout(() => {
+      if (pendingDragRef.current) {
+        const { column, startY, startTime, startMinutes, maxMinutes } = pendingDragRef.current;
+        const maxHeight = (maxMinutes / 60) * PIXELS_PER_HOUR;
+        setDraggingNew({
+          column,
+          startY,
+          startTime,
+          startMinutes,
+          currentHeight: PIXELS_PER_HOUR / 4, // Start with 15 min height
+          maxHeight,
+        });
+      }
+    }, 500);
   };
+
+  const handlePointerMove = (e: React.PointerEvent, column: 'left' | 'right') => {
+    if (!draggingNew || draggingNew.column !== column) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const deltaY = y - draggingNew.startY;
+
+    // Calculate new height (minimum 15 min, snapped to 15 min increments)
+    const minHeight = PIXELS_PER_HOUR / 4;
+    let newHeight = Math.max(minHeight, deltaY);
+    newHeight = Math.min(newHeight, draggingNew.maxHeight);
+    const snapSize = PIXELS_PER_HOUR / 4;
+    const snappedHeight = Math.round(newHeight / snapSize) * snapSize;
+
+    setDraggingNew(prev => prev ? { ...prev, currentHeight: Math.max(minHeight, snappedHeight) } : null);
+  };
+
+  const handlePointerUp = () => {
+    // Clear long-press timer
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    // If we were dragging, finalize the event
+    if (draggingNew) {
+      const durationMinutes = Math.round((draggingNew.currentHeight / PIXELS_PER_HOUR) * 60);
+      setAddingAt({
+        time: draggingNew.startTime,
+        column: draggingNew.column,
+        duration: durationMinutes,
+      });
+      setInputValue("");
+      setDraggingNew(null);
+    }
+
+    pendingDragRef.current = null;
+  };
+
+  const handlePointerCancel = () => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    setDraggingNew(null);
+    pendingDragRef.current = null;
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
 
   const formatHour = (h: number) => {
     if (h === 12) return '12';
@@ -2121,16 +2331,16 @@ function DayScheduleView({
       </div>
 
       {/* Two-column grid */}
-      <div className="flex-1 flex overflow-y-auto overflow-x-hidden">
+      <div ref={containerRef} className="flex-1 flex overflow-hidden">
         {/* Left Column: 7am-3pm */}
-        <div className="flex-1 flex border-r border-neutral-700">
-          {/* Time labels on left side - numbers just below lines, except bottom 3 which is above */}
+        <div className="flex-1 flex">
+          {/* Time labels on left side */}
           <div className="w-8 shrink-0 relative" style={{ height: COLUMN_HEIGHT }}>
             {leftHours.map((h, i) => (
               <div
                 key={h}
                 className="absolute right-1 text-xs text-neutral-500 leading-none"
-                style={{ top: i * PIXELS_PER_HOUR + 2 }}
+                style={{ top: i === 0 ? i * PIXELS_PER_HOUR + 2 : i * PIXELS_PER_HOUR - 5 }}
               >
                 {formatHour(h)}
               </div>
@@ -2145,9 +2355,13 @@ function DayScheduleView({
           </div>
           {/* Grid area */}
           <div
-            className="flex-1 relative"
+            className="flex-1 relative border-r border-neutral-700 touch-none"
             style={{ height: COLUMN_HEIGHT }}
-            onClick={(e) => handleColumnClick(e, 'left')}
+            onPointerDown={(e) => handlePointerDown(e, 'left')}
+            onPointerMove={(e) => handlePointerMove(e, 'left')}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onPointerLeave={handlePointerCancel}
           >
             {leftHours.map((h, i) => (
               <div key={h} className="absolute left-0 right-0 border-t border-neutral-800" style={{ top: i * PIXELS_PER_HOUR }} />
@@ -2162,13 +2376,31 @@ function DayScheduleView({
                 onOpenEditModal={() => setEditingItem(item)}
                 onResize={(newEnd) => onUpdateItem(item.id, { ends_at: newEnd })}
                 pixelsPerHour={PIXELS_PER_HOUR}
+                siblingItems={leftItems.filter(i => i.id !== item.id)}
               />
             ))}
+            {/* Now line */}
+            {now?.column === 'left' && (
+              <div
+                className="absolute left-0 right-0 border-t border-red-500 pointer-events-none z-10"
+                style={{ top: now.top }}
+              />
+            )}
+            {/* Drag preview */}
+            {draggingNew?.column === 'left' && (
+              <div
+                className="absolute left-1 right-1 bg-blue-500/30 border border-blue-400 rounded pointer-events-none z-20"
+                style={{
+                  top: getPositionForTime(draggingNew.startTime, LEFT_START_HOUR),
+                  height: draggingNew.currentHeight,
+                }}
+              />
+            )}
             {addingAt?.column === 'left' && (
               <div
                 className="absolute left-1 right-1 bg-neutral-900 border border-neutral-700 rounded z-20 shadow-xl"
-                style={{ top: getPositionForTime(addingAt.time, LEFT_START_HOUR), height: PIXELS_PER_HOUR / 4 }}
-                onClick={(e) => e.stopPropagation()}
+                style={{ top: getPositionForTime(addingAt.time, LEFT_START_HOUR), height: (addingAt.duration / 60) * PIXELS_PER_HOUR }}
+                onPointerDown={(e) => e.stopPropagation()}
               >
                 <input
                   autoFocus
@@ -2177,7 +2409,7 @@ function DayScheduleView({
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && inputValue.trim()) {
                       const [h, m] = addingAt.time.split(':').map(Number);
-                      const totalMins = h * 60 + m + 30;
+                      const totalMins = h * 60 + m + addingAt.duration;
                       const endH = Math.floor(totalMins / 60);
                       const endM = totalMins % 60;
                       const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
@@ -2189,7 +2421,7 @@ function DayScheduleView({
                   }}
                   onBlur={() => { setAddingAt(null); setInputValue(""); }}
                   placeholder="Event title..."
-                  className="w-full h-full px-2 bg-transparent text-neutral-100 outline-none text-sm"
+                  className="w-full h-full px-2 bg-transparent text-neutral-100 outline-none text-[16px] text-center"
                 />
               </div>
             )}
@@ -2200,9 +2432,13 @@ function DayScheduleView({
         <div className="flex-1 flex">
           {/* Grid area */}
           <div
-            className="flex-1 relative"
+            className="flex-1 relative touch-none"
             style={{ height: COLUMN_HEIGHT }}
-            onClick={(e) => handleColumnClick(e, 'right')}
+            onPointerDown={(e) => handlePointerDown(e, 'right')}
+            onPointerMove={(e) => handlePointerMove(e, 'right')}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onPointerLeave={handlePointerCancel}
           >
             {rightHours.map((h, i) => (
               <div key={h} className="absolute left-0 right-0 border-t border-neutral-800" style={{ top: i * PIXELS_PER_HOUR }} />
@@ -2217,13 +2453,31 @@ function DayScheduleView({
                 onOpenEditModal={() => setEditingItem(item)}
                 onResize={(newEnd) => onUpdateItem(item.id, { ends_at: newEnd })}
                 pixelsPerHour={PIXELS_PER_HOUR}
+                siblingItems={rightItems.filter(i => i.id !== item.id)}
               />
             ))}
+            {/* Now line */}
+            {now?.column === 'right' && (
+              <div
+                className="absolute left-0 right-0 border-t border-red-500 pointer-events-none z-10"
+                style={{ top: now.top }}
+              />
+            )}
+            {/* Drag preview */}
+            {draggingNew?.column === 'right' && (
+              <div
+                className="absolute left-1 right-1 bg-blue-500/30 border border-blue-400 rounded pointer-events-none z-20"
+                style={{
+                  top: getPositionForTime(draggingNew.startTime, RIGHT_START_HOUR),
+                  height: draggingNew.currentHeight,
+                }}
+              />
+            )}
             {addingAt?.column === 'right' && (
               <div
                 className="absolute left-1 right-1 bg-neutral-900 border border-neutral-700 rounded z-20 shadow-xl"
-                style={{ top: getPositionForTime(addingAt.time, RIGHT_START_HOUR), height: PIXELS_PER_HOUR / 4 }}
-                onClick={(e) => e.stopPropagation()}
+                style={{ top: getPositionForTime(addingAt.time, RIGHT_START_HOUR), height: (addingAt.duration / 60) * PIXELS_PER_HOUR }}
+                onPointerDown={(e) => e.stopPropagation()}
               >
                 <input
                   autoFocus
@@ -2232,7 +2486,7 @@ function DayScheduleView({
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && inputValue.trim()) {
                       const [h, m] = addingAt.time.split(':').map(Number);
-                      const totalMins = h * 60 + m + 30;
+                      const totalMins = h * 60 + m + addingAt.duration;
                       const endH = Math.floor(totalMins / 60);
                       const endM = totalMins % 60;
                       const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
@@ -2244,18 +2498,18 @@ function DayScheduleView({
                   }}
                   onBlur={() => { setAddingAt(null); setInputValue(""); }}
                   placeholder="Event title..."
-                  className="w-full h-full px-2 bg-transparent text-neutral-100 outline-none text-sm"
+                  className="w-full h-full px-2 bg-transparent text-neutral-100 outline-none text-[16px] text-center"
                 />
               </div>
             )}
           </div>
-          {/* Time labels on right side - numbers just below lines, except bottom 11 which is above */}
+          {/* Time labels on right side */}
           <div className="w-8 shrink-0 relative" style={{ height: COLUMN_HEIGHT }}>
             {rightHours.map((h, i) => (
               <div
                 key={h}
                 className="absolute left-1 text-xs text-neutral-500 leading-none"
-                style={{ top: i * PIXELS_PER_HOUR + 2 }}
+                style={{ top: i === 0 ? i * PIXELS_PER_HOUR + 2 : i * PIXELS_PER_HOUR - 5 }}
               >
                 {formatHour(h)}
               </div>
