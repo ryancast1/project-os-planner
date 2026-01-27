@@ -1854,6 +1854,7 @@ function ScheduleItemBlock({
   onResize,
   pixelsPerHour,
   siblingItems,
+  column,
 }: {
   item: DayScheduleItem;
   position: { top: number; height: number };
@@ -1861,6 +1862,7 @@ function ScheduleItemBlock({
   onResize: (newEndTime: string) => void;
   pixelsPerHour: number;
   siblingItems: DayScheduleItem[];
+  column: 'left' | 'right';
 }) {
   const [localHeight, setLocalHeight] = useState(position.height);
   const [isResizing, setIsResizing] = useState(false);
@@ -1969,7 +1971,9 @@ function ScheduleItemBlock({
 
   return (
     <div
-      className="absolute left-1 right-1 rounded-lg bg-neutral-800 border-l-4 border-blue-400 overflow-hidden select-none"
+      className={`absolute left-1 right-1 rounded-lg bg-neutral-800 overflow-hidden select-none ${
+        column === 'left' ? 'border-l-4 border-green-400' : 'border-r-4 border-green-400'
+      }`}
       style={{ top: position.top, height: localHeight, minHeight: pixelsPerHour / 4 }}
       onContextMenu={handleContextMenu}
       onTouchStart={handleTouchStart}
@@ -2137,9 +2141,14 @@ function DayScheduleView({
     maxMinutes: number;
   } | null>(null);
 
-  // Calculate "now" line position (captured at load time)
+  // Calculate "now" line position (only shown on today's schedule)
   const now = useMemo(() => {
     const d = new Date();
+    // Check if the schedule view date is today
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (date !== todayStr) {
+      return null; // Only show "now" line on today's schedule
+    }
     const h = d.getHours();
     const m = d.getMinutes();
     const totalMinutes = h * 60 + m;
@@ -2154,7 +2163,7 @@ function DayScheduleView({
       return { column: 'right' as const, top };
     }
     return null; // Outside schedule hours
-  }, [PIXELS_PER_HOUR]);
+  }, [PIXELS_PER_HOUR, date]);
 
   const getPosition = (startsAt: string, endsAt: string, columnStartHour: number) => {
     const [startH, startM] = startsAt.split(':').map(Number);
@@ -2377,6 +2386,7 @@ function DayScheduleView({
                 onResize={(newEnd) => onUpdateItem(item.id, { ends_at: newEnd })}
                 pixelsPerHour={PIXELS_PER_HOUR}
                 siblingItems={leftItems.filter(i => i.id !== item.id)}
+                column="left"
               />
             ))}
             {/* Now line */}
@@ -2389,7 +2399,7 @@ function DayScheduleView({
             {/* Drag preview */}
             {draggingNew?.column === 'left' && (
               <div
-                className="absolute left-1 right-1 bg-blue-500/30 border border-blue-400 rounded pointer-events-none z-20"
+                className="absolute left-1 right-1 bg-green-500/30 border border-green-400 rounded pointer-events-none z-20"
                 style={{
                   top: getPositionForTime(draggingNew.startTime, LEFT_START_HOUR),
                   height: draggingNew.currentHeight,
@@ -2454,6 +2464,7 @@ function DayScheduleView({
                 onResize={(newEnd) => onUpdateItem(item.id, { ends_at: newEnd })}
                 pixelsPerHour={PIXELS_PER_HOUR}
                 siblingItems={rightItems.filter(i => i.id !== item.id)}
+                column="right"
               />
             ))}
             {/* Now line */}
@@ -2466,7 +2477,7 @@ function DayScheduleView({
             {/* Drag preview */}
             {draggingNew?.column === 'right' && (
               <div
-                className="absolute left-1 right-1 bg-blue-500/30 border border-blue-400 rounded pointer-events-none z-20"
+                className="absolute left-1 right-1 bg-green-500/30 border border-green-400 rounded pointer-events-none z-20"
                 style={{
                   top: getPositionForTime(draggingNew.startTime, RIGHT_START_HOUR),
                   height: draggingNew.currentHeight,
@@ -5453,12 +5464,12 @@ const { error } = await supabase
   )}
 >
 <div className="flex min-w-0 gap-1.5 overflow-x-auto">                {([
+                  ["movies", "Movies"],
                   ["cook", "Cook"],
                   ["watch", "Watch"],
                   ["listen", "Listen"],
                   ["read", "Read"],
                   ["city", "City"],
-                  ["movies", "Movies"],
                 ] as const).map(([k, label]) => {
                   // Use new content system count
                   const count = k === "movies" ? movieItems.length : (contentItemsByCategory[k]?.length ?? 0);
@@ -5523,8 +5534,8 @@ const { error } = await supabase
                                   className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-neutral-800/30 transition"
                                   onClick={() => setMovieDropdownId(showDropdown ? null : m.id)}
                                 >
-                                  <div className="min-w-0 flex-1 truncate text-base text-neutral-200">{m.title}</div>
-                                  <div className="flex items-center gap-1 shrink-0">
+                                  <div className="min-w-0 flex-1 truncate text-sm text-neutral-200">{m.title}</div>
+                                  <div className="flex items-center gap-0.5 shrink-0">
                                     <button
                                       type="button"
                                       aria-label="Move up"
@@ -5532,7 +5543,7 @@ const { error } = await supabase
                                         e.stopPropagation();
                                         moveMoviePriority(m.id, "up");
                                       }}
-                                      className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg border border-neutral-700 bg-neutral-800/50 grid place-items-center text-[12px] sm:text-[13px] text-neutral-300 hover:bg-neutral-700/50 active:scale-[0.98] transition"
+                                      className="h-5 w-5 rounded border border-neutral-700 bg-neutral-800/50 grid place-items-center text-[10px] text-neutral-300 hover:bg-neutral-700/50 active:scale-[0.98] transition"
                                     >
                                       ▲
                                     </button>
@@ -5543,7 +5554,7 @@ const { error } = await supabase
                                         e.stopPropagation();
                                         moveMoviePriority(m.id, "down");
                                       }}
-                                      className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg border border-neutral-700 bg-neutral-800/50 grid place-items-center text-[12px] sm:text-[13px] text-neutral-300 hover:bg-neutral-700/50 active:scale-[0.98] transition"
+                                      className="h-5 w-5 rounded border border-neutral-700 bg-neutral-800/50 grid place-items-center text-[10px] text-neutral-300 hover:bg-neutral-700/50 active:scale-[0.98] transition"
                                     >
                                       ▼
                                     </button>
@@ -5554,7 +5565,7 @@ const { error } = await supabase
                                         e.stopPropagation();
                                         openWatchedModal(m.id);
                                       }}
-                                      className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl border border-neutral-700 bg-neutral-800/50 grid place-items-center text-neutral-300 hover:bg-neutral-700/50 active:scale-[0.98] transition"
+                                      className="h-5 w-5 rounded border border-neutral-700 bg-neutral-800/50 grid place-items-center text-[10px] text-neutral-300 hover:bg-neutral-700/50 active:scale-[0.98] transition"
                                     >
                                       ✓
                                     </button>

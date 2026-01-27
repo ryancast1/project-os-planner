@@ -395,7 +395,7 @@ export default function DashboardPage() {
         <select
           value={weightSlug}
           onChange={(e) => setWeightSlug(e.target.value)}
-          className="h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-white text-sm"
+          className="h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-white text-[16px] sm:text-sm"
         >
           {WEIGHT_WORKOUTS.map((w) => (
             <option key={w.slug} value={w.slug}>

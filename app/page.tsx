@@ -4,9 +4,9 @@ import Image from "next/image";
 export default function HomePage() {
   const iconTiles: { href: string; title: string; icon: string }[] = [
     { href: "/planner", title: "Planner", icon: "/icons/planner.png" },
-    { href: "/database", title: "Database", icon: "/icons/database.png" },
-    { href: "/movie-tracker", title: "Movie Tracker", icon: "/icons/movie.png" },
     { href: "/workout-tracker", title: "Workout Tracker", icon: "/icons/workout.png" },
+    { href: "/movie-tracker", title: "Movie Tracker", icon: "/icons/movie.png" },
+    { href: "/database", title: "Database", icon: "/icons/database.png" },
     { href: "/trich", title: "Trich Tracker", icon: "/icons/trich.png" },
     { href: "/cc", title: "Cocktail Chatter", icon: "/icons/cc.png" },
     { href: "/packing", title: "Packing", icon: "/icons/packing.png" },
