@@ -69,6 +69,16 @@ type HabitLog = {
 
 type ItemType = "task" | "plan" | "focus";
 
+type DayScheduleItem = {
+  id: string;
+  user_id: string;
+  scheduled_date: string; // YYYY-MM-DD
+  title: string;
+  starts_at: string; // HH:MM:SS (time only)
+  ends_at: string;   // HH:MM:SS (time only)
+  created_at: string;
+  updated_at: string;
+};
 
 type DrawerWindow = "thisWeek" | "thisWeekend" | "nextWeek" | "nextWeekend" | "open";
 
@@ -1826,6 +1836,454 @@ function NotesModal({
   );
 }
 
+function ScheduleItemBlock({
+  item,
+  position,
+  onOpenEditModal,
+  onResize,
+  pixelsPerHour,
+}: {
+  item: DayScheduleItem;
+  position: { top: number; height: number };
+  onOpenEditModal: () => void;
+  onResize: (newEndTime: string) => void;
+  pixelsPerHour: number;
+}) {
+  const [localHeight, setLocalHeight] = useState(position.height);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isResizing) {
+      setLocalHeight(position.height);
+    }
+  }, [position.height, isResizing]);
+
+  const handleResizeStart = (e: React.TouchEvent | React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    resizeRef.current = { startY: clientY, startHeight: localHeight };
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMove = (e: TouchEvent | MouseEvent) => {
+      if (!resizeRef.current) return;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      const deltaY = clientY - resizeRef.current.startY;
+      const newHeight = Math.max(pixelsPerHour / 4, resizeRef.current.startHeight + deltaY);
+      const snapSize = pixelsPerHour / 4;
+      const snappedHeight = Math.round(newHeight / snapSize) * snapSize;
+      setLocalHeight(snappedHeight);
+    };
+
+    const handleEnd = () => {
+      if (!resizeRef.current) return;
+      const durationMinutes = (localHeight / pixelsPerHour) * 60;
+      const [startH, startM] = item.starts_at.split(':').map(Number);
+      const endMinutes = startH * 60 + startM + durationMinutes;
+      const endH = Math.floor(endMinutes / 60);
+      const endM = endMinutes % 60;
+      const newEndTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
+      onResize(newEndTime);
+      resizeRef.current = null;
+      setIsResizing(false);
+    };
+
+    window.addEventListener('touchmove', handleMove, { passive: false });
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('touchend', handleEnd);
+    window.addEventListener('mouseup', handleEnd);
+    return () => {
+      window.removeEventListener('touchmove', handleMove);
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('touchend', handleEnd);
+      window.removeEventListener('mouseup', handleEnd);
+    };
+  }, [isResizing, localHeight, item.starts_at, onResize, pixelsPerHour]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onOpenEditModal();
+  };
+
+  const handleTouchStart = () => {
+    longPressTimerRef.current = window.setTimeout(() => {
+      onOpenEditModal();
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleTouchMove = () => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  return (
+    <div
+      className="absolute left-1 right-1 rounded-lg bg-neutral-800 border-l-4 border-blue-400 overflow-hidden select-none"
+      style={{ top: position.top, height: localHeight, minHeight: pixelsPerHour / 4 }}
+      onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
+    >
+      <div className="px-2 py-1">
+        <div className="text-sm text-neutral-100 truncate">{item.title}</div>
+      </div>
+
+      {/* Resize handle */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize touch-none bg-gradient-to-t from-neutral-700/40"
+        onTouchStart={handleResizeStart}
+        onMouseDown={handleResizeStart}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
+function ScheduleEditModal({
+  item,
+  onSave,
+  onDelete,
+  onClose,
+}: {
+  item: DayScheduleItem;
+  onSave: (title: string) => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState(item.title);
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm rounded-2xl border border-neutral-700 bg-neutral-900 p-4 shadow-2xl">
+        <div className="mb-3 text-lg font-semibold text-neutral-100">Edit Item</div>
+        <input
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && title.trim()) {
+              onSave(title.trim());
+              onClose();
+            }
+            if (e.key === 'Escape') onClose();
+          }}
+          className="w-full rounded-xl border border-neutral-700 bg-neutral-800 px-3 py-2 text-neutral-100 outline-none focus:border-neutral-500"
+          placeholder="Event title..."
+        />
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              onDelete();
+              onClose();
+            }}
+            className="rounded-xl border border-red-700 px-4 py-2 text-sm font-semibold text-red-400 hover:bg-red-900/30"
+          >
+            Delete
+          </button>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-neutral-700 px-4 py-2 text-sm font-semibold text-neutral-300 hover:bg-neutral-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (title.trim()) {
+                onSave(title.trim());
+                onClose();
+              }
+            }}
+            className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DayScheduleView({
+  open,
+  date,
+  dateLabel,
+  items,
+  onClose,
+  onCreateItem,
+  onUpdateItem,
+  onDeleteItem,
+}: {
+  open: boolean;
+  date: string;
+  dateLabel: string;
+  items: DayScheduleItem[];
+  onClose: () => void;
+  onCreateItem: (item: { title: string; starts_at: string; ends_at: string }) => Promise<void>;
+  onUpdateItem: (id: string, updates: Partial<DayScheduleItem>) => Promise<void>;
+  onDeleteItem: (id: string) => Promise<void>;
+}) {
+  const LEFT_START_HOUR = 7;
+  const RIGHT_START_HOUR = 15;
+  const PIXELS_PER_HOUR = 80; // Taller layout
+  const HOURS_PER_COLUMN = 8;
+  const COLUMN_HEIGHT = HOURS_PER_COLUMN * PIXELS_PER_HOUR;
+
+  const leftHours = Array.from({ length: 8 }, (_, i) => LEFT_START_HOUR + i);
+  const rightHours = Array.from({ length: 8 }, (_, i) => RIGHT_START_HOUR + i);
+
+  const leftItems = items.filter(item => {
+    const hour = parseInt(item.starts_at.split(':')[0]);
+    return hour >= 7 && hour < 15;
+  });
+  const rightItems = items.filter(item => {
+    const hour = parseInt(item.starts_at.split(':')[0]);
+    return hour >= 15 && hour < 23;
+  });
+
+  const [addingAt, setAddingAt] = useState<{ time: string; column: 'left' | 'right' } | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const [editingItem, setEditingItem] = useState<DayScheduleItem | null>(null);
+
+  const getPosition = (startsAt: string, endsAt: string, columnStartHour: number) => {
+    const [startH, startM] = startsAt.split(':').map(Number);
+    const [endH, endM] = endsAt.split(':').map(Number);
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    const columnStartMinutes = columnStartHour * 60;
+    const top = ((startMinutes - columnStartMinutes) / 60) * PIXELS_PER_HOUR;
+    const height = Math.max(PIXELS_PER_HOUR / 4, ((endMinutes - startMinutes) / 60) * PIXELS_PER_HOUR);
+    return { top, height };
+  };
+
+  const getPositionForTime = (timeStr: string, columnStartHour: number) => {
+    const [h, m] = timeStr.split(':').map(Number);
+    const minutes = h * 60 + m;
+    const columnStartMinutes = columnStartHour * 60;
+    return ((minutes - columnStartMinutes) / 60) * PIXELS_PER_HOUR;
+  };
+
+  const handleColumnClick = (e: React.MouseEvent, column: 'left' | 'right') => {
+    if (addingAt) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const columnStartHour = column === 'left' ? LEFT_START_HOUR : RIGHT_START_HOUR;
+    const minutesFromColumnStart = Math.floor((y / PIXELS_PER_HOUR) * 60);
+    const snappedMinutes = Math.floor(minutesFromColumnStart / 15) * 15;
+    const totalMinutes = columnStartHour * 60 + snappedMinutes;
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    const timeStr = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`;
+    setAddingAt({ time: timeStr, column });
+    setInputValue("");
+  };
+
+  const formatHour = (h: number) => {
+    if (h === 12) return '12';
+    if (h < 12) return `${h}`;
+    return `${h - 12}`;
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-neutral-950 flex flex-col">
+      {/* Header */}
+      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-neutral-800">
+        <div>
+          <div className="text-lg font-semibold text-neutral-100">{dateLabel}</div>
+          <div className="text-xs text-neutral-400">
+            {date ? new Date(date + 'T00:00:00').toLocaleDateString(undefined, { month: 'long', day: 'numeric' }) : ''}
+          </div>
+        </div>
+        <button onClick={onClose} className="text-neutral-400 hover:text-neutral-200 text-2xl p-2">×</button>
+      </div>
+
+      {/* Two-column grid */}
+      <div className="flex-1 flex overflow-y-auto overflow-x-hidden">
+        {/* Left Column: 7am-3pm */}
+        <div className="flex-1 flex border-r border-neutral-700">
+          {/* Time labels on left side - numbers just below lines, except bottom 3 which is above */}
+          <div className="w-8 shrink-0 relative" style={{ height: COLUMN_HEIGHT }}>
+            {leftHours.map((h, i) => (
+              <div
+                key={h}
+                className="absolute right-1 text-xs text-neutral-500 leading-none"
+                style={{ top: i * PIXELS_PER_HOUR + 2 }}
+              >
+                {formatHour(h)}
+              </div>
+            ))}
+            {/* Bottom label: 3 - positioned above the line */}
+            <div
+              className="absolute right-1 text-xs text-neutral-500 leading-none"
+              style={{ top: COLUMN_HEIGHT - 12 }}
+            >
+              3
+            </div>
+          </div>
+          {/* Grid area */}
+          <div
+            className="flex-1 relative"
+            style={{ height: COLUMN_HEIGHT }}
+            onClick={(e) => handleColumnClick(e, 'left')}
+          >
+            {leftHours.map((h, i) => (
+              <div key={h} className="absolute left-0 right-0 border-t border-neutral-800" style={{ top: i * PIXELS_PER_HOUR }} />
+            ))}
+            {/* Bottom line */}
+            <div className="absolute left-0 right-0 border-t border-neutral-800" style={{ top: COLUMN_HEIGHT }} />
+            {leftItems.map(item => (
+              <ScheduleItemBlock
+                key={item.id}
+                item={item}
+                position={getPosition(item.starts_at, item.ends_at, LEFT_START_HOUR)}
+                onOpenEditModal={() => setEditingItem(item)}
+                onResize={(newEnd) => onUpdateItem(item.id, { ends_at: newEnd })}
+                pixelsPerHour={PIXELS_PER_HOUR}
+              />
+            ))}
+            {addingAt?.column === 'left' && (
+              <div
+                className="absolute left-1 right-1 bg-neutral-900 border border-neutral-700 rounded z-20 shadow-xl"
+                style={{ top: getPositionForTime(addingAt.time, LEFT_START_HOUR), height: PIXELS_PER_HOUR / 4 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  autoFocus
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && inputValue.trim()) {
+                      const [h, m] = addingAt.time.split(':').map(Number);
+                      const totalMins = h * 60 + m + 30;
+                      const endH = Math.floor(totalMins / 60);
+                      const endM = totalMins % 60;
+                      const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
+                      onCreateItem({ title: inputValue.trim(), starts_at: addingAt.time, ends_at: endTime });
+                      setAddingAt(null);
+                      setInputValue("");
+                    }
+                    if (e.key === 'Escape') { setAddingAt(null); setInputValue(""); }
+                  }}
+                  onBlur={() => { setAddingAt(null); setInputValue(""); }}
+                  placeholder="Event title..."
+                  className="w-full h-full px-2 bg-transparent text-neutral-100 outline-none text-sm"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: 3pm-11pm */}
+        <div className="flex-1 flex">
+          {/* Grid area */}
+          <div
+            className="flex-1 relative"
+            style={{ height: COLUMN_HEIGHT }}
+            onClick={(e) => handleColumnClick(e, 'right')}
+          >
+            {rightHours.map((h, i) => (
+              <div key={h} className="absolute left-0 right-0 border-t border-neutral-800" style={{ top: i * PIXELS_PER_HOUR }} />
+            ))}
+            {/* Bottom line */}
+            <div className="absolute left-0 right-0 border-t border-neutral-800" style={{ top: COLUMN_HEIGHT }} />
+            {rightItems.map(item => (
+              <ScheduleItemBlock
+                key={item.id}
+                item={item}
+                position={getPosition(item.starts_at, item.ends_at, RIGHT_START_HOUR)}
+                onOpenEditModal={() => setEditingItem(item)}
+                onResize={(newEnd) => onUpdateItem(item.id, { ends_at: newEnd })}
+                pixelsPerHour={PIXELS_PER_HOUR}
+              />
+            ))}
+            {addingAt?.column === 'right' && (
+              <div
+                className="absolute left-1 right-1 bg-neutral-900 border border-neutral-700 rounded z-20 shadow-xl"
+                style={{ top: getPositionForTime(addingAt.time, RIGHT_START_HOUR), height: PIXELS_PER_HOUR / 4 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  autoFocus
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && inputValue.trim()) {
+                      const [h, m] = addingAt.time.split(':').map(Number);
+                      const totalMins = h * 60 + m + 30;
+                      const endH = Math.floor(totalMins / 60);
+                      const endM = totalMins % 60;
+                      const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
+                      onCreateItem({ title: inputValue.trim(), starts_at: addingAt.time, ends_at: endTime });
+                      setAddingAt(null);
+                      setInputValue("");
+                    }
+                    if (e.key === 'Escape') { setAddingAt(null); setInputValue(""); }
+                  }}
+                  onBlur={() => { setAddingAt(null); setInputValue(""); }}
+                  placeholder="Event title..."
+                  className="w-full h-full px-2 bg-transparent text-neutral-100 outline-none text-sm"
+                />
+              </div>
+            )}
+          </div>
+          {/* Time labels on right side - numbers just below lines, except bottom 11 which is above */}
+          <div className="w-8 shrink-0 relative" style={{ height: COLUMN_HEIGHT }}>
+            {rightHours.map((h, i) => (
+              <div
+                key={h}
+                className="absolute left-1 text-xs text-neutral-500 leading-none"
+                style={{ top: i * PIXELS_PER_HOUR + 2 }}
+              >
+                {formatHour(h)}
+              </div>
+            ))}
+            {/* Bottom label: 11 - positioned above the line */}
+            <div
+              className="absolute left-1 text-xs text-neutral-500 leading-none"
+              style={{ top: COLUMN_HEIGHT - 12 }}
+            >
+              11
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit Modal */}
+      {editingItem && (
+        <ScheduleEditModal
+          item={editingItem}
+          onSave={(title) => onUpdateItem(editingItem.id, { title })}
+          onDelete={() => onDeleteItem(editingItem.id)}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 function AddSheet({
   open,
   onClose,
@@ -2112,6 +2570,8 @@ export default function PlannerPage() {
   const [notesModalDate, setNotesModalDate] = useState<string | null>(null);
   const [notesModalDraft, setNotesModalDraft] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
+  const [scheduleViewDate, setScheduleViewDate] = useState<string | null>(null);
+  const [scheduleItems, setScheduleItems] = useState<DayScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const [authReady, setAuthReady] = useState(false);
@@ -2125,6 +2585,70 @@ export default function PlannerPage() {
   const [dropTargetContentType, setDropTargetContentType] = useState<"item" | "session" | null>(null);
   const [isTouchDragging, setIsTouchDragging] = useState(false);
   const touchDragContextRef = useRef<{ type: "task" | "focus" | "content" | "dayContent"; context: { date?: string; window?: string; contentTab?: string }; itemType?: "item" | "session" } | null>(null);
+
+  // Fetch schedule items when schedule view opens
+  useEffect(() => {
+    if (!scheduleViewDate) {
+      setScheduleItems([]);
+      return;
+    }
+    supabase
+      .from('day_schedule_items')
+      .select('*')
+      .eq('scheduled_date', scheduleViewDate)
+      .then(({ data, error }) => {
+        if (!error && data) {
+          setScheduleItems(data);
+        }
+      });
+  }, [scheduleViewDate]);
+
+  // CRUD functions for schedule items
+  async function createScheduleItem(item: { title: string; starts_at: string; ends_at: string }) {
+    if (!scheduleViewDate) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('day_schedule_items')
+      .insert({
+        user_id: user.id,
+        scheduled_date: scheduleViewDate,
+        title: item.title,
+        starts_at: item.starts_at,
+        ends_at: item.ends_at,
+      })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setScheduleItems(prev => [...prev, data]);
+    }
+  }
+
+  async function updateScheduleItem(id: string, updates: Partial<DayScheduleItem>) {
+    const { error } = await supabase
+      .from('day_schedule_items')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (!error) {
+      setScheduleItems(prev => prev.map(item =>
+        item.id === id ? { ...item, ...updates } : item
+      ));
+    }
+  }
+
+  async function deleteScheduleItem(id: string) {
+    const { error } = await supabase
+      .from('day_schedule_items')
+      .delete()
+      .eq('id', id);
+
+    if (!error) {
+      setScheduleItems(prev => prev.filter(item => item.id !== id));
+    }
+  }
 
   // Touch drag handlers - reorder function reference for use in effect
   const reorderItemsRef = useRef<((type: "task" | "focus", draggedId: string, targetId: string, context: { date?: string; window?: string; contentTab?: string }, position: "above" | "below") => void) | null>(null);
@@ -4858,10 +5382,14 @@ const { error } = await supabase
             >
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2">
-                <div className="shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setScheduleViewDate(todayIso)}
+                  className="shrink-0 text-left"
+                >
                   <div className="text-lg font-semibold">Today</div>
                   <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
-                </div>
+                </button>
                 <NotesButton
                   date={toISODate(days[0])}
                   hasNotes={!!dayNotes[toISODate(days[0])]}
@@ -5262,10 +5790,14 @@ const { error } = await supabase
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <div className="shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setScheduleViewDate(tomorrowIso)}
+                        className="shrink-0 text-left"
+                      >
                         <div className="text-lg font-semibold">Tomorrow</div>
                         <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(tomorrowDay)}</div>
-                      </div>
+                      </button>
                       <NotesButton
                         date={tomorrowIso}
                         hasNotes={!!dayNotes[tomorrowIso]}
@@ -5607,10 +6139,7 @@ const { error } = await supabase
                   <div className="flex w-full items-center justify-between">
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => {
-                          ensureDayDraft(iso);
-                          setOpenDayIso((cur) => (cur === iso ? null : iso));
-                        }}
+                        onClick={() => setScheduleViewDate(iso)}
                         className="text-left"
                       >
                         <div className="font-semibold">{label}</div>
@@ -6079,6 +6608,21 @@ const { error } = await supabase
         saving={notesSaving}
         onSave={saveDayNotes}
         onClose={() => setNotesModalDate(null)}
+      />
+
+      <DayScheduleView
+        open={!!scheduleViewDate}
+        date={scheduleViewDate ?? ''}
+        dateLabel={scheduleViewDate ? (() => {
+          if (scheduleViewDate === todayIso) return 'Today';
+          if (scheduleViewDate === toISODate(days[1])) return 'Tomorrow';
+          return fmtDayLabel(fromISODate(scheduleViewDate), days.findIndex(d => toISODate(d) === scheduleViewDate));
+        })() : ''}
+        items={scheduleItems}
+        onClose={() => { setScheduleViewDate(null); setScheduleItems([]); }}
+        onCreateItem={createScheduleItem}
+        onUpdateItem={updateScheduleItem}
+        onDeleteItem={deleteScheduleItem}
       />
 
       {/* Movie Watched Modal */}
