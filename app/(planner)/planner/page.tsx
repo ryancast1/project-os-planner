@@ -1995,6 +1995,33 @@ function ScheduleItemBlock({
   );
 }
 
+// Helper to format time for display (HH:MM:SS -> h:mm a)
+function formatTimeDisplay(timeStr: string): string {
+  const [h, m] = timeStr.split(':').map(Number);
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  const ampm = h < 12 ? 'am' : 'pm';
+  return `${hour12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+// Helper to parse time input (h:mm or hh:mm, with optional am/pm) -> HH:MM:SS
+function parseTimeInput(input: string): string | null {
+  const cleaned = input.toLowerCase().trim();
+  // Match patterns like "3:30", "3:30pm", "15:30", "3pm"
+  const match = cleaned.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+  if (!match) return null;
+
+  let hours = parseInt(match[1]);
+  const minutes = match[2] ? parseInt(match[2]) : 0;
+  const ampm = match[3];
+
+  if (ampm === 'pm' && hours < 12) hours += 12;
+  if (ampm === 'am' && hours === 12) hours = 0;
+
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+}
+
 function ScheduleEditModal({
   item,
   onSave,
@@ -2002,31 +2029,91 @@ function ScheduleEditModal({
   onClose,
 }: {
   item: DayScheduleItem;
-  onSave: (title: string) => void;
+  onSave: (updates: { title: string; starts_at: string; ends_at: string }) => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(item.title);
+  const [startTime, setStartTime] = useState(formatTimeDisplay(item.starts_at));
+  const [endTime, setEndTime] = useState(formatTimeDisplay(item.ends_at));
+  const [timeError, setTimeError] = useState<string | null>(null);
+
+  const handleSave = () => {
+    if (!title.trim()) return;
+
+    const parsedStart = parseTimeInput(startTime);
+    const parsedEnd = parseTimeInput(endTime);
+
+    if (!parsedStart || !parsedEnd) {
+      setTimeError('Invalid time format. Use h:mm am/pm (e.g., 3:30 pm)');
+      return;
+    }
+
+    // Validate start is before end
+    if (parsedStart >= parsedEnd) {
+      setTimeError('Start time must be before end time');
+      return;
+    }
+
+    onSave({ title: title.trim(), starts_at: parsedStart, ends_at: parsedEnd });
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="relative z-10 w-full max-w-sm rounded-2xl border border-neutral-700 bg-neutral-900 p-4 shadow-2xl">
         <div className="mb-3 text-lg font-semibold text-neutral-100">Edit Item</div>
+
+        {/* Title */}
         <input
           autoFocus
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && title.trim()) {
-              onSave(title.trim());
-              onClose();
-            }
+            if (e.key === 'Enter') handleSave();
             if (e.key === 'Escape') onClose();
           }}
-          className="w-full rounded-xl border border-neutral-700 bg-neutral-800 px-3 py-2 text-neutral-100 outline-none focus:border-neutral-500"
+          className="w-full rounded-xl border border-neutral-700 bg-neutral-800 px-3 py-2 text-[16px] text-neutral-100 outline-none focus:border-neutral-500"
           placeholder="Event title..."
         />
+
+        {/* Time inputs */}
+        <div className="mt-3 flex gap-2 items-center">
+          <div className="flex-1">
+            <label className="text-xs text-neutral-500 mb-1 block">Start</label>
+            <input
+              value={startTime}
+              onChange={(e) => { setStartTime(e.target.value); setTimeError(null); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSave();
+                if (e.key === 'Escape') onClose();
+              }}
+              className="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-[16px] text-neutral-100 outline-none focus:border-neutral-500"
+              placeholder="3:00 pm"
+            />
+          </div>
+          <div className="text-neutral-500 pt-5">→</div>
+          <div className="flex-1">
+            <label className="text-xs text-neutral-500 mb-1 block">End</label>
+            <input
+              value={endTime}
+              onChange={(e) => { setEndTime(e.target.value); setTimeError(null); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSave();
+                if (e.key === 'Escape') onClose();
+              }}
+              className="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-[16px] text-neutral-100 outline-none focus:border-neutral-500"
+              placeholder="4:00 pm"
+            />
+          </div>
+        </div>
+
+        {/* Error message */}
+        {timeError && (
+          <div className="mt-2 text-xs text-red-400">{timeError}</div>
+        )}
+
         <div className="mt-4 flex gap-2">
           <button
             type="button"
@@ -2048,12 +2135,7 @@ function ScheduleEditModal({
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (title.trim()) {
-                onSave(title.trim());
-                onClose();
-              }
-            }}
+            onClick={handleSave}
             className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900"
           >
             Save
@@ -2064,24 +2146,141 @@ function ScheduleEditModal({
   );
 }
 
+// Component for displaying plans on the schedule (different style from schedule items)
+function PlanItemBlock({
+  plan,
+  position,
+  onResize,
+  pixelsPerHour,
+  siblingItems,
+  column,
+}: {
+  plan: { id: string; title: string; starts_at: string; ends_at: string; isPlan: true; hasEndTime: boolean };
+  position: { top: number; height: number };
+  onResize: (newEndTime: string) => void;
+  pixelsPerHour: number;
+  siblingItems: { starts_at: string; ends_at: string }[];
+  column: 'left' | 'right';
+}) {
+  const [localHeight, setLocalHeight] = useState(position.height);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+
+  useEffect(() => {
+    if (!isResizing) {
+      setLocalHeight(position.height);
+    }
+  }, [position.height, isResizing]);
+
+  const handleResizeStart = (e: React.TouchEvent | React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    resizeRef.current = { startY: clientY, startHeight: localHeight };
+    setIsResizing(true);
+  };
+
+  // Calculate max height before hitting next item
+  const maxHeight = useMemo(() => {
+    const itemStartMinutes = timeToMinutes(plan.starts_at);
+    let nextStart = Infinity;
+    for (const sibling of siblingItems) {
+      const siblingStart = timeToMinutes(sibling.starts_at);
+      if (siblingStart > itemStartMinutes && siblingStart < nextStart) {
+        nextStart = siblingStart;
+      }
+    }
+    if (nextStart === Infinity) {
+      return Infinity;
+    }
+    return ((nextStart - itemStartMinutes) / 60) * pixelsPerHour;
+  }, [plan.starts_at, siblingItems, pixelsPerHour]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMove = (e: TouchEvent | MouseEvent) => {
+      if (!resizeRef.current) return;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      const deltaY = clientY - resizeRef.current.startY;
+      let newHeight = Math.max(pixelsPerHour / 4, resizeRef.current.startHeight + deltaY);
+      if (maxHeight !== Infinity) {
+        newHeight = Math.min(newHeight, maxHeight);
+      }
+      const snapSize = pixelsPerHour / 4;
+      const snappedHeight = Math.round(newHeight / snapSize) * snapSize;
+      setLocalHeight(Math.min(snappedHeight, maxHeight === Infinity ? snappedHeight : maxHeight));
+    };
+
+    const handleEnd = () => {
+      if (!resizeRef.current) return;
+      const durationMinutes = (localHeight / pixelsPerHour) * 60;
+      const [startH, startM] = plan.starts_at.split(':').map(Number);
+      const endMinutes = startH * 60 + startM + durationMinutes;
+      const endH = Math.floor(endMinutes / 60);
+      const endM = endMinutes % 60;
+      const newEndTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
+      onResize(newEndTime);
+      resizeRef.current = null;
+      setIsResizing(false);
+    };
+
+    window.addEventListener('touchmove', handleMove, { passive: false });
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('touchend', handleEnd);
+    window.addEventListener('mouseup', handleEnd);
+    return () => {
+      window.removeEventListener('touchmove', handleMove);
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('touchend', handleEnd);
+      window.removeEventListener('mouseup', handleEnd);
+    };
+  }, [isResizing, localHeight, plan.starts_at, onResize, pixelsPerHour, maxHeight]);
+
+  return (
+    <div
+      className={`absolute left-1 right-1 rounded-lg bg-neutral-700/50 overflow-hidden select-none ${
+        column === 'left' ? 'border-l-4 border-blue-400' : 'border-r-4 border-blue-400'
+      }`}
+      style={{ top: position.top, height: localHeight, minHeight: pixelsPerHour / 4 }}
+    >
+      <div className="px-2 py-1">
+        <div className="text-sm text-neutral-200 truncate text-center">{plan.title}</div>
+      </div>
+
+      {/* Resize handle */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize touch-none bg-gradient-to-t from-neutral-600/40"
+        onTouchStart={handleResizeStart}
+        onMouseDown={handleResizeStart}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
 function DayScheduleView({
   open,
   date,
   dateLabel,
   items,
+  plans,
   onClose,
   onCreateItem,
   onUpdateItem,
   onDeleteItem,
+  onUpdatePlanTime,
 }: {
   open: boolean;
   date: string;
   dateLabel: string;
   items: DayScheduleItem[];
+  plans: Plan[];
   onClose: () => void;
   onCreateItem: (item: { title: string; starts_at: string; ends_at: string }) => Promise<void>;
   onUpdateItem: (id: string, updates: Partial<DayScheduleItem>) => Promise<void>;
   onDeleteItem: (id: string) => Promise<void>;
+  onUpdatePlanTime: (id: string, ends_at: string) => Promise<void>;
 }) {
   const LEFT_START_HOUR = 7;
   const RIGHT_START_HOUR = 15;
@@ -2116,6 +2315,51 @@ function DayScheduleView({
   });
   const rightItems = items.filter(item => {
     const hour = parseInt(item.starts_at.split(':')[0]);
+    return hour >= 15 && hour < 23;
+  });
+
+  // Convert plans with starts_at to displayable items
+  // Plans have ISO datetime in starts_at, we need to extract the time part
+  const plansWithTime = useMemo(() => {
+    return plans
+      .filter(p => p.starts_at && p.status === 'open')
+      .map(p => {
+        // Extract time from ISO datetime (e.g., "2024-01-15T14:30:00" -> "14:30:00")
+        const startsAtDate = new Date(p.starts_at!);
+        const startHour = startsAtDate.getHours();
+        const startMin = startsAtDate.getMinutes();
+        const startsAtTime = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`;
+
+        // Calculate end time: use ends_at if present, otherwise default to 1 hour
+        let endsAtTime: string;
+        if (p.ends_at) {
+          const endsAtDate = new Date(p.ends_at);
+          const endHour = endsAtDate.getHours();
+          const endMin = endsAtDate.getMinutes();
+          endsAtTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}:00`;
+        } else {
+          // Default to 1 hour duration
+          const endHour = startHour + 1;
+          endsAtTime = `${String(endHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`;
+        }
+
+        return {
+          id: p.id,
+          title: p.title,
+          starts_at: startsAtTime,
+          ends_at: endsAtTime,
+          isPlan: true as const,
+          hasEndTime: !!p.ends_at,
+        };
+      });
+  }, [plans]);
+
+  const leftPlans = plansWithTime.filter(p => {
+    const hour = parseInt(p.starts_at.split(':')[0]);
+    return hour >= 7 && hour < 15;
+  });
+  const rightPlans = plansWithTime.filter(p => {
+    const hour = parseInt(p.starts_at.split(':')[0]);
     return hour >= 15 && hour < 23;
   });
 
@@ -2186,11 +2430,20 @@ function DayScheduleView({
   // Calculate max available minutes from a given start time
   const getMaxMinutes = (startMinutes: number, column: 'left' | 'right') => {
     const columnItems = column === 'left' ? leftItems : rightItems;
+    const columnPlans = column === 'left' ? leftPlans : rightPlans;
     const columnEndMinutes = column === 'left' ? RIGHT_START_HOUR * 60 : 23 * 60;
 
     let nextItemStart = columnEndMinutes;
+    // Check schedule items
     for (const existingItem of columnItems) {
       const existingStart = timeToMinutes(existingItem.starts_at);
+      if (existingStart > startMinutes && existingStart < nextItemStart) {
+        nextItemStart = existingStart;
+      }
+    }
+    // Check plans
+    for (const existingPlan of columnPlans) {
+      const existingStart = timeToMinutes(existingPlan.starts_at);
       if (existingStart > startMinutes && existingStart < nextItemStart) {
         nextItemStart = existingStart;
       }
@@ -2198,12 +2451,22 @@ function DayScheduleView({
     return nextItemStart - startMinutes;
   };
 
-  // Check if a time overlaps with any existing item
+  // Check if a time overlaps with any existing item or plan
   const isTimeBlocked = (minutes: number, column: 'left' | 'right') => {
     const columnItems = column === 'left' ? leftItems : rightItems;
+    const columnPlans = column === 'left' ? leftPlans : rightPlans;
+    // Check schedule items
     for (const existingItem of columnItems) {
       const existingStart = timeToMinutes(existingItem.starts_at);
       const existingEnd = timeToMinutes(existingItem.ends_at);
+      if (minutes >= existingStart && minutes < existingEnd) {
+        return true;
+      }
+    }
+    // Check plans
+    for (const existingPlan of columnPlans) {
+      const existingStart = timeToMinutes(existingPlan.starts_at);
+      const existingEnd = timeToMinutes(existingPlan.ends_at);
       if (minutes >= existingStart && minutes < existingEnd) {
         return true;
       }
@@ -2389,6 +2652,18 @@ function DayScheduleView({
                 column="left"
               />
             ))}
+            {/* Plans with times */}
+            {leftPlans.map(plan => (
+              <PlanItemBlock
+                key={`plan-${plan.id}`}
+                plan={plan}
+                position={getPosition(plan.starts_at, plan.ends_at, LEFT_START_HOUR)}
+                onResize={(newEnd) => onUpdatePlanTime(plan.id, newEnd)}
+                pixelsPerHour={PIXELS_PER_HOUR}
+                siblingItems={[...leftItems, ...leftPlans.filter(p => p.id !== plan.id)]}
+                column="left"
+              />
+            ))}
             {/* Now line */}
             {now?.column === 'left' && (
               <div
@@ -2467,6 +2742,18 @@ function DayScheduleView({
                 column="right"
               />
             ))}
+            {/* Plans with times */}
+            {rightPlans.map(plan => (
+              <PlanItemBlock
+                key={`plan-${plan.id}`}
+                plan={plan}
+                position={getPosition(plan.starts_at, plan.ends_at, RIGHT_START_HOUR)}
+                onResize={(newEnd) => onUpdatePlanTime(plan.id, newEnd)}
+                pixelsPerHour={PIXELS_PER_HOUR}
+                siblingItems={[...rightItems, ...rightPlans.filter(p => p.id !== plan.id)]}
+                column="right"
+              />
+            ))}
             {/* Now line */}
             {now?.column === 'right' && (
               <div
@@ -2540,7 +2827,7 @@ function DayScheduleView({
       {editingItem && (
         <ScheduleEditModal
           item={editingItem}
-          onSave={(title) => onUpdateItem(editingItem.id, { title })}
+          onSave={(updates) => onUpdateItem(editingItem.id, updates)}
           onDelete={() => onDeleteItem(editingItem.id)}
           onClose={() => setEditingItem(null)}
         />
@@ -6884,10 +7171,33 @@ const { error } = await supabase
           return fmtDayLabel(fromISODate(scheduleViewDate), days.findIndex(d => toISODate(d) === scheduleViewDate));
         })() : ''}
         items={scheduleItems}
+        plans={scheduleViewDate ? plans.filter(p => p.scheduled_for === scheduleViewDate) : []}
         onClose={() => { setScheduleViewDate(null); setScheduleItems([]); }}
         onCreateItem={createScheduleItem}
         onUpdateItem={updateScheduleItem}
         onDeleteItem={deleteScheduleItem}
+        onUpdatePlanTime={async (id, endsAtTime) => {
+          // Find the plan to get its starts_at date part
+          const plan = plans.find(p => p.id === id);
+          if (!plan || !plan.starts_at) return;
+
+          // Combine the date from starts_at with the new end time
+          const startsAtDate = new Date(plan.starts_at);
+          const [endH, endM] = endsAtTime.split(':').map(Number);
+          const endsAtDate = new Date(startsAtDate);
+          endsAtDate.setHours(endH, endM, 0, 0);
+
+          const { error } = await supabase
+            .from('plans')
+            .update({ ends_at: endsAtDate.toISOString() })
+            .eq('id', id);
+
+          if (!error) {
+            setPlans(prev => prev.map(p =>
+              p.id === id ? { ...p, ends_at: endsAtDate.toISOString() } : p
+            ));
+          }
+        }}
       />
 
       {/* Movie Watched Modal */}
