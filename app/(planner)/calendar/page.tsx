@@ -9,8 +9,20 @@ type Plan = {
   scheduled_for: string; // YYYY-MM-DD
   end_date?: string | null; // YYYY-MM-DD
   starts_at?: string | null;
+  ends_at?: string | null;
   status?: string | null;
   day_off?: boolean | null;
+};
+
+type DayScheduleItem = {
+  id: string;
+  user_id: string;
+  scheduled_date: string;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  created_at: string;
+  updated_at: string;
 };
 
 type Task = {
@@ -228,6 +240,593 @@ function DayCell({
   );
 }
 
+// --- Day Schedule View helpers and components ---
+
+function timeToMinutes(timeStr: string): number {
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function formatTimeDisplay(timeStr: string): string {
+  const [h, m] = timeStr.split(':').map(Number);
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  const ampm = h < 12 ? 'am' : 'pm';
+  return `${hour12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function parseTimeInput(input: string): string | null {
+  const cleaned = input.toLowerCase().trim();
+  const match = cleaned.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+  if (!match) return null;
+  let hours = parseInt(match[1]);
+  const minutes = match[2] ? parseInt(match[2]) : 0;
+  const ampm = match[3];
+  if (ampm === 'pm' && hours < 12) hours += 12;
+  if (ampm === 'am' && hours === 12) hours = 0;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+}
+
+function ScheduleItemBlock({
+  item, position, onOpenEditModal, onResize, pixelsPerHour, siblingItems, column,
+}: {
+  item: DayScheduleItem;
+  position: { top: number; height: number };
+  onOpenEditModal: () => void;
+  onResize: (newEndTime: string) => void;
+  pixelsPerHour: number;
+  siblingItems: DayScheduleItem[];
+  column: 'left' | 'right';
+}) {
+  const [localHeight, setLocalHeight] = useState(position.height);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+
+  useEffect(() => { if (!isResizing) setLocalHeight(position.height); }, [position.height, isResizing]);
+
+  const handleResizeStart = (e: React.TouchEvent | React.MouseEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    resizeRef.current = { startY: clientY, startHeight: localHeight };
+    setIsResizing(true);
+  };
+
+  const maxHeight = useMemo(() => {
+    const itemStartMinutes = timeToMinutes(item.starts_at);
+    let nextStart = Infinity;
+    for (const sibling of siblingItems) {
+      const siblingStart = timeToMinutes(sibling.starts_at);
+      if (siblingStart > itemStartMinutes && siblingStart < nextStart) nextStart = siblingStart;
+    }
+    if (nextStart === Infinity) return Infinity;
+    return ((nextStart - itemStartMinutes) / 60) * pixelsPerHour;
+  }, [item.starts_at, siblingItems, pixelsPerHour]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const handleMove = (e: TouchEvent | MouseEvent) => {
+      if (!resizeRef.current) return;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      const deltaY = clientY - resizeRef.current.startY;
+      let newHeight = Math.max(pixelsPerHour / 4, resizeRef.current.startHeight + deltaY);
+      if (maxHeight !== Infinity) newHeight = Math.min(newHeight, maxHeight);
+      const snapSize = pixelsPerHour / 4;
+      const snappedHeight = Math.round(newHeight / snapSize) * snapSize;
+      setLocalHeight(Math.min(snappedHeight, maxHeight === Infinity ? snappedHeight : maxHeight));
+    };
+    const handleEnd = () => {
+      if (!resizeRef.current) return;
+      const durationMinutes = (localHeight / pixelsPerHour) * 60;
+      const [startH, startM] = item.starts_at.split(':').map(Number);
+      const endMinutes = startH * 60 + startM + durationMinutes;
+      const endH = Math.floor(endMinutes / 60);
+      const endM = endMinutes % 60;
+      onResize(`${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`);
+      resizeRef.current = null;
+      setIsResizing(false);
+    };
+    window.addEventListener('touchmove', handleMove, { passive: false });
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('touchend', handleEnd);
+    window.addEventListener('mouseup', handleEnd);
+    return () => {
+      window.removeEventListener('touchmove', handleMove);
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('touchend', handleEnd);
+      window.removeEventListener('mouseup', handleEnd);
+    };
+  }, [isResizing, localHeight, item.starts_at, onResize, pixelsPerHour, maxHeight]);
+
+  return (
+    <div
+      className={`absolute left-1 right-1 rounded-lg bg-neutral-800 overflow-hidden select-none ${
+        column === 'left' ? 'border-l-4 border-green-400' : 'border-r-4 border-green-400'
+      }`}
+      style={{ top: position.top, height: localHeight, minHeight: pixelsPerHour / 4 }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onOpenEditModal(); }}
+      onTouchStart={() => { longPressTimerRef.current = window.setTimeout(() => onOpenEditModal(), 500); }}
+      onTouchEnd={() => { if (longPressTimerRef.current) { window.clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+      onTouchMove={() => { if (longPressTimerRef.current) { window.clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+    >
+      <div className="px-2 py-1">
+        <div className="text-sm text-neutral-100 truncate text-center">{item.title}</div>
+      </div>
+      <div
+        className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize touch-none bg-gradient-to-t from-neutral-700/40"
+        onTouchStart={handleResizeStart}
+        onMouseDown={handleResizeStart}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
+function ScheduleEditModal({
+  item, onSave, onDelete, onClose,
+}: {
+  item: DayScheduleItem;
+  onSave: (updates: { title: string; starts_at: string; ends_at: string }) => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState(item.title);
+  const [startTime, setStartTime] = useState(formatTimeDisplay(item.starts_at));
+  const [endTime, setEndTime] = useState(formatTimeDisplay(item.ends_at));
+  const [timeError, setTimeError] = useState<string | null>(null);
+
+  const handleSave = () => {
+    if (!title.trim()) return;
+    const parsedStart = parseTimeInput(startTime);
+    const parsedEnd = parseTimeInput(endTime);
+    if (!parsedStart || !parsedEnd) { setTimeError('Invalid time format. Use h:mm am/pm (e.g., 3:30 pm)'); return; }
+    if (parsedStart >= parsedEnd) { setTimeError('Start time must be before end time'); return; }
+    onSave({ title: title.trim(), starts_at: parsedStart, ends_at: parsedEnd });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm rounded-2xl border border-neutral-700 bg-neutral-900 p-4 shadow-2xl">
+        <div className="mb-3 text-lg font-semibold text-neutral-100">Edit Item</div>
+        <input
+          autoFocus value={title} onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onClose(); }}
+          className="w-full rounded-xl border border-neutral-700 bg-neutral-800 px-3 py-2 text-[16px] text-neutral-100 outline-none focus:border-neutral-500"
+          placeholder="Event title..."
+        />
+        <div className="mt-3 flex gap-2 items-center">
+          <div className="flex-1">
+            <label className="text-xs text-neutral-500 mb-1 block">Start</label>
+            <input value={startTime} onChange={(e) => { setStartTime(e.target.value); setTimeError(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onClose(); }}
+              className="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-[16px] text-neutral-100 outline-none focus:border-neutral-500" placeholder="3:00 pm" />
+          </div>
+          <div className="text-neutral-500 pt-5">{'\u2192'}</div>
+          <div className="flex-1">
+            <label className="text-xs text-neutral-500 mb-1 block">End</label>
+            <input value={endTime} onChange={(e) => { setEndTime(e.target.value); setTimeError(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onClose(); }}
+              className="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-[16px] text-neutral-100 outline-none focus:border-neutral-500" placeholder="4:00 pm" />
+          </div>
+        </div>
+        {timeError && <div className="mt-2 text-xs text-red-400">{timeError}</div>}
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={() => { onDelete(); onClose(); }} className="rounded-xl border border-red-700 px-4 py-2 text-sm font-semibold text-red-400 hover:bg-red-900/30">Delete</button>
+          <div className="flex-1" />
+          <button type="button" onClick={onClose} className="rounded-xl border border-neutral-700 px-4 py-2 text-sm font-semibold text-neutral-300 hover:bg-neutral-800">Cancel</button>
+          <button type="button" onClick={handleSave} className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CalPlanItemBlock({
+  plan, position, onResize, pixelsPerHour, siblingItems, column,
+}: {
+  plan: { id: string; title: string; starts_at: string; ends_at: string; isPlan: true; hasEndTime: boolean };
+  position: { top: number; height: number };
+  onResize: (newEndTime: string) => void;
+  pixelsPerHour: number;
+  siblingItems: { starts_at: string; ends_at: string }[];
+  column: 'left' | 'right';
+}) {
+  const [localHeight, setLocalHeight] = useState(position.height);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+
+  useEffect(() => { if (!isResizing) setLocalHeight(position.height); }, [position.height, isResizing]);
+
+  const handleResizeStart = (e: React.TouchEvent | React.MouseEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    resizeRef.current = { startY: clientY, startHeight: localHeight };
+    setIsResizing(true);
+  };
+
+  const maxHeight = useMemo(() => {
+    const itemStartMinutes = timeToMinutes(plan.starts_at);
+    let nextStart = Infinity;
+    for (const sibling of siblingItems) {
+      const siblingStart = timeToMinutes(sibling.starts_at);
+      if (siblingStart > itemStartMinutes && siblingStart < nextStart) nextStart = siblingStart;
+    }
+    if (nextStart === Infinity) return Infinity;
+    return ((nextStart - itemStartMinutes) / 60) * pixelsPerHour;
+  }, [plan.starts_at, siblingItems, pixelsPerHour]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const handleMove = (e: TouchEvent | MouseEvent) => {
+      if (!resizeRef.current) return;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      const deltaY = clientY - resizeRef.current.startY;
+      let newHeight = Math.max(pixelsPerHour / 4, resizeRef.current.startHeight + deltaY);
+      if (maxHeight !== Infinity) newHeight = Math.min(newHeight, maxHeight);
+      const snapSize = pixelsPerHour / 4;
+      const snappedHeight = Math.round(newHeight / snapSize) * snapSize;
+      setLocalHeight(Math.min(snappedHeight, maxHeight === Infinity ? snappedHeight : maxHeight));
+    };
+    const handleEnd = () => {
+      if (!resizeRef.current) return;
+      const durationMinutes = (localHeight / pixelsPerHour) * 60;
+      const [startH, startM] = plan.starts_at.split(':').map(Number);
+      const endMinutes = startH * 60 + startM + durationMinutes;
+      const endH = Math.floor(endMinutes / 60);
+      const endM = endMinutes % 60;
+      onResize(`${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`);
+      resizeRef.current = null;
+      setIsResizing(false);
+    };
+    window.addEventListener('touchmove', handleMove, { passive: false });
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('touchend', handleEnd);
+    window.addEventListener('mouseup', handleEnd);
+    return () => {
+      window.removeEventListener('touchmove', handleMove);
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('touchend', handleEnd);
+      window.removeEventListener('mouseup', handleEnd);
+    };
+  }, [isResizing, localHeight, plan.starts_at, onResize, pixelsPerHour, maxHeight]);
+
+  return (
+    <div
+      className={`absolute left-1 right-1 rounded-lg bg-neutral-700/50 overflow-hidden select-none ${
+        column === 'left' ? 'border-l-4 border-blue-400' : 'border-r-4 border-blue-400'
+      }`}
+      style={{ top: position.top, height: localHeight, minHeight: pixelsPerHour / 4 }}
+    >
+      <div className="px-2 py-1">
+        <div className="text-sm text-neutral-200 truncate text-center">{plan.title}</div>
+      </div>
+      <div
+        className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize touch-none bg-gradient-to-t from-neutral-600/40"
+        onTouchStart={handleResizeStart}
+        onMouseDown={handleResizeStart}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
+function CalDayScheduleView({
+  open, date, dateLabel, items, plans, onClose, onCreateItem, onUpdateItem, onDeleteItem, onUpdatePlanTime,
+}: {
+  open: boolean;
+  date: string;
+  dateLabel: string;
+  items: DayScheduleItem[];
+  plans: Plan[];
+  onClose: () => void;
+  onCreateItem: (item: { title: string; starts_at: string; ends_at: string }) => Promise<void>;
+  onUpdateItem: (id: string, updates: Partial<DayScheduleItem>) => Promise<void>;
+  onDeleteItem: (id: string) => Promise<void>;
+  onUpdatePlanTime: (id: string, ends_at: string) => Promise<void>;
+}) {
+  const LEFT_START_HOUR = 7;
+  const RIGHT_START_HOUR = 15;
+  const HOURS_PER_COLUMN = 8;
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    const updateHeight = () => { if (containerRef.current) setContainerHeight(containerRef.current.clientHeight); };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, [open]);
+
+  const PIXELS_PER_HOUR = containerHeight > 0 ? containerHeight / HOURS_PER_COLUMN : 80;
+  const COLUMN_HEIGHT = containerHeight > 0 ? containerHeight : HOURS_PER_COLUMN * 80;
+
+  const leftHours = Array.from({ length: 8 }, (_, i) => LEFT_START_HOUR + i);
+  const rightHours = Array.from({ length: 8 }, (_, i) => RIGHT_START_HOUR + i);
+
+  const leftItems = items.filter(item => { const hour = parseInt(item.starts_at.split(':')[0]); return hour >= 7 && hour < 15; });
+  const rightItems = items.filter(item => { const hour = parseInt(item.starts_at.split(':')[0]); return hour >= 15 && hour < 23; });
+
+  const plansWithTime = useMemo(() => {
+    return plans
+      .filter(p => p.starts_at && (p.status === 'open' || !p.status))
+      .map(p => {
+        const startsAtDate = new Date(p.starts_at!);
+        const startHour = startsAtDate.getHours();
+        const startMin = startsAtDate.getMinutes();
+        const startsAtTime = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`;
+        let endsAtTime: string;
+        if (p.ends_at) {
+          const endsAtDate = new Date(p.ends_at);
+          endsAtTime = `${String(endsAtDate.getHours()).padStart(2, '0')}:${String(endsAtDate.getMinutes()).padStart(2, '0')}:00`;
+        } else {
+          endsAtTime = `${String(startHour + 1).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`;
+        }
+        return { id: p.id, title: p.title, starts_at: startsAtTime, ends_at: endsAtTime, isPlan: true as const, hasEndTime: !!p.ends_at };
+      });
+  }, [plans]);
+
+  const leftPlans = plansWithTime.filter(p => { const hour = parseInt(p.starts_at.split(':')[0]); return hour >= 7 && hour < 15; });
+  const rightPlans = plansWithTime.filter(p => { const hour = parseInt(p.starts_at.split(':')[0]); return hour >= 15 && hour < 23; });
+
+  const [addingAt, setAddingAt] = useState<{ time: string; column: 'left' | 'right'; duration: number } | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const [editingItem, setEditingItem] = useState<DayScheduleItem | null>(null);
+
+  const [draggingNew, setDraggingNew] = useState<{
+    column: 'left' | 'right'; startY: number; startTime: string; startMinutes: number; currentHeight: number; maxHeight: number;
+  } | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const pendingDragRef = useRef<{
+    column: 'left' | 'right'; startY: number; startTime: string; startMinutes: number; maxMinutes: number;
+  } | null>(null);
+
+  const now = useMemo(() => {
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (date !== todayStr) return null;
+    const h = d.getHours();
+    const m = d.getMinutes();
+    const totalMinutes = h * 60 + m;
+    if (h >= LEFT_START_HOUR && h < RIGHT_START_HOUR) {
+      return { column: 'left' as const, top: ((totalMinutes - LEFT_START_HOUR * 60) / 60) * PIXELS_PER_HOUR };
+    } else if (h >= RIGHT_START_HOUR && h < 23) {
+      return { column: 'right' as const, top: ((totalMinutes - RIGHT_START_HOUR * 60) / 60) * PIXELS_PER_HOUR };
+    }
+    return null;
+  }, [PIXELS_PER_HOUR, date]);
+
+  const getPosition = (startsAt: string, endsAt: string, columnStartHour: number) => {
+    const [startH, startM] = startsAt.split(':').map(Number);
+    const [endH, endM] = endsAt.split(':').map(Number);
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    const columnStartMinutes = columnStartHour * 60;
+    const top = ((startMinutes - columnStartMinutes) / 60) * PIXELS_PER_HOUR;
+    const height = Math.max(PIXELS_PER_HOUR / 4, ((endMinutes - startMinutes) / 60) * PIXELS_PER_HOUR);
+    return { top, height };
+  };
+
+  const getPositionForTime = (timeStr: string, columnStartHour: number) => {
+    const [h, m] = timeStr.split(':').map(Number);
+    return (((h * 60 + m) - columnStartHour * 60) / 60) * PIXELS_PER_HOUR;
+  };
+
+  const getMaxMinutes = (startMinutes: number, column: 'left' | 'right') => {
+    const colItems = column === 'left' ? leftItems : rightItems;
+    const colPlans = column === 'left' ? leftPlans : rightPlans;
+    const columnEndMinutes = column === 'left' ? RIGHT_START_HOUR * 60 : 23 * 60;
+    let nextItemStart = columnEndMinutes;
+    for (const existingItem of colItems) {
+      const s = timeToMinutes(existingItem.starts_at);
+      if (s > startMinutes && s < nextItemStart) nextItemStart = s;
+    }
+    for (const existingPlan of colPlans) {
+      const s = timeToMinutes(existingPlan.starts_at);
+      if (s > startMinutes && s < nextItemStart) nextItemStart = s;
+    }
+    return nextItemStart - startMinutes;
+  };
+
+  const isTimeBlocked = (minutes: number, column: 'left' | 'right') => {
+    const colItems = column === 'left' ? leftItems : rightItems;
+    const colPlans = column === 'left' ? leftPlans : rightPlans;
+    for (const existingItem of colItems) {
+      const s = timeToMinutes(existingItem.starts_at);
+      const e = timeToMinutes(existingItem.ends_at);
+      if (minutes >= s && minutes < e) return true;
+    }
+    for (const existingPlan of colPlans) {
+      const s = timeToMinutes(existingPlan.starts_at);
+      const e = timeToMinutes(existingPlan.ends_at);
+      if (minutes >= s && minutes < e) return true;
+    }
+    return false;
+  };
+
+  const handlePointerDown = (e: React.PointerEvent, column: 'left' | 'right') => {
+    if (addingAt || draggingNew) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const columnStartHour = column === 'left' ? LEFT_START_HOUR : RIGHT_START_HOUR;
+    const minutesFromColumnStart = Math.floor((y / PIXELS_PER_HOUR) * 60);
+    const snappedMinutes = Math.floor(minutesFromColumnStart / 15) * 15;
+    const totalMinutes = columnStartHour * 60 + snappedMinutes;
+    if (isTimeBlocked(totalMinutes, column)) return;
+    const maxMinutes = getMaxMinutes(totalMinutes, column);
+    if (maxMinutes < 15) return;
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    const timeStr = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`;
+    pendingDragRef.current = { column, startY: y, startTime: timeStr, startMinutes: totalMinutes, maxMinutes };
+    longPressTimerRef.current = window.setTimeout(() => {
+      if (pendingDragRef.current) {
+        const { column: c, startY: sY, startTime: sT, startMinutes: sM, maxMinutes: mM } = pendingDragRef.current;
+        setDraggingNew({ column: c, startY: sY, startTime: sT, startMinutes: sM, currentHeight: PIXELS_PER_HOUR / 4, maxHeight: (mM / 60) * PIXELS_PER_HOUR });
+      }
+    }, 500);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent, column: 'left' | 'right') => {
+    if (!draggingNew || draggingNew.column !== column) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const deltaY = y - draggingNew.startY;
+    const minHeight = PIXELS_PER_HOUR / 4;
+    let newHeight = Math.max(minHeight, deltaY);
+    newHeight = Math.min(newHeight, draggingNew.maxHeight);
+    const snapSize = PIXELS_PER_HOUR / 4;
+    const snappedHeight = Math.round(newHeight / snapSize) * snapSize;
+    setDraggingNew(prev => prev ? { ...prev, currentHeight: Math.max(minHeight, snappedHeight) } : null);
+  };
+
+  const handlePointerUp = () => {
+    if (longPressTimerRef.current) { window.clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+    if (draggingNew) {
+      const durationMinutes = Math.round((draggingNew.currentHeight / PIXELS_PER_HOUR) * 60);
+      setAddingAt({ time: draggingNew.startTime, column: draggingNew.column, duration: durationMinutes });
+      setInputValue("");
+      setDraggingNew(null);
+    }
+    pendingDragRef.current = null;
+  };
+
+  const handlePointerCancel = () => {
+    if (longPressTimerRef.current) { window.clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+    setDraggingNew(null);
+    pendingDragRef.current = null;
+  };
+
+  useEffect(() => { return () => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }; }, []);
+
+  const formatHour = (h: number) => { if (h === 12) return '12'; if (h < 12) return `${h}`; return `${h - 12}`; };
+
+  if (!open) return null;
+
+  const renderColumn = (
+    column: 'left' | 'right',
+    hours: number[],
+    colItems: DayScheduleItem[],
+    colPlans: typeof plansWithTime,
+    startHour: number,
+  ) => (
+    <div
+      className="flex-1 relative touch-none"
+      style={{ height: COLUMN_HEIGHT }}
+      onPointerDown={(e) => handlePointerDown(e, column)}
+      onPointerMove={(e) => handlePointerMove(e, column)}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onPointerLeave={handlePointerCancel}
+    >
+      {hours.map((h, i) => (
+        <div key={h} className="absolute left-0 right-0 border-t border-neutral-800" style={{ top: i * PIXELS_PER_HOUR }} />
+      ))}
+      <div className="absolute left-0 right-0 border-t border-neutral-800" style={{ top: COLUMN_HEIGHT }} />
+      {colItems.map(item => (
+        <ScheduleItemBlock
+          key={item.id} item={item}
+          position={getPosition(item.starts_at, item.ends_at, startHour)}
+          onOpenEditModal={() => setEditingItem(item)}
+          onResize={(newEnd) => onUpdateItem(item.id, { ends_at: newEnd })}
+          pixelsPerHour={PIXELS_PER_HOUR}
+          siblingItems={colItems.filter(i => i.id !== item.id)}
+          column={column}
+        />
+      ))}
+      {colPlans.map(plan => (
+        <CalPlanItemBlock
+          key={`plan-${plan.id}`} plan={plan}
+          position={getPosition(plan.starts_at, plan.ends_at, startHour)}
+          onResize={(newEnd) => onUpdatePlanTime(plan.id, newEnd)}
+          pixelsPerHour={PIXELS_PER_HOUR}
+          siblingItems={[...colItems, ...colPlans.filter(p => p.id !== plan.id)]}
+          column={column}
+        />
+      ))}
+      {now?.column === column && (
+        <div className="absolute left-0 right-0 border-t border-red-500 pointer-events-none z-10" style={{ top: now.top }} />
+      )}
+      {draggingNew?.column === column && (
+        <div
+          className="absolute left-1 right-1 bg-green-500/30 border border-green-400 rounded pointer-events-none z-20"
+          style={{ top: getPositionForTime(draggingNew.startTime, startHour), height: draggingNew.currentHeight }}
+        />
+      )}
+      {addingAt?.column === column && (
+        <div
+          className="absolute left-1 right-1 bg-neutral-900 border border-neutral-700 rounded z-20 shadow-xl"
+          style={{ top: getPositionForTime(addingAt.time, startHour), height: (addingAt.duration / 60) * PIXELS_PER_HOUR }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <input
+            autoFocus value={inputValue} onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && inputValue.trim()) {
+                const [h, m] = addingAt.time.split(':').map(Number);
+                const totalMins = h * 60 + m + addingAt.duration;
+                const endH = Math.floor(totalMins / 60);
+                const endM = totalMins % 60;
+                onCreateItem({ title: inputValue.trim(), starts_at: addingAt.time, ends_at: `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00` });
+                setAddingAt(null); setInputValue("");
+              }
+              if (e.key === 'Escape') { setAddingAt(null); setInputValue(""); }
+            }}
+            onBlur={() => { setAddingAt(null); setInputValue(""); }}
+            placeholder="Event title..."
+            className="w-full h-full px-2 bg-transparent text-neutral-100 outline-none text-[16px] text-center"
+          />
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[130] bg-neutral-950 flex flex-col">
+      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-neutral-800">
+        <div>
+          <div className="text-lg font-semibold text-neutral-100">{dateLabel}</div>
+          <div className="text-xs text-neutral-400">
+            {date ? new Date(date + 'T00:00:00').toLocaleDateString(undefined, { month: 'long', day: 'numeric' }) : ''}
+          </div>
+        </div>
+        <button onClick={onClose} className="text-neutral-400 hover:text-neutral-200 text-2xl p-2">{'\u00D7'}</button>
+      </div>
+      <div ref={containerRef} className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex">
+          <div className="w-8 shrink-0 relative" style={{ height: COLUMN_HEIGHT }}>
+            {leftHours.map((h, i) => (
+              <div key={h} className="absolute right-1 text-xs text-neutral-500 leading-none" style={{ top: i === 0 ? i * PIXELS_PER_HOUR + 2 : i * PIXELS_PER_HOUR - 5 }}>{formatHour(h)}</div>
+            ))}
+            <div className="absolute right-1 text-xs text-neutral-500 leading-none" style={{ top: COLUMN_HEIGHT - 12 }}>3</div>
+          </div>
+          {renderColumn('left', leftHours, leftItems, leftPlans, LEFT_START_HOUR)}
+          <div className="w-px bg-neutral-700" />
+        </div>
+        <div className="flex-1 flex">
+          {renderColumn('right', rightHours, rightItems, rightPlans, RIGHT_START_HOUR)}
+          <div className="w-8 shrink-0 relative" style={{ height: COLUMN_HEIGHT }}>
+            {rightHours.map((h, i) => (
+              <div key={h} className="absolute left-1 text-xs text-neutral-500 leading-none" style={{ top: i === 0 ? i * PIXELS_PER_HOUR + 2 : i * PIXELS_PER_HOUR - 5 }}>{formatHour(h)}</div>
+            ))}
+            <div className="absolute left-1 text-xs text-neutral-500 leading-none" style={{ top: COLUMN_HEIGHT - 12 }}>11</div>
+          </div>
+        </div>
+      </div>
+      {editingItem && (
+        <ScheduleEditModal item={editingItem}
+          onSave={(updates) => onUpdateItem(editingItem.id, updates)}
+          onDelete={() => onDeleteItem(editingItem.id)}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function CalendarPage() {
   const today = useMemo(() => {
     const d = new Date();
@@ -294,6 +893,46 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
 
   const [openIso, setOpenIso] = useState<string | null>(null);
+  const [scheduleViewDate, setScheduleViewDate] = useState<string | null>(null);
+  const [scheduleItems, setScheduleItems] = useState<DayScheduleItem[]>([]);
+
+  // Fetch schedule items when schedule view opens
+  useEffect(() => {
+    if (!scheduleViewDate) { setScheduleItems([]); return; }
+    supabase
+      .from('day_schedule_items')
+      .select('*')
+      .eq('scheduled_date', scheduleViewDate)
+      .then(({ data, error }) => { if (!error && data) setScheduleItems(data); });
+  }, [scheduleViewDate]);
+
+  async function createScheduleItem(item: { title: string; starts_at: string; ends_at: string }) {
+    if (!scheduleViewDate) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('day_schedule_items')
+      .insert({ user_id: user.id, scheduled_date: scheduleViewDate, title: item.title, starts_at: item.starts_at, ends_at: item.ends_at })
+      .select()
+      .single();
+    if (!error && data) setScheduleItems(prev => [...prev, data]);
+  }
+
+  async function updateScheduleItem(id: string, updates: Partial<DayScheduleItem>) {
+    const { error } = await supabase
+      .from('day_schedule_items')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (!error) setScheduleItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+  }
+
+  async function deleteScheduleItem(id: string) {
+    const { error } = await supabase
+      .from('day_schedule_items')
+      .delete()
+      .eq('id', id);
+    if (!error) setScheduleItems(prev => prev.filter(item => item.id !== id));
+  }
 
   const [maxPlansPerCell, setMaxPlansPerCell] = useState(3);
   const [isWide, setIsWide] = useState(false);
@@ -318,7 +957,7 @@ export default function CalendarPage() {
       const [plansRes, tasksRes, focusRes, dayNotesRes, contentItemsRes, contentSessionsRes, movieLookupRes] = await Promise.all([
         supabase
           .from("plans")
-          .select("id,title,scheduled_for,end_date,starts_at,status,day_off")
+          .select("id,title,scheduled_for,end_date,starts_at,ends_at,status,day_off")
           .gte("scheduled_for", range.start)
           .lte("scheduled_for", range.end)
           .order("scheduled_for", { ascending: true })
@@ -598,10 +1237,13 @@ export default function CalendarPage() {
     return (
       <div className="w-[min(560px,92vw)] max-h-[80dvh] overflow-y-auto rounded-3xl border border-neutral-700/60 bg-neutral-950/98 p-5 shadow-2xl backdrop-blur-xl">
         <div className="flex items-start justify-between gap-4">
-          <div>
+          <button
+            onClick={() => { setScheduleViewDate(iso); }}
+            className="text-left hover:opacity-70 transition-opacity"
+          >
             <div className="text-sm font-medium text-neutral-400">{fmtWeekday(d)}</div>
-            <div className="text-xl font-semibold text-neutral-50 tracking-tight">{fmtMonthDay(d)}</div>
-          </div>
+            <div className="text-xl font-semibold text-neutral-50 tracking-tight underline decoration-neutral-600 underline-offset-2">{fmtMonthDay(d)}</div>
+          </button>
           <button
             onClick={() => setOpenIso(null)}
             className="rounded-xl border border-neutral-700 bg-neutral-900/80 px-3 py-2 text-sm font-medium text-neutral-100 hover:bg-neutral-800/80 transition-colors"
@@ -859,6 +1501,42 @@ export default function CalendarPage() {
           {dayModalContent(openIso)}
         </div>
       ) : null}
+
+      {/* Day Schedule View */}
+      <CalDayScheduleView
+        open={!!scheduleViewDate}
+        date={scheduleViewDate ?? ''}
+        dateLabel={scheduleViewDate ? (() => {
+          if (scheduleViewDate === todayIso) return 'Today';
+          const tmrw = addDays(today, 1);
+          if (scheduleViewDate === toISODate(tmrw)) return 'Tomorrow';
+          const d = new Date(scheduleViewDate + 'T00:00:00');
+          return d.toLocaleDateString(undefined, { weekday: 'long' });
+        })() : ''}
+        items={scheduleItems}
+        plans={scheduleViewDate ? plans.filter(p => p.scheduled_for === scheduleViewDate) : []}
+        onClose={() => { setScheduleViewDate(null); setScheduleItems([]); }}
+        onCreateItem={createScheduleItem}
+        onUpdateItem={updateScheduleItem}
+        onDeleteItem={deleteScheduleItem}
+        onUpdatePlanTime={async (id, endsAtTime) => {
+          const plan = plans.find(p => p.id === id);
+          if (!plan || !plan.starts_at) return;
+          const startsAtDate = new Date(plan.starts_at);
+          const [endH, endM] = endsAtTime.split(':').map(Number);
+          const endsAtDate = new Date(startsAtDate);
+          endsAtDate.setHours(endH, endM, 0, 0);
+          const { error } = await supabase
+            .from('plans')
+            .update({ ends_at: endsAtDate.toISOString() })
+            .eq('id', id);
+          if (!error) {
+            setPlans(prev => prev.map(p =>
+              p.id === id ? { ...p, ends_at: endsAtDate.toISOString() } : p
+            ));
+          }
+        }}
+      />
     </main>
   );
 }
