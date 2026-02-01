@@ -170,8 +170,8 @@ export default function HomePage() {
       return;
     }
 
-    // bounds for watching
-if (p === 0 && direction === "up") return;
+    // bounds: priority 1 is the highest
+if (p === 1 && direction === "up") return;
 
 const target = direction === "up" ? p - 1 : p + 1;
 
@@ -202,8 +202,7 @@ if (direction === "down" && p === maxNon99Priority && sameCount === 1) {
 const targetCount = rows.filter((r) => r.status === "to_watch" && r.priority === target).length;
 
 // Only swap if BOTH sides are singletons (exactly 1 in current priority and 1 in target priority).
-// Special rule: never swap when moving *down* from Watching (0) to 1. Downgrading Watching should not promote another movie to Watching.
-const shouldSwap = sameCount === 1 && targetCount === 1 && !(p === 0 && direction === "down");
+const shouldSwap = sameCount === 1 && targetCount === 1;
 
 // If either side is a batch (or there is no target movie), only move the clicked movie.
 if (!shouldSwap) {
@@ -599,10 +598,6 @@ try {
                                 </button>
                               </div>
 
-                              {/* Watching label on desktop */}
-                              {m.priority === 0 ? (
-                                <div className="mt-2 text-[12px] text-white/40 hidden sm:block">Watching</div>
-                              ) : null}
                             </div>
                           ) : null}
                         </div>

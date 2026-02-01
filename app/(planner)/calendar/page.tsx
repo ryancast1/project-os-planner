@@ -345,13 +345,10 @@ export default function CalendarPage() {
           .select("note_date,notes")
           .gte("note_date", range.start)
           .lte("note_date", range.end),
-        // Content items scheduled to specific days
+        // All content items (need all for session title lookups, not just scheduled ones)
         supabase
           .from("content_items")
-          .select("id,title,category,is_ongoing,status,scheduled_for")
-          .not("scheduled_for", "is", null)
-          .gte("scheduled_for", range.start)
-          .lte("scheduled_for", range.end),
+          .select("id,title,category,is_ongoing,status,scheduled_for"),
         // Content sessions (for ongoing items and movies)
         supabase
           .from("content_sessions")
@@ -599,7 +596,7 @@ export default function CalendarPage() {
     const notes = dayNotes[iso] ?? "";
 
     return (
-      <div className="w-[min(560px,92vw)] rounded-3xl border border-neutral-700/60 bg-neutral-950/98 p-5 shadow-2xl backdrop-blur-xl">
+      <div className="w-[min(560px,92vw)] max-h-[80dvh] overflow-y-auto rounded-3xl border border-neutral-700/60 bg-neutral-950/98 p-5 shadow-2xl backdrop-blur-xl">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-sm font-medium text-neutral-400">{fmtWeekday(d)}</div>
@@ -691,7 +688,7 @@ export default function CalendarPage() {
           {notes ? (
             <div>
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Notes</div>
-              <div className="text-sm text-neutral-200 whitespace-pre-wrap">{notes}</div>
+              <div className="text-sm text-neutral-200 whitespace-pre-wrap max-h-[200px] overflow-y-auto">{notes}</div>
             </div>
           ) : null}
 

@@ -1791,34 +1791,9 @@ function NotesModal({
       />
 
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
+      <div className="relative z-10 w-full max-w-lg flex flex-col rounded-2xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl" style={{ height: "min(75dvh, 600px)" }}>
+        <div className="mb-3 flex items-center justify-between shrink-0">
           <h2 className="text-lg font-semibold text-neutral-100">Notes for {dateLabel}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-200 text-xl leading-none"
-          >
-            ×
-          </button>
-        </div>
-
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Add notes for this day..."
-          className="w-full min-h-[200px] resize-y rounded-xl border border-neutral-700 bg-neutral-800/50 px-3 py-2 text-base text-neutral-100 placeholder:text-neutral-500 outline-none focus:border-neutral-500"
-          autoFocus
-        />
-
-        <div className="mt-4 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-neutral-700 px-4 py-2 text-sm font-semibold text-neutral-300 hover:bg-neutral-800"
-          >
-            Cancel
-          </button>
           <button
             type="button"
             onClick={() => {
@@ -1829,6 +1804,24 @@ function NotesModal({
             className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add notes for this day..."
+          className="w-full flex-1 min-h-0 resize-none rounded-xl border border-neutral-700 bg-neutral-800/50 px-3 py-2 text-[16px] sm:text-sm text-neutral-100 placeholder:text-neutral-500 outline-none focus:border-neutral-500"
+          autoFocus
+        />
+
+        <div className="mt-3 flex justify-end shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-neutral-700 px-4 py-2 text-sm font-semibold text-neutral-300 hover:bg-neutral-800"
+          >
+            Cancel
           </button>
         </div>
       </div>
@@ -3667,11 +3660,11 @@ function getWindowValue(which: DrawerWindow) {
         .select("note_date,notes")
         .gte("note_date", start)
         .lte("note_date", end),
-      // New content system queries
+      // New content system queries: active items + done items scheduled in visible range
       supabase
         .from("content_items")
         .select("id,user_id,title,notes,category,is_ongoing,status,scheduled_for,window_kind,window_start,sort_order,day_sort_order,created_at,completed_at")
-        .eq("status", "active")
+        .or(`status.eq.active,and(status.eq.done,scheduled_for.gte.${start},scheduled_for.lte.${end})`)
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
       // Sessions: scheduled to specific days OR in parking lots (combined into one query)
@@ -3914,8 +3907,8 @@ setMovieItems(
     const p = me.priority;
     if (p === null) return;
 
-    // bounds for watching
-    if (p === 0 && direction === "up") return;
+    // bounds: priority 1 is the highest
+    if (p === 1 && direction === "up") return;
 
     const target = direction === "up" ? p - 1 : p + 1;
 
@@ -3946,7 +3939,7 @@ setMovieItems(
     const targetCount = movieItems.filter((m) => m.priority === target).length;
 
     // Only swap if BOTH sides are singletons
-    const shouldSwap = sameCount === 1 && targetCount === 1 && !(p === 0 && direction === "down");
+    const shouldSwap = sameCount === 1 && targetCount === 1;
 
     if (!shouldSwap) {
       // optimistic UI update

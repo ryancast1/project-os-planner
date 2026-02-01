@@ -416,12 +416,16 @@ function EditSheet({
         <div className="flex items-center justify-between p-5 pb-3 shrink-0">
           <div className="text-base font-semibold text-neutral-100">{title}</div>
           <button
-            className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-200"
-            onClick={() => {
-              if (!saving) onClose();
-            }}
+            className={clsx(
+              "rounded-xl px-3 py-2 text-sm font-semibold",
+              saving
+                ? "bg-neutral-800 text-neutral-400"
+                : "bg-neutral-100 text-neutral-950"
+            )}
+            disabled={saving}
+            onClick={handleSave}
           >
-            Close
+            Save
           </button>
         </div>
 
@@ -560,16 +564,12 @@ function EditSheet({
           </div>
 
           <button
-            className={clsx(
-              "rounded-2xl px-4 py-3 text-sm font-semibold",
-              saving
-                ? "bg-neutral-800 text-neutral-400"
-                : "bg-neutral-100 text-neutral-950"
-            )}
-            disabled={saving}
-            onClick={handleSave}
+            className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-200"
+            onClick={() => {
+              if (!saving) onClose();
+            }}
           >
-            Save
+            Cancel
           </button>
         </div>
       </div>

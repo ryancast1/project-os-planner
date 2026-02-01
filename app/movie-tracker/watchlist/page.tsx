@@ -53,14 +53,12 @@ function parseLengthToMinutes(input: string): number | null {
 
 function priorityLabel(p: Row["priority"]) {
   if (p == null) return "";
-  if (p === 0) return "Watching";
   if (p === 99) return "On Deck";
   return String(p);
 }
 
 function priorityLabelCompact(p: Row["priority"]) {
   if (p == null) return "";
-  if (p === 0) return "Watching";
   if (p === 99) return "OD";
   return String(p);
 }
