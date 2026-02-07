@@ -2713,7 +2713,18 @@ function DayScheduleView({
                     }
                     if (e.key === 'Escape') { setAddingAt(null); setInputValue(""); }
                   }}
-                  onBlur={() => { setAddingAt(null); setInputValue(""); }}
+                  onBlur={() => {
+                    if (inputValue.trim() && addingAt) {
+                      const [h, m] = addingAt.time.split(':').map(Number);
+                      const totalMins = h * 60 + m + addingAt.duration;
+                      const endH = Math.floor(totalMins / 60);
+                      const endM = totalMins % 60;
+                      const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
+                      onCreateItem({ title: inputValue.trim(), starts_at: addingAt.time, ends_at: endTime });
+                    }
+                    setAddingAt(null);
+                    setInputValue("");
+                  }}
                   placeholder="Event title..."
                   className="w-full h-full px-2 bg-transparent text-neutral-100 outline-none text-[16px] text-center"
                 />
@@ -2803,7 +2814,18 @@ function DayScheduleView({
                     }
                     if (e.key === 'Escape') { setAddingAt(null); setInputValue(""); }
                   }}
-                  onBlur={() => { setAddingAt(null); setInputValue(""); }}
+                  onBlur={() => {
+                    if (inputValue.trim() && addingAt) {
+                      const [h, m] = addingAt.time.split(':').map(Number);
+                      const totalMins = h * 60 + m + addingAt.duration;
+                      const endH = Math.floor(totalMins / 60);
+                      const endM = totalMins % 60;
+                      const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
+                      onCreateItem({ title: inputValue.trim(), starts_at: addingAt.time, ends_at: endTime });
+                    }
+                    setAddingAt(null);
+                    setInputValue("");
+                  }}
                   placeholder="Event title..."
                   className="w-full h-full px-2 bg-transparent text-neutral-100 outline-none text-[16px] text-center"
                 />
