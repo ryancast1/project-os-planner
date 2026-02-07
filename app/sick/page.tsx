@@ -215,8 +215,7 @@ export default function SickPage() {
                     <textarea
                       value={editingText}
                       onChange={(e) => setEditingText(e.target.value)}
-                      rows={4}
-                      className="w-full resize-none rounded-xl border border-neutral-700 bg-black/40 px-3 py-2 text-sm leading-6 text-neutral-100 outline-none focus:border-neutral-500"
+                      className="w-full min-h-[50vh] resize-y rounded-xl border border-neutral-700 bg-black/40 px-3 py-2 text-[16px] sm:text-sm leading-6 text-neutral-100 outline-none focus:border-neutral-500"
                     />
                     <div className="mt-2 flex gap-2">
                       <button

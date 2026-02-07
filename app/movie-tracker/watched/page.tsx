@@ -89,6 +89,7 @@ export default function WatchedPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -149,6 +150,12 @@ export default function WatchedPage() {
     return `${total} ${moviesWord}  —  ${watchedThisYear} ${yWord} this year (${Math.round(pace)} pace)`;
   }, [rows]);
 
+  const filteredRows = useMemo(() => {
+    if (!search.trim()) return rows;
+    const q = search.toLowerCase();
+    return rows.filter((r) => (r.title ?? "").toLowerCase().includes(q));
+  }, [rows, search]);
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-5 py-8 text-white">
       <div className="mx-auto w-full max-w-5xl">
@@ -168,6 +175,15 @@ export default function WatchedPage() {
     </div>
 
     <div className="mt-2 text-center text-sm text-white/60">{yearStatsText}</div>
+    <div className="mt-3 flex justify-center">
+      <input
+        type="text"
+        placeholder="Search..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="w-full max-w-xs h-9 rounded-xl border border-white/10 bg-white/5 px-3 text-[16px] sm:text-sm text-white placeholder:text-white/40 outline-none focus:border-white/20"
+      />
+    </div>
   </div>
 </header>
 
@@ -194,8 +210,12 @@ export default function WatchedPage() {
                 <div className="text-right">Watched</div>
               </div>
 
+              {filteredRows.length === 0 && search && (
+                <div className="py-10 text-center text-white/60">No matches.</div>
+              )}
+
               <div className="divide-y divide-white/10">
-              {rows.map((r) => {
+              {filteredRows.map((r) => {
                 const isOpen = openId === r.id;
                 const len = minutesToHMM(r.length_minutes);
                 const watched = ymdToMDY(r.date_watched);

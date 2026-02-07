@@ -133,6 +133,7 @@ export default function WatchlistPage() {
   const [watchedModalId, setWatchedModalId] = useState<string | null>(null);
   const [watchedDate, setWatchedDate] = useState<string>(todayISODateLocal());
   const [watchedNote, setWatchedNote] = useState<string>("");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -167,6 +168,12 @@ export default function WatchlistPage() {
       alive = false;
     };
   }, []);
+
+  const filteredRows = useMemo(() => {
+    if (!search.trim()) return rows;
+    const q = search.toLowerCase();
+    return rows.filter((r) => (r.title ?? "").toLowerCase().includes(q));
+  }, [rows, search]);
 
   const count = useMemo(() => rows.length, [rows]);
 
@@ -353,6 +360,15 @@ export default function WatchlistPage() {
           <div className="mt-2 flex items-center justify-center text-sm text-white/60">
             <span>{loading ? "Loading…" : `${count} items`}</span>
           </div>
+          <div className="mt-3 flex justify-center">
+            <input
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full max-w-xs h-9 rounded-xl border border-white/10 bg-white/5 px-3 text-[16px] sm:text-sm text-white placeholder:text-white/40 outline-none focus:border-white/20"
+            />
+          </div>
         </header>
 
         {err && (
@@ -373,10 +389,10 @@ export default function WatchlistPage() {
           <div className="divide-y divide-white/10">
             {loading ? (
               <div className="p-4 text-sm text-white/60">Loading…</div>
-            ) : rows.length === 0 ? (
-              <div className="p-4 text-sm text-white/60">No items in To Watch.</div>
+            ) : filteredRows.length === 0 ? (
+              <div className="p-4 text-sm text-white/60">{search ? "No matches." : "No items in To Watch."}</div>
             ) : (
-              rows.map((r) => {
+              filteredRows.map((r) => {
                 const expanded = expandedId === r.id;
                 const isEditing = editingId === r.id;
 

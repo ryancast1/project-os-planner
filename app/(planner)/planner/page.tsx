@@ -1861,20 +1861,14 @@ function ScheduleItemBlock({
   const [isResizing, setIsResizing] = useState(false);
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
+  const localHeightRef = useRef(localHeight);
+  localHeightRef.current = localHeight;
 
   useEffect(() => {
     if (!isResizing) {
       setLocalHeight(position.height);
     }
   }, [position.height, isResizing]);
-
-  const handleResizeStart = (e: React.TouchEvent | React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    resizeRef.current = { startY: clientY, startHeight: localHeight };
-    setIsResizing(true);
-  };
 
   // Calculate max height before hitting next item
   const maxHeight = useMemo(() => {
@@ -1894,26 +1888,40 @@ function ScheduleItemBlock({
     return ((nextStart - itemStartMinutes) / 60) * pixelsPerHour;
   }, [item.starts_at, siblingItems, pixelsPerHour]);
 
+  const maxHeightRef = useRef(maxHeight);
+  maxHeightRef.current = maxHeight;
+
+  const handleResizeStart = (e: React.TouchEvent | React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    resizeRef.current = { startY: clientY, startHeight: localHeightRef.current };
+    setIsResizing(true);
+  };
+
   useEffect(() => {
     if (!isResizing) return;
 
     const handleMove = (e: TouchEvent | MouseEvent) => {
       if (!resizeRef.current) return;
+      e.preventDefault();
       const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
       const deltaY = clientY - resizeRef.current.startY;
+      const mh = maxHeightRef.current;
       let newHeight = Math.max(pixelsPerHour / 4, resizeRef.current.startHeight + deltaY);
       // Constrain to not overlap with next item
-      if (maxHeight !== Infinity) {
-        newHeight = Math.min(newHeight, maxHeight);
+      if (mh !== Infinity) {
+        newHeight = Math.min(newHeight, mh);
       }
       const snapSize = pixelsPerHour / 4;
       const snappedHeight = Math.round(newHeight / snapSize) * snapSize;
-      setLocalHeight(Math.min(snappedHeight, maxHeight === Infinity ? snappedHeight : maxHeight));
+      setLocalHeight(Math.min(snappedHeight, mh === Infinity ? snappedHeight : mh));
     };
 
     const handleEnd = () => {
       if (!resizeRef.current) return;
-      const durationMinutes = (localHeight / pixelsPerHour) * 60;
+      const finalHeight = localHeightRef.current;
+      const durationMinutes = (finalHeight / pixelsPerHour) * 60;
       const [startH, startM] = item.starts_at.split(':').map(Number);
       const endMinutes = startH * 60 + startM + durationMinutes;
       const endH = Math.floor(endMinutes / 60);
@@ -1934,7 +1942,7 @@ function ScheduleItemBlock({
       window.removeEventListener('touchend', handleEnd);
       window.removeEventListener('mouseup', handleEnd);
     };
-  }, [isResizing, localHeight, item.starts_at, onResize, pixelsPerHour, maxHeight]);
+  }, [isResizing, item.starts_at, onResize, pixelsPerHour]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -2158,20 +2166,14 @@ function PlanItemBlock({
   const [localHeight, setLocalHeight] = useState(position.height);
   const [isResizing, setIsResizing] = useState(false);
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const localHeightRef = useRef(localHeight);
+  localHeightRef.current = localHeight;
 
   useEffect(() => {
     if (!isResizing) {
       setLocalHeight(position.height);
     }
   }, [position.height, isResizing]);
-
-  const handleResizeStart = (e: React.TouchEvent | React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    resizeRef.current = { startY: clientY, startHeight: localHeight };
-    setIsResizing(true);
-  };
 
   // Calculate max height before hitting next item
   const maxHeight = useMemo(() => {
@@ -2189,25 +2191,39 @@ function PlanItemBlock({
     return ((nextStart - itemStartMinutes) / 60) * pixelsPerHour;
   }, [plan.starts_at, siblingItems, pixelsPerHour]);
 
+  const maxHeightRef = useRef(maxHeight);
+  maxHeightRef.current = maxHeight;
+
+  const handleResizeStart = (e: React.TouchEvent | React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    resizeRef.current = { startY: clientY, startHeight: localHeightRef.current };
+    setIsResizing(true);
+  };
+
   useEffect(() => {
     if (!isResizing) return;
 
     const handleMove = (e: TouchEvent | MouseEvent) => {
       if (!resizeRef.current) return;
+      e.preventDefault();
       const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
       const deltaY = clientY - resizeRef.current.startY;
+      const mh = maxHeightRef.current;
       let newHeight = Math.max(pixelsPerHour / 4, resizeRef.current.startHeight + deltaY);
-      if (maxHeight !== Infinity) {
-        newHeight = Math.min(newHeight, maxHeight);
+      if (mh !== Infinity) {
+        newHeight = Math.min(newHeight, mh);
       }
       const snapSize = pixelsPerHour / 4;
       const snappedHeight = Math.round(newHeight / snapSize) * snapSize;
-      setLocalHeight(Math.min(snappedHeight, maxHeight === Infinity ? snappedHeight : maxHeight));
+      setLocalHeight(Math.min(snappedHeight, mh === Infinity ? snappedHeight : mh));
     };
 
     const handleEnd = () => {
       if (!resizeRef.current) return;
-      const durationMinutes = (localHeight / pixelsPerHour) * 60;
+      const finalHeight = localHeightRef.current;
+      const durationMinutes = (finalHeight / pixelsPerHour) * 60;
       const [startH, startM] = plan.starts_at.split(':').map(Number);
       const endMinutes = startH * 60 + startM + durationMinutes;
       const endH = Math.floor(endMinutes / 60);
@@ -2228,7 +2244,7 @@ function PlanItemBlock({
       window.removeEventListener('touchend', handleEnd);
       window.removeEventListener('mouseup', handleEnd);
     };
-  }, [isResizing, localHeight, plan.starts_at, onResize, pixelsPerHour, maxHeight]);
+  }, [isResizing, plan.starts_at, onResize, pixelsPerHour]);
 
   return (
     <div
