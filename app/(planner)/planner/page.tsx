@@ -2394,7 +2394,24 @@ function DayScheduleView({
     maxMinutes: number;
   } | null>(null);
 
+  // Key to force "now" line recalculation when app becomes visible or every 3 min
+  const [nowKey, setNowKey] = useState(0);
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setNowKey(prev => prev + 1);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const interval = setInterval(() => setNowKey(prev => prev + 1), 180000); // 3 minutes
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(interval);
+    };
+  }, []);
+
   // Calculate "now" line position (only shown on today's schedule)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const now = useMemo(() => {
     const d = new Date();
     // Check if the schedule view date is today
@@ -2416,7 +2433,7 @@ function DayScheduleView({
       return { column: 'right' as const, top };
     }
     return null; // Outside schedule hours
-  }, [PIXELS_PER_HOUR, date]);
+  }, [PIXELS_PER_HOUR, date, nowKey]);
 
   const getPosition = (startsAt: string, endsAt: string, columnStartHour: number) => {
     const [startH, startM] = startsAt.split(':').map(Number);

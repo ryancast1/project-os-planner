@@ -600,6 +600,21 @@ function CalDayScheduleView({
     column: 'left' | 'right'; startY: number; startTime: string; startMinutes: number; maxMinutes: number;
   } | null>(null);
 
+  // Key to force "now" line recalculation when app becomes visible or every 3 min
+  const [nowKey, setNowKey] = useState(0);
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') setNowKey(prev => prev + 1);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const interval = setInterval(() => setNowKey(prev => prev + 1), 180000); // 3 minutes
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(interval);
+    };
+  }, []);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const now = useMemo(() => {
     const d = new Date();
     const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -613,7 +628,7 @@ function CalDayScheduleView({
       return { column: 'right' as const, top: ((totalMinutes - RIGHT_START_HOUR * 60) / 60) * PIXELS_PER_HOUR };
     }
     return null;
-  }, [PIXELS_PER_HOUR, date]);
+  }, [PIXELS_PER_HOUR, date, nowKey]);
 
   const getPosition = (startsAt: string, endsAt: string, columnStartHour: number) => {
     const [startH, startM] = startsAt.split(':').map(Number);
