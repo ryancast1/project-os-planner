@@ -470,7 +470,7 @@ export default function PackingPage() {
                   <input
                     value={newTripName}
                     onChange={(e) => setNewTripName(e.target.value)}
-                    placeholder="Trip name (e.g. Florida - Feb 26)"
+                    placeholder="Trip name"
                     className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-base text-neutral-100 outline-none focus:border-neutral-500"
                   />
                   <button

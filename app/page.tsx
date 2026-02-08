@@ -41,6 +41,18 @@ export default function HomePage() {
               </Link>
             ))}
           </div>
+
+          {/* Temporary Super Bowl tile */}
+          <div className="mt-6 flex justify-center px-4">
+            <Link
+              href="/superbowl"
+              className="relative w-36 aspect-square overflow-hidden rounded-3xl bg-neutral-900 shadow-sm transition active:scale-[0.99] flex items-center justify-center"
+              aria-label="Super Bowl LX"
+              title="Super Bowl LX"
+            >
+              <span className="text-6xl">🏈</span>
+            </Link>
+          </div>
         </div>
       </div>
     </main>
