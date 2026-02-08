@@ -24,9 +24,9 @@ const TEAM_COLORS = [
   "rgba(59, 130, 246, 0.95)",
 ];
 
-// Game start: 6:30 PM PST on Feb 9, 2026
+// Game start: 6:30 PM ET on Feb 8, 2026
 function getGameStartUnix(): number {
-  const d = new Date("2026-02-09T18:30:00-08:00");
+  const d = new Date("2026-02-08T18:30:00-05:00");
   return Math.floor(d.getTime() / 1000);
 }
 
@@ -302,7 +302,7 @@ function OddsChart({
       label: d.toLocaleTimeString("en-US", {
         hour: "numeric",
         minute: "2-digit",
-        timeZone: "America/Los_Angeles",
+        timeZone: "America/New_York",
       }),
     });
   }
