@@ -6,7 +6,7 @@ export default function HomePage() {
     { href: "/planner", title: "Planner", icon: "/icons/planner.png" },
     { href: "/workout-tracker", title: "Workout Tracker", icon: "/icons/workout.png" },
     { href: "/movie-tracker", title: "Movie Tracker", icon: "/icons/movie.png" },
-    { href: "/database", title: "Database", icon: "/icons/database.png" },
+    { href: "/situation", title: "Situation", icon: "/icons/situation.png" },
     { href: "/trich", title: "Trich Tracker", icon: "/icons/trich.png" },
     { href: "/cc", title: "Cocktail Chatter", icon: "/icons/cc.png" },
     { href: "/packing", title: "Packing", icon: "/icons/packing.png" },
@@ -42,18 +42,18 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Situation tile */}
+          {/* Database tile */}
           <div className="mt-6 flex justify-center px-4">
             <Link
-              href="/situation"
+              href="/database"
               className="relative w-36 aspect-square overflow-hidden rounded-3xl bg-neutral-900 shadow-sm transition active:scale-[0.99]"
-              aria-label="Situation"
-              title="Situation"
+              aria-label="Database"
+              title="Database"
             >
-              <span className="sr-only">Situation</span>
+              <span className="sr-only">Database</span>
               <div className="absolute inset-0 p-3">
                 <Image
-                  src="/icons/situation.png"
+                  src="/icons/database.png"
                   alt=""
                   fill
                   sizes="(max-width: 768px) 50vw, 240px"
