@@ -196,7 +196,10 @@ async function fetchPriceHistory(
 // -- Main Component --
 export default function PolymarketPage() {
   const [urlInput, setUrlInput] = useState("");
-  const [slug, setSlug] = useState<string | null>(null);
+  const [slug, setSlug] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("situation-slug");
+  });
   const [market, setMarket] = useState<MarketInfo | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [loading, setLoading] = useState(false);
@@ -291,11 +294,13 @@ export default function PolymarketPage() {
     }
     // Stop previous polling
     if (intervalRef.current) clearInterval(intervalRef.current);
+    localStorage.setItem("situation-slug", s);
     setSlug(s);
   }
 
   function handleReset() {
     if (intervalRef.current) clearInterval(intervalRef.current);
+    localStorage.removeItem("situation-slug");
     setSlug(null);
     setMarket(null);
     setOutcomes([]);
@@ -339,20 +344,20 @@ export default function PolymarketPage() {
   const isBinary = market && outcomes.length === 2 && outcomes[0].name === "Yes";
 
   return (
-    <main className="min-h-screen h-screen overflow-hidden bg-gradient-to-b from-black to-zinc-950 px-6 py-4 text-white flex flex-col">
+    <main className="min-h-screen h-screen overflow-hidden bg-gradient-to-b from-black to-zinc-950 px-4 md:px-6 py-3 md:py-4 text-white flex flex-col">
       <div className="flex items-center justify-between shrink-0">
         <Link
           href="/"
-          className="text-sm text-white/50 hover:text-white/80 transition"
+          className="text-xs md:text-sm text-white/50 hover:text-white/80 transition"
         >
           &larr; Home
         </Link>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 md:gap-1">
           {TIME_RANGES.map((r) => (
             <button
               key={r.label}
               onClick={() => setTimeRange(r.label)}
-              className={`px-2.5 py-1 text-xs rounded-lg transition ${
+              className={`px-1.5 md:px-2.5 py-1 text-[10px] md:text-xs rounded-lg transition ${
                 timeRange === r.label
                   ? "bg-white/15 text-white"
                   : "text-white/40 hover:text-white/70"
@@ -364,9 +369,9 @@ export default function PolymarketPage() {
         </div>
         <button
           onClick={handleReset}
-          className="text-sm text-white/50 hover:text-white/80 transition"
+          className="text-xs md:text-sm text-white/50 hover:text-white/80 transition"
         >
-          Change market
+          Change
         </button>
       </div>
 
@@ -389,14 +394,14 @@ export default function PolymarketPage() {
           return (
             <>
               <div className="shrink-0 text-center pt-2">
-                <div className="text-xl text-white/60 mb-2">{market.title}</div>
+                <div className="text-base md:text-xl text-white/60 mb-2">{market.title}</div>
                 <div
-                  className="text-[10rem] leading-none font-bold tabular-nums"
+                  className="text-6xl md:text-[10rem] leading-none font-bold tabular-nums"
                   style={{ color: COLORS[0] }}
                 >
                   {pct}%
                 </div>
-                <div className="text-lg text-white/40 mt-1">Yes</div>
+                <div className="text-sm md:text-lg text-white/40 mt-1">Yes</div>
               </div>
               <div className="mt-4 flex-1 min-h-0">
                 <OddsChart
@@ -425,17 +430,17 @@ export default function PolymarketPage() {
 
         return (
           <>
-            <div className="text-center text-lg text-white/50 mt-1 shrink-0">
+            <div className="text-center text-sm md:text-lg text-white/50 mt-1 shrink-0">
               {market.title}
             </div>
-            <div className="flex justify-center items-center gap-12 shrink-0 pt-2">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 md:flex md:justify-center md:items-center md:gap-12 shrink-0 pt-2 px-2 md:px-0">
               {topOutcomes.map((o, i) => (
                 <div key={o.tokenId} className="text-center">
-                  <div className="text-xl font-semibold text-white/70 mb-1">
+                  <div className="text-sm md:text-xl font-semibold text-white/70 mb-0.5 md:mb-1 truncate">
                     {o.name}
                   </div>
                   <div
-                    className="text-[7rem] leading-none font-bold tabular-nums"
+                    className="text-4xl md:text-[7rem] leading-none font-bold tabular-nums"
                     style={{ color: COLORS[i % COLORS.length] }}
                   >
                     {topNormalized[i]}%
