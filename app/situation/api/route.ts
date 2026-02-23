@@ -26,10 +26,15 @@ export async function GET(req: NextRequest) {
     }
     case "history": {
       const market = searchParams.get("market") ?? "";
-      const startTs = searchParams.get("startTs") ?? "";
-      const endTs = searchParams.get("endTs") ?? "";
       const fidelity = searchParams.get("fidelity") ?? "1";
-      url = `${CLOB_API}/prices-history?market=${encodeURIComponent(market)}&startTs=${startTs}&endTs=${endTs}&fidelity=${fidelity}`;
+      const startTs = searchParams.get("startTs");
+      const interval = searchParams.get("interval");
+      if (interval) {
+        url = `${CLOB_API}/prices-history?market=${encodeURIComponent(market)}&interval=${encodeURIComponent(interval)}&fidelity=${fidelity}`;
+      } else {
+        const endTs = searchParams.get("endTs") ?? "";
+        url = `${CLOB_API}/prices-history?market=${encodeURIComponent(market)}&startTs=${startTs}&endTs=${endTs}&fidelity=${fidelity}`;
+      }
       break;
     }
     default:

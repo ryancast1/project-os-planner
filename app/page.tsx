@@ -42,15 +42,25 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Temporary Super Bowl tile */}
+          {/* Situation tile */}
           <div className="mt-6 flex justify-center px-4">
             <Link
-              href="/superbowl"
-              className="relative w-36 aspect-square overflow-hidden rounded-3xl bg-neutral-900 shadow-sm transition active:scale-[0.99] flex items-center justify-center"
-              aria-label="Super Bowl LX"
-              title="Super Bowl LX"
+              href="/situation"
+              className="relative w-36 aspect-square overflow-hidden rounded-3xl bg-neutral-900 shadow-sm transition active:scale-[0.99]"
+              aria-label="Situation"
+              title="Situation"
             >
-              <span className="text-6xl">🏈</span>
+              <span className="sr-only">Situation</span>
+              <div className="absolute inset-0 p-3">
+                <Image
+                  src="/icons/situation.png"
+                  alt=""
+                  fill
+                  sizes="(max-width: 768px) 50vw, 240px"
+                  className="object-contain"
+                  priority
+                />
+              </div>
             </Link>
           </div>
         </div>
