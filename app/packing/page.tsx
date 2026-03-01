@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type Category = "Toiletries" | "Clothes" | "Electronics" | "Other";
@@ -33,6 +33,38 @@ type TripItem = {
   sort_order: number;
 };
 
+function DragHandle({
+  onTouchStart,
+  onTouchEnd,
+  onDragStart,
+  onDragEnd,
+}: {
+  onTouchStart: () => void;
+  onTouchEnd: () => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+}) {
+  return (
+    <div
+      draggable="true"
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      className="shrink-0 cursor-grab active:cursor-grabbing touch-none px-1 text-neutral-600 hover:text-neutral-400 select-none"
+    >
+      <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
+        <circle cx="2.5" cy="2.5" r="1.5" />
+        <circle cx="7.5" cy="2.5" r="1.5" />
+        <circle cx="2.5" cy="8" r="1.5" />
+        <circle cx="7.5" cy="8" r="1.5" />
+        <circle cx="2.5" cy="13.5" r="1.5" />
+        <circle cx="7.5" cy="13.5" r="1.5" />
+      </svg>
+    </div>
+  );
+}
+
 export default function PackingPage() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"current" | "template" | "archived">("current");
@@ -58,6 +90,33 @@ export default function PackingPage() {
 
   const [err, setErr] = useState<string | null>(null);
 
+  // Drag state
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const dragRef = useRef<{
+    table: "template" | "trip";
+    id: string;
+    category: Category;
+    overId: string | null;
+  } | null>(null);
+
+  // Non-passive touchmove to prevent scroll during drag
+  useEffect(() => {
+    function onTouchMove(e: TouchEvent) {
+      if (!dragRef.current) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      const itemEl = el?.closest("[data-drag-id]") as HTMLElement | null;
+      const newOverId = itemEl?.dataset.dragId ?? null;
+      if (newOverId !== dragRef.current.overId) {
+        dragRef.current.overId = newOverId;
+        setDragOverId(newOverId);
+      }
+    }
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => window.removeEventListener("touchmove", onTouchMove);
+  }, []);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -66,7 +125,6 @@ export default function PackingPage() {
     setLoading(true);
     setErr(null);
 
-    // Load template items
     const { data: templateData, error: templateError } = await supabase
       .from("packing_template_items")
       .select("*")
@@ -82,7 +140,6 @@ export default function PackingPage() {
 
     setTemplateItems((templateData as TemplateItem[]) || []);
 
-    // Load trips
     const { data: tripsData, error: tripsError } = await supabase
       .from("packing_trips")
       .select("*")
@@ -97,11 +154,9 @@ export default function PackingPage() {
     const allTrips = (tripsData as Trip[]) || [];
     setTrips(allTrips);
 
-    // Set current trip to most recent non-archived
     const active = allTrips.find((t) => !t.is_archived);
     setCurrentTrip(active || null);
 
-    // Load trip items if there's a current trip
     if (active) {
       await loadTripItems(active.id);
     }
@@ -128,28 +183,19 @@ export default function PackingPage() {
 
   async function createTrip() {
     const name = newTripName.trim();
-    if (!name) {
-      setErr("Please enter a trip name");
-      return;
-    }
-
+    if (!name) { setErr("Please enter a trip name"); return; }
     setErr(null);
 
-    // Create trip
     const { data: tripData, error: tripError } = await supabase
       .from("packing_trips")
       .insert({ trip_name: name, is_archived: false })
       .select()
       .single();
 
-    if (tripError) {
-      setErr(tripError.message);
-      return;
-    }
+    if (tripError) { setErr(tripError.message); return; }
 
     const newTrip = tripData as Trip;
 
-    // Copy template items to trip items
     const tripItemsToInsert = templateItems.map((t) => ({
       trip_id: newTrip.id,
       category: t.category,
@@ -164,11 +210,7 @@ export default function PackingPage() {
       const { error: itemsError } = await supabase
         .from("packing_trip_items")
         .insert(tripItemsToInsert);
-
-      if (itemsError) {
-        setErr(itemsError.message);
-        return;
-      }
+      if (itemsError) { setErr(itemsError.message); return; }
     }
 
     setNewTripName("");
@@ -177,52 +219,37 @@ export default function PackingPage() {
 
   async function addTemplateItem() {
     const name = newTemplateName.trim();
-    if (!name) {
-      setErr("Please enter an item name");
-      return;
-    }
-
+    if (!name) { setErr("Please enter an item name"); return; }
     setErr(null);
+
+    const catItems = templateItems.filter((i) => i.category === newTemplateCategory);
+    const maxOrder = catItems.length > 0 ? Math.max(...catItems.map((i) => i.sort_order)) : 0;
 
     const { error } = await supabase.from("packing_template_items").insert({
       category: newTemplateCategory,
       item_name: name,
-      sort_order: 0,
+      sort_order: maxOrder + 1,
     });
 
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
+    if (error) { setErr(error.message); return; }
     setNewTemplateName("");
     await loadData();
   }
 
   async function deleteTemplateItem(id: string) {
-    const { error } = await supabase
-      .from("packing_template_items")
-      .delete()
-      .eq("id", id);
-
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
+    const { error } = await supabase.from("packing_template_items").delete().eq("id", id);
+    if (error) { setErr(error.message); return; }
     await loadData();
   }
 
   async function addTripItem() {
     if (!currentTrip) return;
-
     const name = newItemName.trim();
-    if (!name) {
-      setErr("Please enter an item name");
-      return;
-    }
-
+    if (!name) { setErr("Please enter an item name"); return; }
     setErr(null);
+
+    const catItems = tripItems.filter((i) => i.category === newItemCategory);
+    const maxOrder = catItems.length > 0 ? Math.max(...catItems.map((i) => i.sort_order)) : 0;
 
     const { error } = await supabase.from("packing_trip_items").insert({
       trip_id: currentTrip.id,
@@ -231,82 +258,58 @@ export default function PackingPage() {
       is_packed: false,
       is_hidden: false,
       is_one_off: true,
-      sort_order: 0,
+      sort_order: maxOrder + 1,
     });
 
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
+    if (error) { setErr(error.message); return; }
     setNewItemName("");
     await loadTripItems(currentTrip.id);
   }
 
   async function togglePacked(itemId: string, currentPacked: boolean) {
     if (!currentTrip) return;
-
-    // Optimistically update local state first
     setTripItems((items) =>
-      items.map((item) =>
-        item.id === itemId ? { ...item, is_packed: !currentPacked } : item
-      )
+      items.map((item) => item.id === itemId ? { ...item, is_packed: !currentPacked } : item)
     );
-
     const { error } = await supabase
       .from("packing_trip_items")
       .update({ is_packed: !currentPacked })
       .eq("id", itemId);
-
     if (error) {
       setErr(error.message);
-      // Revert on error
       setTripItems((items) =>
-        items.map((item) =>
-          item.id === itemId ? { ...item, is_packed: currentPacked } : item
-        )
+        items.map((item) => item.id === itemId ? { ...item, is_packed: currentPacked } : item)
       );
     }
   }
 
   async function toggleHidden(itemId: string, currentHidden: boolean) {
     if (!currentTrip) return;
-
-    // Optimistically update local state first
     setTripItems((items) =>
-      items.map((item) =>
-        item.id === itemId ? { ...item, is_hidden: !currentHidden } : item
-      )
+      items.map((item) => item.id === itemId ? { ...item, is_hidden: !currentHidden } : item)
     );
-
     const { error } = await supabase
       .from("packing_trip_items")
       .update({ is_hidden: !currentHidden })
       .eq("id", itemId);
-
     if (error) {
       setErr(error.message);
-      // Revert on error
       setTripItems((items) =>
-        items.map((item) =>
-          item.id === itemId ? { ...item, is_hidden: currentHidden } : item
-        )
+        items.map((item) => item.id === itemId ? { ...item, is_hidden: currentHidden } : item)
       );
     }
   }
 
   async function addToTemplate(itemName: string, category: Category) {
+    const catItems = templateItems.filter((i) => i.category === category);
+    const maxOrder = catItems.length > 0 ? Math.max(...catItems.map((i) => i.sort_order)) : 0;
+
     const { error } = await supabase.from("packing_template_items").insert({
       category,
       item_name: itemName,
-      sort_order: 0,
+      sort_order: maxOrder + 1,
     });
-
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
+    if (error) { setErr(error.message); return; }
     await loadData();
   }
 
@@ -324,42 +327,25 @@ export default function PackingPage() {
 
   async function saveEdit(id: string) {
     if (!currentTrip) return;
-
     const next = editingText.trim();
-    if (!next) {
-      setErr("Item name cannot be empty");
-      return;
-    }
-
+    if (!next) { setErr("Item name cannot be empty"); return; }
     setErr(null);
-
     const { error } = await supabase
       .from("packing_trip_items")
       .update({ item_name: next })
       .eq("id", id);
-
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
+    if (error) { setErr(error.message); return; }
     cancelEdit();
     await loadTripItems(currentTrip.id);
   }
 
   async function archiveTrip() {
     if (!currentTrip) return;
-
     const { error } = await supabase
       .from("packing_trips")
       .update({ is_archived: true, archived_at: new Date().toISOString() })
       .eq("id", currentTrip.id);
-
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
+    if (error) { setErr(error.message); return; }
     await loadData();
   }
 
@@ -370,16 +356,111 @@ export default function PackingPage() {
     setView("current");
   }
 
+  // Reorder items within a category
+  async function reorderItems(
+    table: "template" | "trip",
+    category: Category,
+    draggedId: string,
+    targetId: string
+  ) {
+    if (draggedId === targetId) return;
+
+    if (table === "template") {
+      const items = templateItems
+        .filter((i) => i.category === category)
+        .sort((a, b) => a.sort_order - b.sort_order);
+      const dragged = items.find((i) => i.id === draggedId);
+      if (!dragged) return;
+      const rest = items.filter((i) => i.id !== draggedId);
+      const targetIdx = rest.findIndex((i) => i.id === targetId);
+      if (targetIdx === -1) return;
+      rest.splice(targetIdx, 0, dragged);
+      const updates = rest.map((item, idx) => ({ id: item.id, sort_order: idx + 1 }));
+      setTemplateItems((prev) =>
+        prev.map((item) => {
+          const u = updates.find((u) => u.id === item.id);
+          return u ? { ...item, sort_order: u.sort_order } : item;
+        })
+      );
+      for (const { id, sort_order } of updates) {
+        await supabase.from("packing_template_items").update({ sort_order }).eq("id", id);
+      }
+    } else {
+      const items = tripItems
+        .filter((i) => i.category === category && !i.is_packed)
+        .sort((a, b) => a.sort_order - b.sort_order);
+      const dragged = items.find((i) => i.id === draggedId);
+      if (!dragged) return;
+      const rest = items.filter((i) => i.id !== draggedId);
+      const targetIdx = rest.findIndex((i) => i.id === targetId);
+      if (targetIdx === -1) return;
+      rest.splice(targetIdx, 0, dragged);
+      const updates = rest.map((item, idx) => ({ id: item.id, sort_order: idx + 1 }));
+      setTripItems((prev) =>
+        prev.map((item) => {
+          const u = updates.find((u) => u.id === item.id);
+          return u ? { ...item, sort_order: u.sort_order } : item;
+        })
+      );
+      for (const { id, sort_order } of updates) {
+        await supabase.from("packing_trip_items").update({ sort_order }).eq("id", id);
+      }
+    }
+  }
+
+  // HTML5 drag handlers
+  function onDragStart(e: React.DragEvent, table: "template" | "trip", id: string, category: Category) {
+    dragRef.current = { table, id, category, overId: null };
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function onDragOver(e: React.DragEvent, id: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragRef.current && dragRef.current.overId !== id) {
+      dragRef.current.overId = id;
+      setDragOverId(id);
+    }
+  }
+
+  function onDrop(e: React.DragEvent, targetId: string) {
+    e.preventDefault();
+    const drag = dragRef.current;
+    if (!drag) return;
+    reorderItems(drag.table, drag.category, drag.id, targetId);
+    dragRef.current = null;
+    setDragOverId(null);
+  }
+
+  function onDragEnd() {
+    dragRef.current = null;
+    setDragOverId(null);
+  }
+
+  // Touch drag handlers
+  function onTouchStartDrag(table: "template" | "trip", id: string, category: Category) {
+    dragRef.current = { table, id, category, overId: null };
+  }
+
+  function onTouchEnd() {
+    const drag = dragRef.current;
+    if (!drag || !drag.overId || drag.id === drag.overId) {
+      dragRef.current = null;
+      setDragOverId(null);
+      return;
+    }
+    reorderItems(drag.table, drag.category, drag.id, drag.overId);
+    dragRef.current = null;
+    setDragOverId(null);
+  }
+
   const itemsByCategory = useMemo(() => {
     const map = new Map<Category, TripItem[]>();
     for (const cat of CATEGORIES) {
       const filtered = tripItems.filter((item) => item.category === cat && !item.is_hidden);
-      // Sort: unpacked items first, then packed items
-      const sorted = filtered.sort((a, b) => {
-        if (a.is_packed === b.is_packed) return 0;
-        return a.is_packed ? 1 : -1;
-      });
-      map.set(cat, sorted);
+      const unpacked = filtered.filter((i) => !i.is_packed).sort((a, b) => a.sort_order - b.sort_order);
+      const packed = filtered.filter((i) => i.is_packed).sort((a, b) => a.sort_order - b.sort_order);
+      map.set(cat, [...unpacked, ...packed]);
     }
     return map;
   }, [tripItems]);
@@ -389,19 +470,14 @@ export default function PackingPage() {
     for (const cat of CATEGORIES) {
       map.set(
         cat,
-        templateItems.filter((item) => item.category === cat)
+        templateItems.filter((item) => item.category === cat).sort((a, b) => a.sort_order - b.sort_order)
       );
     }
     return map;
   }, [templateItems]);
 
-  const packedCount = useMemo(() => {
-    return tripItems.filter((i) => !i.is_hidden && i.is_packed).length;
-  }, [tripItems]);
-
-  const totalCount = useMemo(() => {
-    return tripItems.filter((i) => !i.is_hidden).length;
-  }, [tripItems]);
+  const packedCount = useMemo(() => tripItems.filter((i) => !i.is_hidden && i.is_packed).length, [tripItems]);
+  const totalCount = useMemo(() => tripItems.filter((i) => !i.is_hidden).length, [tripItems]);
 
   return (
     <main className="min-h-[calc(100vh-80px)] bg-black px-4 pb-28 pt-4 text-neutral-100">
@@ -418,39 +494,20 @@ export default function PackingPage() {
 
         {/* View tabs */}
         <div className="mt-4 flex gap-2">
-          <button
-            onClick={() => setView("current")}
-            className={
-              "rounded-full px-4 py-2 text-sm font-semibold " +
-              (view === "current"
-                ? "bg-neutral-100 text-neutral-950"
-                : "border border-neutral-800 bg-neutral-950/40 text-neutral-200")
-            }
-          >
-            Current Trip
-          </button>
-          <button
-            onClick={() => setView("template")}
-            className={
-              "rounded-full px-4 py-2 text-sm font-semibold " +
-              (view === "template"
-                ? "bg-neutral-100 text-neutral-950"
-                : "border border-neutral-800 bg-neutral-950/40 text-neutral-200")
-            }
-          >
-            Template
-          </button>
-          <button
-            onClick={() => setView("archived")}
-            className={
-              "rounded-full px-4 py-2 text-sm font-semibold " +
-              (view === "archived"
-                ? "bg-neutral-100 text-neutral-950"
-                : "border border-neutral-800 bg-neutral-950/40 text-neutral-200")
-            }
-          >
-            Archived Trips
-          </button>
+          {(["current", "template", "archived"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={
+                "rounded-full px-4 py-2 text-sm font-semibold " +
+                (view === v
+                  ? "bg-neutral-100 text-neutral-950"
+                  : "border border-neutral-800 bg-neutral-950/40 text-neutral-200")
+              }
+            >
+              {v === "current" ? "Current Trip" : v === "template" ? "Template" : "Archived Trips"}
+            </button>
+          ))}
         </div>
 
         {err && (
@@ -471,7 +528,7 @@ export default function PackingPage() {
                     value={newTripName}
                     onChange={(e) => setNewTripName(e.target.value)}
                     placeholder="Trip name"
-                    className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-base text-neutral-100 outline-none focus:border-neutral-500"
+                    className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-[16px] sm:text-base text-neutral-100 outline-none focus:border-neutral-500"
                   />
                   <button
                     onClick={createTrip}
@@ -508,19 +565,18 @@ export default function PackingPage() {
                     <select
                       value={newItemCategory}
                       onChange={(e) => setNewItemCategory(e.target.value as Category)}
-                      className="rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-sm text-neutral-100 outline-none"
+                      className="rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-[16px] sm:text-sm text-neutral-100 outline-none"
                     >
                       {CATEGORIES.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
+                        <option key={cat} value={cat}>{cat}</option>
                       ))}
                     </select>
                     <input
                       value={newItemName}
                       onChange={(e) => setNewItemName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") addTripItem(); }}
                       placeholder="Item name"
-                      className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-base text-neutral-100 outline-none focus:border-neutral-500"
+                      className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-[16px] sm:text-base text-neutral-100 outline-none focus:border-neutral-500"
                     />
                     <button
                       onClick={addTripItem}
@@ -548,7 +604,7 @@ export default function PackingPage() {
                                   <input
                                     value={editingText}
                                     onChange={(e) => setEditingText(e.target.value)}
-                                    className="w-full rounded-lg border border-neutral-700 bg-black/40 px-2 py-1 text-base text-neutral-100 outline-none focus:border-neutral-500"
+                                    className="w-full rounded-lg border border-neutral-700 bg-black/40 px-2 py-1 text-[16px] sm:text-base text-neutral-100 outline-none focus:border-neutral-500"
                                   />
                                   <div className="mt-2 flex gap-2">
                                     <button
@@ -567,14 +623,27 @@ export default function PackingPage() {
                                 </div>
                               ) : (
                                 <div
+                                  data-drag-id={!item.is_packed ? item.id : undefined}
+                                  onDragOver={(e) => !item.is_packed && onDragOver(e, item.id)}
+                                  onDrop={(e) => !item.is_packed && onDrop(e, item.id)}
                                   className={
-                                    "flex items-center justify-between gap-3 rounded-xl border px-3 py-2 " +
-                                    (item.is_packed
+                                    "flex items-center justify-between gap-2 rounded-xl border px-3 py-2 transition-colors " +
+                                    (dragOverId === item.id
+                                      ? "border-white/40 bg-white/10"
+                                      : item.is_packed
                                       ? "border-emerald-700 bg-emerald-950/30"
                                       : "border-neutral-800 bg-black/20")
                                   }
                                 >
-                                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    {!item.is_packed && (
+                                      <DragHandle
+                                        onDragStart={(e) => onDragStart(e, "trip", item.id, item.category)}
+                                        onDragEnd={onDragEnd}
+                                        onTouchStart={() => onTouchStartDrag("trip", item.id, item.category)}
+                                        onTouchEnd={onTouchEnd}
+                                      />
+                                    )}
                                     <button
                                       onClick={() => togglePacked(item.id, item.is_packed)}
                                       className={
@@ -593,9 +662,7 @@ export default function PackingPage() {
                                     {item.is_one_off ? (
                                       <button
                                         onClick={() => startEdit(item)}
-                                        className={
-                                          "text-left text-sm " + (item.is_packed ? "text-neutral-300" : "text-neutral-100")
-                                        }
+                                        className={"text-left text-sm " + (item.is_packed ? "text-neutral-300" : "text-neutral-100")}
                                       >
                                         {item.item_name}
                                       </button>
@@ -605,7 +672,7 @@ export default function PackingPage() {
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex gap-2">
+                                  <div className="flex gap-2 shrink-0">
                                     {item.is_one_off && (
                                       <button
                                         onClick={() => addToTemplate(item.item_name, item.category)}
@@ -642,19 +709,18 @@ export default function PackingPage() {
                 <select
                   value={newTemplateCategory}
                   onChange={(e) => setNewTemplateCategory(e.target.value as Category)}
-                  className="rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-sm text-neutral-100 outline-none"
+                  className="rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-[16px] sm:text-sm text-neutral-100 outline-none"
                 >
                   {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
+                    <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
                 <input
                   value={newTemplateName}
                   onChange={(e) => setNewTemplateName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") addTemplateItem(); }}
                   placeholder="Item name"
-                  className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-base text-neutral-100 outline-none focus:border-neutral-500"
+                  className="flex-1 rounded-xl border border-neutral-800 bg-black/40 px-3 py-2 text-[16px] sm:text-base text-neutral-100 outline-none focus:border-neutral-500"
                 />
                 <button
                   onClick={addTemplateItem}
@@ -678,16 +744,30 @@ export default function PackingPage() {
                       {items.map((item) => (
                         <div
                           key={item.id}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-neutral-800 bg-black/20 px-3 py-2"
+                          data-drag-id={item.id}
+                          onDragOver={(e) => onDragOver(e, item.id)}
+                          onDrop={(e) => onDrop(e, item.id)}
+                          className={
+                            "flex items-center justify-between gap-2 rounded-xl border bg-black/20 px-3 py-2 transition-colors " +
+                            (dragOverId === item.id ? "border-white/40 bg-white/10" : "border-neutral-800")
+                          }
                         >
-                          <span className="text-sm text-neutral-100">{item.item_name}</span>
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <DragHandle
+                              onDragStart={(e) => onDragStart(e, "template", item.id, item.category)}
+                              onDragEnd={onDragEnd}
+                              onTouchStart={() => onTouchStartDrag("template", item.id, item.category)}
+                              onTouchEnd={onTouchEnd}
+                            />
+                            <span className="text-sm text-neutral-100">{item.item_name}</span>
+                          </div>
                           <button
                             onClick={() => {
                               if (confirm(`Delete "${item.item_name}" from template?`)) {
                                 deleteTemplateItem(item.id);
                               }
                             }}
-                            className="text-xs text-red-400 hover:text-red-300"
+                            className="shrink-0 text-xs text-red-400 hover:text-red-300"
                           >
                             Delete
                           </button>

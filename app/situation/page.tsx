@@ -204,10 +204,15 @@ export default function PolymarketPage() {
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<TimeRangeLabel>("1D");
+  const [timeRange, setTimeRange] = useState<TimeRangeLabel>(() => {
+    if (typeof window === "undefined") return "1D";
+    const saved = localStorage.getItem("situation-timerange");
+    if (saved && TIME_RANGES.some((r) => r.label === saved)) return saved as TimeRangeLabel;
+    return "1D";
+  });
   const outcomesRef = useRef<Outcome[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timeRangeRef = useRef<TimeRangeLabel>("1D");
+  const timeRangeRef = useRef<TimeRangeLabel>(timeRange);
 
   const refreshData = useCallback(
     async (current: Outcome[], range: TimeRangeLabel) => {
@@ -265,6 +270,7 @@ export default function PolymarketPage() {
 
   // Re-fetch history when time range changes (after initial load)
   useEffect(() => {
+    localStorage.setItem("situation-timerange", timeRange);
     if (outcomesRef.current.length === 0) return;
     timeRangeRef.current = timeRange;
     refreshData(outcomesRef.current, timeRange);

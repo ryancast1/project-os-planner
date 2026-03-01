@@ -160,15 +160,14 @@ export default function WatchedPage() {
     <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-5 py-8 text-white">
       <div className="mx-auto w-full max-w-5xl">
         <header className="mb-6">
-  <div className="relative mx-auto max-w-5xl">
-    <h1 className="text-center text-4xl sm:text-5xl font-semibold tracking-tight">
-      Watched
-    </h1>
-
-    <div className="absolute right-0 top-1/2 -translate-y-1/2">
+  <div className="mx-auto max-w-5xl">
+    <div className="relative flex items-center justify-center">
+      <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight">
+        Watched
+      </h1>
       <Link
         href="/movie-tracker/watched/calendar"
-        className="inline-flex items-center rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 text-sm font-semibold text-white/80 hover:border-white/20 hover:bg-black/40"
+        className="absolute right-0 inline-flex items-center rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 text-sm font-semibold text-white/80 hover:border-white/20 hover:bg-black/40"
       >
         Calendar
       </Link>
