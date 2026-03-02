@@ -46,6 +46,16 @@ export default function SituationDashboard() {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
+  // Landscape mobile: read-only grid — phones rotated sideways (≤500px tall)
+  const [isMobileLandscape, setIsMobileLandscape] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: landscape) and (max-height: 500px)");
+    setIsMobileLandscape(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobileLandscape(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
   // -- On mount: load localStorage + auth + saved markets + views --
   useEffect(() => {
     const local = loadLocalState();
@@ -278,6 +288,7 @@ export default function SituationDashboard() {
         onChangeMarket={handleChangeMarket}
         onManageMarkets={() => setManageOpen(true)}
         mobilePortrait={isMobilePortrait}
+        mobileLandscape={isMobileLandscape}
       />
 
       <ManageMarketsModal

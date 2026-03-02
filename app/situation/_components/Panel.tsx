@@ -33,6 +33,7 @@ export default function Panel({
   savedMarkets,
   timeRange,
   compact,
+  mobileLandscape = false,
   onChangeMarket,
   onManageMarkets,
 }: {
@@ -41,6 +42,7 @@ export default function Panel({
   savedMarkets: SavedMarket[];
   timeRange: TimeRangeLabel;
   compact: boolean;
+  mobileLandscape?: boolean;
   onChangeMarket: (slotIndex: number, marketId: string | null) => void;
   onManageMarkets: () => void;
 }) {
@@ -218,16 +220,27 @@ export default function Panel({
       ]
     : [];
 
+  // Title shown in landscape mobile instead of the interactive dropdown
+  const panelTitle = isBuiltin
+    ? (BUILTIN_MARKETS.find((m) => m.id === marketId)?.label ?? "")
+    : (savedMarkets.find((m) => m.id === marketId)?.label ?? "");
+
   return (
     <div className="flex flex-col h-full rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
-      {/* Dropdown */}
-      <div className="shrink-0 p-2">
-        <MarketDropdown
-          savedMarkets={savedMarkets}
-          selectedId={marketId}
-          onSelect={(id) => onChangeMarket(slotIndex, id)}
-        />
-      </div>
+      {/* Landscape mobile: read-only title | Normal: interactive dropdown */}
+      {mobileLandscape ? (
+        <div className="shrink-0 px-2 pt-1.5 pb-0">
+          <p className="text-[10px] text-white/40 truncate">{panelTitle}</p>
+        </div>
+      ) : (
+        <div className="shrink-0 p-2">
+          <MarketDropdown
+            savedMarkets={savedMarkets}
+            selectedId={marketId}
+            onSelect={(id) => onChangeMarket(slotIndex, id)}
+          />
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 min-h-0 flex flex-col px-2 pb-2">

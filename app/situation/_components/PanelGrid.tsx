@@ -12,6 +12,7 @@ export default function PanelGrid({
   onChangeMarket,
   onManageMarkets,
   mobilePortrait = false,
+  mobileLandscape = false,
 }: {
   layout: LayoutMode;
   panels: PanelSlot[];
@@ -20,9 +21,32 @@ export default function PanelGrid({
   onChangeMarket: (slotIndex: number, marketId: string | null) => void;
   onManageMarkets: () => void;
   mobilePortrait?: boolean;
+  mobileLandscape?: boolean;
 }) {
   const config = LAYOUT_CONFIGS[layout];
   const compact = config.panelCount >= 4;
+
+  // Landscape mobile: force correct col/row counts without md: dependency, hide dropdowns
+  if (mobileLandscape) {
+    const landscapeGridClass = `grid-cols-${config.cols} grid-rows-${config.rows}`;
+    return (
+      <div className={`grid ${landscapeGridClass} gap-1.5 flex-1 min-h-0`}>
+        {Array.from({ length: config.panelCount }, (_, i) => (
+          <Panel
+            key={i}
+            slotIndex={i}
+            marketId={panels[i] ?? null}
+            savedMarkets={savedMarkets}
+            timeRange={timeRange}
+            compact={true}
+            mobileLandscape={true}
+            onChangeMarket={onChangeMarket}
+            onManageMarkets={onManageMarkets}
+          />
+        ))}
+      </div>
+    );
+  }
 
   // Portrait mobile: single-column scroll list, one panel per ~screen
   if (mobilePortrait) {
