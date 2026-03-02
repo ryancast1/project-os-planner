@@ -39,6 +39,7 @@ export default function OddsChart({
   valueFormat = "percent",
   xMin,
   xMax,
+  mobileLandscape = false,
 }: {
   outcomes: Outcome[];
   colors: string[];
@@ -48,6 +49,8 @@ export default function OddsChart({
   xMin?: number;
   /** Override the right edge of the X-axis (Unix seconds) */
   xMax?: number;
+  /** Landscape mobile: hide legend, X-axis, and reduce Y to top+bottom only */
+  mobileLandscape?: boolean;
 }) {
   const allPoints = outcomes.flatMap((o) => o.history);
 
@@ -150,10 +153,16 @@ export default function OddsChart({
     }
   }
 
+  // In landscape mobile: only show the top and bottom Y labels
+  const displayYLabels =
+    mobileLandscape && yLabels.length > 2
+      ? [yLabels[0], yLabels[yLabels.length - 1]]
+      : yLabels;
+
   return (
     <div className="h-full flex flex-col">
-      {/* Legend */}
-      {outcomes.length > 1 && (
+      {/* Legend — hidden in landscape mobile (colors match inline %) */}
+      {outcomes.length > 1 && !mobileLandscape && (
         <div className="flex items-center justify-center gap-4 mb-1 shrink-0">
           {outcomes.map((o, i) => (
             <div key={o.tokenId} className="flex items-center gap-1.5">
@@ -169,7 +178,7 @@ export default function OddsChart({
 
       <div className="flex-1 min-h-0 rounded-2xl border border-white/10 bg-black/30 relative overflow-hidden">
         {/* Y axis labels */}
-        {yLabels.map((yl) => {
+        {displayYLabels.map((yl) => {
           const topPct = (toSvgY(yl.value) / 100) * 100;
           return (
             <div
@@ -182,8 +191,8 @@ export default function OddsChart({
           );
         })}
 
-        {/* X axis time labels */}
-        {timeLabels.map((tl) => {
+        {/* X axis time labels — hidden in landscape mobile */}
+        {!mobileLandscape && timeLabels.map((tl) => {
           const leftPct = (toSvgX(tl.ts) / 100) * 100;
           return (
             <div

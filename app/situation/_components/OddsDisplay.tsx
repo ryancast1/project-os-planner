@@ -7,10 +7,12 @@ export default function OddsDisplay({
   market,
   outcomes,
   compact,
+  mobileLandscape = false,
 }: {
   market: MarketInfo;
   outcomes: Outcome[];
   compact: boolean;
+  mobileLandscape?: boolean;
 }) {
   const isBinary =
     outcomes.length === 2 && outcomes[0].name === "Yes";
@@ -20,18 +22,22 @@ export default function OddsDisplay({
     const pct = Math.round(yesPrice * 100);
     return (
       <div className="shrink-0 text-center pt-1">
+        {!mobileLandscape && (
+          <div
+            className={
+              compact
+                ? "text-xs text-white/60 mb-0.5 truncate px-2"
+                : "text-base md:text-xl text-white/60 mb-2"
+            }
+          >
+            {market.title}
+          </div>
+        )}
         <div
           className={
-            compact
-              ? "text-xs text-white/60 mb-0.5 truncate px-2"
-              : "text-base md:text-xl text-white/60 mb-2"
-          }
-        >
-          {market.title}
-        </div>
-        <div
-          className={
-            compact
+            mobileLandscape
+              ? "text-2xl leading-none font-bold tabular-nums"
+              : compact
               ? "text-3xl md:text-5xl leading-none font-bold tabular-nums"
               : "text-6xl md:text-[10rem] leading-none font-bold tabular-nums"
           }
@@ -41,7 +47,9 @@ export default function OddsDisplay({
         </div>
         <div
           className={
-            compact
+            mobileLandscape
+              ? "text-[9px] text-white/40 mt-0.5"
+              : compact
               ? "text-[10px] text-white/40 mt-0.5"
               : "text-sm md:text-lg text-white/40 mt-1"
           }
@@ -69,15 +77,17 @@ export default function OddsDisplay({
 
   return (
     <div className="shrink-0">
-      <div
-        className={
-          compact
-            ? "text-center text-xs text-white/50 mb-0.5 truncate px-2"
-            : "text-center text-sm md:text-lg text-white/50 mt-1"
-        }
-      >
-        {market.title}
-      </div>
+      {!mobileLandscape && (
+        <div
+          className={
+            compact
+              ? "text-center text-xs text-white/50 mb-0.5 truncate px-2"
+              : "text-center text-sm md:text-lg text-white/50 mt-1"
+          }
+        >
+          {market.title}
+        </div>
+      )}
       <div
         className={
           compact
@@ -89,7 +99,9 @@ export default function OddsDisplay({
           <div key={o.tokenId} className="text-center">
             <div
               className={
-                compact
+                mobileLandscape
+                  ? "text-[8px] font-semibold text-white/70 truncate"
+                  : compact
                   ? "text-[10px] font-semibold text-white/70 truncate"
                   : "text-sm md:text-xl font-semibold text-white/70 mb-0.5 md:mb-1 truncate"
               }
@@ -98,7 +110,9 @@ export default function OddsDisplay({
             </div>
             <div
               className={
-                compact
+                mobileLandscape
+                  ? "text-base leading-none font-bold tabular-nums"
+                  : compact
                   ? "text-xl md:text-3xl leading-none font-bold tabular-nums"
                   : "text-4xl md:text-[7rem] leading-none font-bold tabular-nums"
               }

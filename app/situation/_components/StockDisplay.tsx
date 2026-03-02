@@ -17,9 +17,11 @@ function formatPrice(p: number): string {
 export default function StockDisplay({
   snapshot,
   compact,
+  mobileLandscape = false,
 }: {
   snapshot: StockSnapshot;
   compact: boolean;
+  mobileLandscape?: boolean;
 }) {
   const { label, currentPrice, previousClose } = snapshot;
 
@@ -35,19 +37,24 @@ export default function StockDisplay({
 
   return (
     <div className="shrink-0 text-center pt-1">
-      <div
-        className={
-          compact
-            ? "text-xs text-white/60 mb-0.5 truncate px-2"
-            : "text-base md:text-xl text-white/60 mb-1"
-        }
-      >
-        {label}
-      </div>
+      {/* Label hidden in landscape mobile — shown in panel title bar instead */}
+      {!mobileLandscape && (
+        <div
+          className={
+            compact
+              ? "text-xs text-white/60 mb-0.5 truncate px-2"
+              : "text-base md:text-xl text-white/60 mb-1"
+          }
+        >
+          {label}
+        </div>
+      )}
 
       <div
         className={
-          compact
+          mobileLandscape
+            ? "text-2xl leading-none font-bold tabular-nums"
+            : compact
             ? "text-3xl md:text-5xl leading-none font-bold tabular-nums"
             : "text-5xl md:text-[7rem] leading-none font-bold tabular-nums"
         }
@@ -59,7 +66,11 @@ export default function StockDisplay({
       {changePct != null && (
         <div
           className={
-            compact ? "text-[10px] mt-0.5 tabular-nums" : "text-sm md:text-base mt-1 tabular-nums"
+            mobileLandscape
+              ? "text-[9px] mt-0.5 tabular-nums"
+              : compact
+              ? "text-[10px] mt-0.5 tabular-nums"
+              : "text-sm md:text-base mt-1 tabular-nums"
           }
           style={{ color: accentColor }}
         >

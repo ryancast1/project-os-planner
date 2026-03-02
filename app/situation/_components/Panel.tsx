@@ -296,7 +296,7 @@ export default function Panel({
 
           return (
             <>
-              <StockDisplay snapshot={stockSnapshot} compact={compact} />
+              <StockDisplay snapshot={stockSnapshot} compact={compact} mobileLandscape={mobileLandscape} />
               <div className="mt-1 flex-1 min-h-0">
                 <OddsChart
                   outcomes={stockChartOutcomes}
@@ -305,6 +305,7 @@ export default function Panel({
                   valueFormat="price"
                   xMin={chartXMin}
                   xMax={chartXMax}
+                  mobileLandscape={mobileLandscape}
                 />
               </div>
             </>
@@ -314,13 +315,14 @@ export default function Panel({
         {/* Polymarket panel */}
         {!isBuiltin && !loading && !error && market && outcomes.length > 0 && (
           <>
-            <OddsDisplay market={market} outcomes={outcomes} compact={compact} />
+            <OddsDisplay market={market} outcomes={outcomes} compact={compact} mobileLandscape={mobileLandscape} />
             <div className="mt-1 flex-1 min-h-0">
               <OddsChart
                 outcomes={chartOutcomes}
                 colors={COLORS}
                 startTs={getStartTs(timeRange)}
                 valueFormat="percent"
+                mobileLandscape={mobileLandscape}
               />
             </div>
           </>
