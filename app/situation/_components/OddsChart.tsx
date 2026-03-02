@@ -92,15 +92,21 @@ export default function OddsChart({
     return yBottom - ((p - yMin) / (yMax - yMin)) * ySpanSvg;
   }
 
-  // Time labels — adaptive interval based on duration
+  // Time labels — pick the smallest "nice" interval that keeps label count ≤ 7
   const duration = tMax - tMin;
-  let interval: number;
-  if (duration < 3600) interval = 10 * 60;
-  else if (duration < 7200) interval = 15 * 60;
-  else if (duration < 14400) interval = 30 * 60;
-  else if (duration < 86400) interval = 60 * 60;
-  else if (duration < 604800) interval = 6 * 3600;
-  else interval = 24 * 3600;
+  const NICE_INTERVALS = [
+    10 * 60, 15 * 60, 30 * 60,
+    3600, 6 * 3600, 12 * 3600,
+    24 * 3600,
+    7 * 24 * 3600,
+    14 * 24 * 3600,
+    30 * 24 * 3600,
+    91 * 24 * 3600,
+    182 * 24 * 3600,
+    365 * 24 * 3600,
+  ];
+  const minInterval = duration / 7;
+  const interval = NICE_INTERVALS.find((v) => v >= minInterval) ?? 365 * 24 * 3600;
 
   const timeLabels: { ts: number; label: string }[] = [];
   // When xMin is set (e.g. market hours), round up to the next clean hour boundary
@@ -113,10 +119,15 @@ export default function OddsChart({
   const labelEnd = xMax ?? nowTs;
   for (let ts = labelStart; ts <= labelEnd; ts += interval) {
     const d = new Date(ts * 1000);
-    const label =
-      duration > 86400
-        ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-        : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    let label: string;
+    if (interval < 86400) {
+      label = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    } else if (interval < 91 * 86400) {
+      label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    } else {
+      // Quarterly or longer: show "Jan '24" to include year context
+      label = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+    }
     timeLabels.push({ ts, label });
   }
 

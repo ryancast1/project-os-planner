@@ -36,6 +36,16 @@ export default function SituationDashboard() {
   // UI
   const [manageOpen, setManageOpen] = useState(false);
 
+  // Portrait mobile: single-column scroll view
+  const [isMobilePortrait, setIsMobilePortrait] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait) and (max-width: 767px)");
+    setIsMobilePortrait(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobilePortrait(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
   // -- On mount: load localStorage + auth + saved markets + views --
   useEffect(() => {
     const local = loadLocalState();
@@ -228,7 +238,7 @@ export default function SituationDashboard() {
   }
 
   return (
-    <main className="h-dvh overflow-hidden bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2">
+    <main className={`bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2 ${isMobilePortrait ? "min-h-dvh overflow-y-auto" : "h-dvh overflow-hidden"}`}>
       {/* Single header row: nav controls | views bar ——— Manage */}
       <div className="shrink-0 flex items-center gap-1 md:gap-1.5">
         <Header
@@ -267,6 +277,7 @@ export default function SituationDashboard() {
         timeRange={timeRange}
         onChangeMarket={handleChangeMarket}
         onManageMarkets={() => setManageOpen(true)}
+        mobilePortrait={isMobilePortrait}
       />
 
       <ManageMarketsModal

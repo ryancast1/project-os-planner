@@ -27,7 +27,7 @@ export type SavedMarket = {
 
 export type LayoutMode = "1" | "2" | "2x2" | "3x2" | "4x2";
 
-export type TimeRangeLabel = "1H" | "4H" | "1D" | "1W" | "1M" | "3M" | "All";
+export type TimeRangeLabel = "1H" | "4H" | "1D" | "1W" | "1M" | "3M" | "1Y" | "5Y" | "All";
 
 /** Each slot holds a saved-market ID or null (empty) */
 export type PanelSlot = string | null;

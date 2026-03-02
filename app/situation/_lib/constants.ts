@@ -11,6 +11,8 @@ export const TIME_RANGES = [
   { label: "1W" as const, seconds: 7 * 24 * 3600 },
   { label: "1M" as const, seconds: 30 * 24 * 3600 },
   { label: "3M" as const, seconds: 90 * 24 * 3600 },
+  { label: "1Y" as const, seconds: 365 * 24 * 3600 },
+  { label: "5Y" as const, seconds: 5 * 365 * 24 * 3600 },
   { label: "All" as const, seconds: 0 },
 ];
 
@@ -32,6 +34,8 @@ export function getFidelity(label: TimeRangeLabel): number {
     case "1M":
       return 60;
     case "3M":
+    case "1Y":
+    case "5Y":
     case "All":
       return 360;
   }
@@ -46,7 +50,9 @@ export function getYahooParams(label: TimeRangeLabel): { range: string; interval
     case "1W": return { range: "5d", interval: "30m" };
     case "1M": return { range: "1mo", interval: "1d" };
     case "3M": return { range: "3mo", interval: "1d" };
-    case "All": return { range: "max", interval: "1wk" };
+    case "1Y": return { range: "1y",  interval: "1wk" };
+    case "5Y": return { range: "5y",  interval: "1mo" };
+    case "All": return { range: "max", interval: "1mo" };
   }
 }
 
