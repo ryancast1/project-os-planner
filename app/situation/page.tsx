@@ -1,643 +1,281 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import Link from "next/link";
+import { useEffect, useState, useCallback } from "react";
+import type { LayoutMode, TimeRangeLabel, PanelSlot, SavedMarket, SavedView } from "./_lib/types";
+import { LAYOUT_CONFIGS } from "./_lib/constants";
+import {
+  loadLocalState,
+  saveLayout,
+  savePanels,
+  saveTimeRange,
+} from "./_lib/storage";
+import { getUserId, loadSavedMarkets } from "./_lib/markets";
+import { loadViews, createView, updateView, deleteView } from "./_lib/views";
+import Header from "./_components/Header";
+import PanelGrid from "./_components/PanelGrid";
+import ViewsBar from "./_components/ViewsBar";
+import ManageMarketsModal from "./_components/ManageMarketsModal";
 
-// -- Types --
-type PricePoint = { t: number; p: number };
+export default function SituationDashboard() {
+  const [userId, setUserId] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-type Outcome = {
-  name: string;
-  tokenId: string;
-  currentPrice: number;
-  history: PricePoint[];
-};
+  // Markets watchlist
+  const [savedMarkets, setSavedMarkets] = useState<SavedMarket[]>([]);
 
-type MarketInfo = {
-  title: string;
-  outcomes: Outcome[];
-};
+  // Current layout state
+  const [layout, setLayout] = useState<LayoutMode>("1");
+  const [panels, setPanels] = useState<PanelSlot[]>([null]);
+  const [timeRange, setTimeRange] = useState<TimeRangeLabel>("1D");
 
-// -- Constants --
-const PROXY = "/situation/api";
-const REFRESH_INTERVAL_MS = 12_000;
+  // Views
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
 
-const TIME_RANGES = [
-  { label: "1H", seconds: 3600 },
-  { label: "4H", seconds: 4 * 3600 },
-  { label: "1D", seconds: 24 * 3600 },
-  { label: "1W", seconds: 7 * 24 * 3600 },
-  { label: "1M", seconds: 30 * 24 * 3600 },
-  { label: "3M", seconds: 90 * 24 * 3600 },
-  { label: "All", seconds: 0 },
-] as const;
+  // UI
+  const [manageOpen, setManageOpen] = useState(false);
 
-type TimeRangeLabel = (typeof TIME_RANGES)[number]["label"];
+  // -- On mount: load localStorage + auth + saved markets + views --
+  useEffect(() => {
+    const local = loadLocalState();
+    setLayout(local.layout);
+    setPanels(local.panels);
+    setTimeRange(local.timeRange);
 
-function getStartTs(label: TimeRangeLabel): number {
-  const range = TIME_RANGES.find((r) => r.label === label)!;
-  if (range.seconds === 0) return 0; // "All" — API will use its own start
-  return Math.floor(Date.now() / 1000) - range.seconds;
-}
+    (async () => {
+      const uid = await getUserId();
+      setUserId(uid);
+      setAuthLoading(false);
 
-function getFidelity(label: TimeRangeLabel): number {
-  switch (label) {
-    case "1H":
-    case "4H":
-      return 1;
-    case "1D":
-      return 5;
-    case "1W":
-      return 30;
-    case "1M":
-      return 60;
-    case "3M":
-    case "All":
-      return 360;
-  }
-}
+      if (uid) {
+        const [markets, views] = await Promise.all([
+          loadSavedMarkets(uid),
+          loadViews(uid),
+        ]);
+        setSavedMarkets(markets);
+        setSavedViews(views);
 
-const COLORS = [
-  "rgba(0, 200, 83, 0.95)",
-  "rgba(59, 130, 246, 0.95)",
-  "rgba(251, 191, 36, 0.95)",
-  "rgba(239, 68, 68, 0.95)",
-  "rgba(168, 85, 247, 0.95)",
-  "rgba(236, 72, 153, 0.95)",
-  "rgba(20, 184, 166, 0.95)",
-  "rgba(249, 115, 22, 0.95)",
-];
+        // Reconcile panels: clear stale Polymarket IDs (built-ins are always valid)
+        const marketIds = new Set(markets.map((m) => m.id));
+        setPanels((prev) =>
+          prev.map((slot) =>
+            slot && !slot.startsWith("builtin:") && !marketIds.has(slot) ? null : slot
+          )
+        );
+      }
+    })();
+  }, []);
 
-// -- Helpers --
-function extractSlug(input: string): string | null {
-  // Handle full URLs like polymarket.com/event/some-slug or just the slug
-  const trimmed = input.trim();
-  const urlMatch = trimmed.match(/polymarket\.com\/event\/([^/?#]+)/);
-  if (urlMatch) return urlMatch[1];
-  // If it looks like a bare slug (no spaces, no dots except in domain)
-  if (/^[\w-]+$/.test(trimmed)) return trimmed;
-  return null;
-}
-
-// -- API Functions --
-async function fetchEvent(slug: string): Promise<MarketInfo | null> {
-  try {
-    const res = await fetch(`${PROXY}?endpoint=event&slug=${encodeURIComponent(slug)}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const event = data[0];
-    if (!event?.markets?.length) return null;
-
-    const title: string = event.title ?? slug;
-
-    // Filter to active (non-closed) markets with nonzero Yes price
-    type GammaMarket = {
-      question?: string;
-      outcomes?: string | string[];
-      outcomePrices?: string | string[];
-      clobTokenIds?: string | string[];
-      closed?: boolean;
-      groupItemTitle?: string;
-    };
-
-    const activeMarkets = event.markets.filter((m: GammaMarket) => {
-      if (m.closed) return false;
-      const prices =
-        typeof m.outcomePrices === "string"
-          ? JSON.parse(m.outcomePrices)
-          : m.outcomePrices ?? [];
-      const yesPrice = parseFloat(prices[0] ?? "0");
-      return yesPrice > 0.005;
-    });
-
-    if (activeMarkets.length === 0) return null;
-
-    // Single market event (simple Yes/No binary)
-    if (activeMarkets.length === 1) {
-      const m = activeMarkets[0] as GammaMarket;
-      const tokenIds =
-        typeof m.clobTokenIds === "string"
-          ? JSON.parse(m.clobTokenIds)
-          : m.clobTokenIds ?? [];
-      const outcomes: Outcome[] = [
-        { name: "Yes", tokenId: tokenIds[0], currentPrice: 0, history: [] },
-        { name: "No", tokenId: tokenIds[1], currentPrice: 0, history: [] },
-      ];
-      return { title: m.question ?? title, outcomes };
-    }
-
-    // Multi-market event — each sub-market's YES token is one outcome
-    const outcomes: Outcome[] = activeMarkets.map((m: GammaMarket) => {
-      const tokenIds =
-        typeof m.clobTokenIds === "string"
-          ? JSON.parse(m.clobTokenIds)
-          : m.clobTokenIds ?? [];
-      const name =
-        m.groupItemTitle ??
-        (m.question ?? "").replace(/^Will (the )?/i, "").replace(/\?$/, "").replace(/ win .+$/, "");
-      return { name, tokenId: tokenIds[0], currentPrice: 0, history: [] };
-    });
-
-    // Sort by current price descending (from outcomePrices)
-    const priceMap = new Map<string, number>();
-    activeMarkets.forEach((m: GammaMarket) => {
-      const tokenIds =
-        typeof m.clobTokenIds === "string"
-          ? JSON.parse(m.clobTokenIds)
-          : m.clobTokenIds ?? [];
-      const prices =
-        typeof m.outcomePrices === "string"
-          ? JSON.parse(m.outcomePrices)
-          : m.outcomePrices ?? [];
-      priceMap.set(tokenIds[0], parseFloat(prices[0] ?? "0"));
-    });
-    outcomes.sort((a, b) => (priceMap.get(b.tokenId) ?? 0) - (priceMap.get(a.tokenId) ?? 0));
-
-    return { title, outcomes };
-  } catch {
-    return null;
-  }
-}
-
-async function fetchPrice(tokenId: string): Promise<number | null> {
-  try {
-    const res = await fetch(`${PROXY}?endpoint=price&token_id=${tokenId}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return typeof data.price === "string"
-      ? parseFloat(data.price)
-      : (data.price ?? null);
-  } catch {
-    return null;
-  }
-}
-
-async function fetchPriceHistory(
-  tokenId: string,
-  startTs: number,
-  endTs: number,
-  fidelity: number = 1
-): Promise<PricePoint[]> {
-  try {
-    const params = startTs > 0
-      ? `&startTs=${startTs}&endTs=${endTs}&fidelity=${fidelity}`
-      : `&interval=max&fidelity=${fidelity}`;
-    const res = await fetch(
-      `${PROXY}?endpoint=history&market=${tokenId}${params}`
+  // -- Helper: reconcile panel slots against a set of valid market IDs --
+  function reconcilePanels(rawPanels: PanelSlot[], marketIds: Set<string>): PanelSlot[] {
+    return rawPanels.map((slot) =>
+      slot && !slot.startsWith("builtin:") && !marketIds.has(slot) ? null : slot
     );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.history ?? []) as PricePoint[];
-  } catch {
-    return [];
   }
-}
 
-// -- Main Component --
-export default function PolymarketPage() {
-  const [urlInput, setUrlInput] = useState("");
-  const [slug, setSlug] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("situation-slug");
-  });
-  const [market, setMarket] = useState<MarketInfo | null>(null);
-  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<TimeRangeLabel>(() => {
-    if (typeof window === "undefined") return "1D";
-    const saved = localStorage.getItem("situation-timerange");
-    if (saved && TIME_RANGES.some((r) => r.label === saved)) return saved as TimeRangeLabel;
-    return "1D";
-  });
-  const outcomesRef = useRef<Outcome[]>([]);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timeRangeRef = useRef<TimeRangeLabel>(timeRange);
+  // -- Layout change --
+  const handleLayoutChange = useCallback(
+    (newLayout: LayoutMode) => {
+      setLayout(newLayout);
+      saveLayout(newLayout);
 
-  const refreshData = useCallback(
-    async (current: Outcome[], range: TimeRangeLabel) => {
-      const now = Math.floor(Date.now() / 1000);
-      const startTs = getStartTs(range);
-      const fidelity = getFidelity(range);
-      const updated = await Promise.all(
-        current.map(async (o) => {
-          const [price, history] = await Promise.all([
-            fetchPrice(o.tokenId),
-            fetchPriceHistory(o.tokenId, startTs, now, fidelity),
-          ]);
-          return {
-            ...o,
-            currentPrice: price ?? o.currentPrice,
-            history: history.length > 0 ? history : o.history,
-          };
-        })
-      );
-      outcomesRef.current = updated;
-      setOutcomes(updated);
+      const newCount = LAYOUT_CONFIGS[newLayout].panelCount;
+      setPanels((prev) => {
+        const next = [...prev];
+        while (next.length < newCount) next.push(null);
+        const trimmed = next.slice(0, newCount);
+        savePanels(trimmed);
+        return trimmed;
+      });
+
+      setIsDirty(true);
     },
     []
   );
 
-  // Load market when slug changes
-  useEffect(() => {
-    if (!slug) return;
-    let cancelled = false;
+  // -- Panel market change --
+  const handleChangeMarket = useCallback(
+    (slotIndex: number, marketId: string | null) => {
+      setPanels((prev) => {
+        const next = [...prev];
+        next[slotIndex] = marketId;
+        savePanels(next);
+        return next;
+      });
+      setIsDirty(true);
+    },
+    []
+  );
 
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setMarket(null);
-      setOutcomes([]);
+  // -- Time range change (doesn't dirty a view — it's a display pref) --
+  const handleTimeRangeChange = useCallback((tr: TimeRangeLabel) => {
+    setTimeRange(tr);
+    saveTimeRange(tr);
+  }, []);
 
-      const info = await fetchEvent(slug!);
-      if (cancelled) return;
-      if (!info) {
-        setError("Could not find that market on Polymarket.");
-        setLoading(false);
-        return;
+  // -- Markets changed (add/remove in modal) --
+  const handleMarketsChange = useCallback(async () => {
+    if (!userId) return;
+    const markets = await loadSavedMarkets(userId);
+    setSavedMarkets(markets);
+
+    const ids = new Set(markets.map((m) => m.id));
+    setPanels((prev) => {
+      const next = reconcilePanels(prev, ids);
+      savePanels(next);
+      return next;
+    });
+  }, [userId]);
+
+  // -- Load a saved view --
+  const handleLoadView = useCallback(
+    (view: SavedView) => {
+      setActiveViewId(view.id);
+      setIsDirty(false);
+      setLayout(view.layout);
+      saveLayout(view.layout);
+
+      // Reconcile against current market list, then size to layout
+      const ids = new Set(savedMarkets.map((m) => m.id));
+      const cleaned = reconcilePanels(view.panels, ids);
+      const expected = LAYOUT_CONFIGS[view.layout].panelCount;
+      const sized = [...cleaned];
+      while (sized.length < expected) sized.push(null);
+      const trimmed = sized.slice(0, expected);
+
+      setPanels(trimmed);
+      savePanels(trimmed);
+    },
+    [savedMarkets]
+  );
+
+  // -- Save current state over the active view --
+  const handleSaveView = useCallback(async () => {
+    if (!activeViewId || !userId) return;
+    const view = savedViews.find((v) => v.id === activeViewId);
+    if (!view) return;
+
+    // Capture current state synchronously via setState read trick
+    let snapshotPanels: PanelSlot[] = [];
+    setPanels((prev) => { snapshotPanels = prev; return prev; });
+    let snapshotLayout: LayoutMode = "1";
+    setLayout((prev) => { snapshotLayout = prev; return prev; });
+
+    const ok = await updateView(activeViewId, view.title, snapshotLayout, snapshotPanels);
+    if (ok) {
+      setIsDirty(false);
+      const views = await loadViews(userId);
+      setSavedViews(views);
+    }
+  }, [activeViewId, userId, savedViews]);
+
+  // -- Create a new named view with current state --
+  const handleCreateView = useCallback(
+    async (title: string) => {
+      if (!userId) return;
+
+      let snapshotPanels: PanelSlot[] = [];
+      setPanels((prev) => { snapshotPanels = prev; return prev; });
+      let snapshotLayout: LayoutMode = "1";
+      setLayout((prev) => { snapshotLayout = prev; return prev; });
+
+      const newView = await createView(userId, title, snapshotLayout, snapshotPanels);
+      if (newView) {
+        const views = await loadViews(userId);
+        setSavedViews(views);
+        setActiveViewId(newView.id);
+        setIsDirty(false);
       }
+    },
+    [userId]
+  );
 
-      setMarket(info);
-      await refreshData(info.outcomes, timeRangeRef.current);
-      if (!cancelled) setLoading(false);
-    }
+  // -- Delete a view --
+  const handleDeleteView = useCallback(
+    async (id: string) => {
+      const ok = await deleteView(id);
+      if (ok && userId) {
+        const views = await loadViews(userId);
+        setSavedViews(views);
+        if (activeViewId === id) {
+          setActiveViewId(null);
+          setIsDirty(false);
+        }
+      }
+    },
+    [userId, activeViewId]
+  );
 
-    init();
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, refreshData]);
-
-  // Re-fetch history when time range changes (after initial load)
-  useEffect(() => {
-    localStorage.setItem("situation-timerange", timeRange);
-    if (outcomesRef.current.length === 0) return;
-    timeRangeRef.current = timeRange;
-    refreshData(outcomesRef.current, timeRange);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange]);
-
-  // Polling
-  useEffect(() => {
-    if (outcomes.length === 0) return;
-
-    intervalRef.current = setInterval(() => {
-      refreshData(outcomesRef.current, timeRangeRef.current);
-    }, REFRESH_INTERVAL_MS);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outcomes.length > 0, refreshData]);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const s = extractSlug(urlInput);
-    if (!s) {
-      setError("Paste a Polymarket URL like polymarket.com/event/some-slug");
-      return;
-    }
-    // Stop previous polling
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    localStorage.setItem("situation-slug", s);
-    setSlug(s);
-  }
-
-  function handleReset() {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    localStorage.removeItem("situation-slug");
-    setSlug(null);
-    setMarket(null);
-    setOutcomes([]);
-    setError(null);
-    setUrlInput("");
-  }
-
-  // No market loaded — show input
-  if (!slug) {
+  // -- Auth loading --
+  if (authLoading) {
     return (
-      <main className="min-h-screen h-screen bg-gradient-to-b from-black to-zinc-950 text-white flex flex-col items-center justify-center px-6">
-        <Link
-          href="/"
-          className="absolute top-4 left-6 text-sm text-white/50 hover:text-white/80 transition"
-        >
-          &larr; Home
-        </Link>
-        <h1 className="text-3xl font-bold mb-6">Polymarket Live</h1>
-        <form onSubmit={handleSubmit} className="w-full max-w-lg flex gap-3">
-          <input
-            type="text"
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            placeholder="Paste a Polymarket event URL..."
-            className="flex-1 rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-white placeholder-white/30 outline-none focus:border-white/40"
-            autoFocus
-          />
-          <button
-            type="submit"
-            className="rounded-xl bg-white/10 px-6 py-3 font-medium hover:bg-white/20 transition"
-          >
-            Go
-          </button>
-        </form>
-        {error && <p className="text-red-400 mt-4 text-sm">{error}</p>}
+      <main className="min-h-dvh bg-gradient-to-b from-black to-zinc-950 text-white flex items-center justify-center">
+        <p className="text-white/50">Loading...</p>
       </main>
     );
   }
 
-  // Determine how to display based on outcome count
-  const isBinary = market && outcomes.length === 2 && outcomes[0].name === "Yes";
-
-  return (
-    <main className="min-h-screen h-screen overflow-hidden bg-gradient-to-b from-black to-zinc-950 px-4 md:px-6 py-3 md:py-4 text-white flex flex-col">
-      <div className="flex items-center justify-between shrink-0">
-        <Link
-          href="/"
-          className="text-xs md:text-sm text-white/50 hover:text-white/80 transition"
-        >
-          &larr; Home
-        </Link>
-        <div className="flex items-center gap-0.5 md:gap-1">
-          {TIME_RANGES.map((r) => (
-            <button
-              key={r.label}
-              onClick={() => setTimeRange(r.label)}
-              className={`px-1.5 md:px-2.5 py-1 text-[10px] md:text-xs rounded-lg transition ${
-                timeRange === r.label
-                  ? "bg-white/15 text-white"
-                  : "text-white/40 hover:text-white/70"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={handleReset}
-          className="text-xs md:text-sm text-white/50 hover:text-white/80 transition"
-        >
-          Change
-        </button>
-      </div>
-
-      {loading && (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-white/60 text-lg">Loading market...</p>
-        </div>
-      )}
-      {error && (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-red-400 text-lg">{error}</p>
-        </div>
-      )}
-
-      {!loading && !error && market && outcomes.length > 0 && (() => {
-        if (isBinary) {
-          // Simple Yes/No — show one big percentage
-          const yesPrice = outcomes[0].currentPrice;
-          const pct = Math.round(yesPrice * 100);
-          return (
-            <>
-              <div className="shrink-0 text-center pt-2">
-                <div className="text-base md:text-xl text-white/60 mb-2">{market.title}</div>
-                <div
-                  className="text-6xl md:text-[10rem] leading-none font-bold tabular-nums"
-                  style={{ color: COLORS[0] }}
-                >
-                  {pct}%
-                </div>
-                <div className="text-sm md:text-lg text-white/40 mt-1">Yes</div>
-              </div>
-              <div className="mt-4 flex-1 min-h-0">
-                <OddsChart
-                  outcomes={[outcomes[0]]}
-                  colors={COLORS}
-                  startTs={getStartTs(timeRange)}
-                />
-              </div>
-            </>
-          );
-        }
-
-        // Multi-outcome — normalize and show top outcomes
-        const sum = outcomes.reduce((s, o) => s + o.currentPrice, 0) || 1;
-        const normalized = outcomes.map((o) => Math.round((o.currentPrice / sum) * 100));
-        const diff = 100 - normalized.reduce((s, n) => s + n, 0);
-        if (diff !== 0) {
-          const maxIdx = normalized.indexOf(Math.max(...normalized));
-          normalized[maxIdx] += diff;
-        }
-
-        // Show top outcomes in the header (limit to what fits)
-        const topCount = Math.min(outcomes.length, 4);
-        const topOutcomes = outcomes.slice(0, topCount);
-        const topNormalized = normalized.slice(0, topCount);
-
-        return (
-          <>
-            <div className="text-center text-sm md:text-lg text-white/50 mt-1 shrink-0">
-              {market.title}
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 md:flex md:justify-center md:items-center md:gap-12 shrink-0 pt-2 px-2 md:px-0">
-              {topOutcomes.map((o, i) => (
-                <div key={o.tokenId} className="text-center">
-                  <div className="text-sm md:text-xl font-semibold text-white/70 mb-0.5 md:mb-1 truncate">
-                    {o.name}
-                  </div>
-                  <div
-                    className="text-4xl md:text-[7rem] leading-none font-bold tabular-nums"
-                    style={{ color: COLORS[i % COLORS.length] }}
-                  >
-                    {topNormalized[i]}%
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex-1 min-h-0">
-              <OddsChart
-                outcomes={topOutcomes}
-                colors={COLORS}
-                startTs={getStartTs(timeRange)}
-              />
-            </div>
-          </>
-        );
-      })()}
-    </main>
-  );
-}
-
-// -- Chart Component --
-function OddsChart({
-  outcomes,
-  colors,
-  startTs,
-}: {
-  outcomes: Outcome[];
-  colors: string[];
-  startTs: number;
-}) {
-  const allPoints = outcomes.flatMap((o) => o.history);
-
-  if (allPoints.length === 0) {
+  if (!userId) {
     return (
-      <div className="h-full rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center">
-        <p className="text-white/40">Waiting for price history...</p>
-      </div>
+      <main className="min-h-dvh bg-gradient-to-b from-black to-zinc-950 text-white flex flex-col items-center justify-center px-6 gap-4">
+        <h1 className="text-2xl font-bold">Situation</h1>
+        <p className="text-white/50 text-center max-w-sm">
+          Sign in to save and sync your market watchlist across devices.
+        </p>
+      </main>
     );
   }
 
-  const nowTs = Math.floor(Date.now() / 1000);
-  const tMin = startTs > 0 ? startTs : Math.min(...allPoints.map((p) => p.t));
-  const tMax = nowTs;
-  const tRange = Math.max(1, tMax - tMin);
-
-  // Dynamic Y range from data
-  const allPrices = allPoints.map((p) => p.p);
-  const dataMin = Math.min(...allPrices);
-  const dataMax = Math.max(...allPrices);
-  const spread = Math.max(0.01, dataMax - dataMin);
-  const yMin = Math.max(0, dataMin - spread * 0.08);
-  const yMax = Math.min(1, dataMax + spread * 0.08);
-
-  const xLeft = 5;
-  const xRight = 97;
-  const xSpan = xRight - xLeft;
-  const yTop = 5;
-  const yBottom = 92;
-  const ySpanSvg = yBottom - yTop;
-
-  function toSvgX(t: number): number {
-    return xLeft + ((t - tMin) / tRange) * xSpan;
-  }
-  function toSvgY(p: number): number {
-    return yBottom - ((p - yMin) / (yMax - yMin)) * ySpanSvg;
-  }
-
-  // Time labels — adaptive interval based on duration
-  const duration = tMax - tMin;
-  let interval: number;
-  if (duration < 3600) interval = 10 * 60;
-  else if (duration < 7200) interval = 15 * 60;
-  else if (duration < 14400) interval = 30 * 60;
-  else if (duration < 86400) interval = 60 * 60;
-  else if (duration < 604800) interval = 6 * 3600;
-  else interval = 24 * 3600;
-
-  const timeLabels: { ts: number; label: string }[] = [];
-  const labelStart = startTs > 0 ? startTs : tMin;
-  for (let ts = labelStart; ts <= nowTs; ts += interval) {
-    const d = new Date(ts * 1000);
-    const label =
-      duration > 86400
-        ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-        : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-    timeLabels.push({ ts, label });
-  }
-
-  // Dynamic Y labels — nice round percentages within range
-  const yLabels: number[] = [];
-  const yMinPct = Math.ceil(yMin * 100 / 5) * 5;
-  const yMaxPct = Math.floor(yMax * 100 / 5) * 5;
-  const step = yMaxPct - yMinPct <= 20 ? 5 : 10;
-  for (let pct = yMinPct; pct <= yMaxPct; pct += step) {
-    yLabels.push(pct);
-  }
-
   return (
-    <div className="h-full flex flex-col">
-      {/* Legend */}
-      {outcomes.length > 1 && (
-        <div className="flex items-center justify-center gap-6 mb-2 shrink-0">
-          {outcomes.map((o, i) => (
-            <div key={o.tokenId} className="flex items-center gap-2">
-              <div
-                className="w-4 h-1 rounded"
-                style={{ backgroundColor: colors[i % colors.length] }}
-              />
-              <span className="text-sm text-white/70">{o.name}</span>
-            </div>
-          ))}
-        </div>
-      )}
+    <main className="h-dvh overflow-hidden bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2">
+      {/* Single header row: nav controls | views bar ——— Manage */}
+      <div className="shrink-0 flex items-center gap-1 md:gap-1.5">
+        <Header
+          layout={layout}
+          timeRange={timeRange}
+          onLayoutChange={handleLayoutChange}
+          onTimeRangeChange={handleTimeRangeChange}
+        />
 
-      <div className="flex-1 min-h-0 rounded-2xl border border-white/10 bg-black/30 relative overflow-hidden">
-        {yLabels.map((pct) => {
-          const topPct = (toSvgY(pct / 100) / 100) * 100;
-          return (
-            <div
-              key={pct}
-              className="absolute left-1 text-[11px] text-white/50 -translate-y-1/2 z-10"
-              style={{ top: `${topPct}%` }}
-            >
-              {pct}%
-            </div>
-          );
-        })}
+        <span className="shrink-0 text-white/10 text-xs select-none">|</span>
 
-        {timeLabels.map((tl) => {
-          const leftPct = (toSvgX(tl.ts) / 100) * 100;
-          return (
-            <div
-              key={tl.ts}
-              className="absolute bottom-1 text-[10px] text-white/45 -translate-x-1/2 z-10"
-              style={{ left: `${leftPct}%` }}
-            >
-              {tl.label}
-            </div>
-          );
-        })}
+        <ViewsBar
+          savedViews={savedViews}
+          activeViewId={activeViewId}
+          isDirty={isDirty}
+          onLoadView={handleLoadView}
+          onSaveView={handleSaveView}
+          onCreateView={handleCreateView}
+          onDeleteView={handleDeleteView}
+        />
 
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          className="w-full h-full"
+        <div className="flex-1" />
+
+        <button
+          onClick={() => setManageOpen(true)}
+          className="shrink-0 text-xs text-white/50 hover:text-white/80 transition"
         >
-          {yLabels.map((pct) => (
-            <line
-              key={pct}
-              x1={xLeft}
-              y1={toSvgY(pct / 100)}
-              x2={xRight}
-              y2={toSvgY(pct / 100)}
-              stroke="rgba(255,255,255,0.07)"
-            />
-          ))}
-          <line
-            x1={xLeft}
-            y1={yBottom}
-            x2={xRight}
-            y2={yBottom}
-            stroke="rgba(255,255,255,0.10)"
-          />
-
-          {outcomes.map((o, i) => {
-            if (o.history.length < 2) return null;
-            const points = o.history
-              .map((pt) => `${toSvgX(pt.t)},${toSvgY(pt.p)}`)
-              .join(" ");
-            const lastPt = o.history[o.history.length - 1];
-            const color = colors[i % colors.length];
-            return (
-              <g key={o.tokenId}>
-                <polyline
-                  fill="none"
-                  stroke={color}
-                  strokeWidth="0.5"
-                  points={points}
-                />
-                <circle
-                  cx={toSvgX(lastPt.t)}
-                  cy={toSvgY(lastPt.p)}
-                  r="0.8"
-                  fill={color}
-                />
-              </g>
-            );
-          })}
-        </svg>
+          Manage
+        </button>
       </div>
-    </div>
+
+      <PanelGrid
+        layout={layout}
+        panels={panels}
+        savedMarkets={savedMarkets}
+        timeRange={timeRange}
+        onChangeMarket={handleChangeMarket}
+        onManageMarkets={() => setManageOpen(true)}
+      />
+
+      <ManageMarketsModal
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        savedMarkets={savedMarkets}
+        userId={userId}
+        onMarketsChange={handleMarketsChange}
+      />
+    </main>
   );
 }

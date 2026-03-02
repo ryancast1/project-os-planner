@@ -37,6 +37,13 @@ export async function GET(req: NextRequest) {
       }
       break;
     }
+    case "stock": {
+      const ticker = searchParams.get("ticker") ?? "";
+      const yahooRange = searchParams.get("range") ?? "1d";
+      const yahooInterval = searchParams.get("interval") ?? "5m";
+      url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${yahooInterval}&range=${yahooRange}&includePrePost=false`;
+      break;
+    }
     default:
       return NextResponse.json({ error: "Unknown endpoint" }, { status: 400 });
   }
