@@ -92,11 +92,13 @@ export default function PackingPage() {
 
   // Drag state
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragOverSide, setDragOverSide] = useState<"before" | "after" | null>(null);
   const dragRef = useRef<{
     table: "template" | "trip";
     id: string;
     category: Category;
     overId: string | null;
+    overSide: "before" | "after" | null;
   } | null>(null);
 
   // Non-passive touchmove to prevent scroll during drag
@@ -108,9 +110,16 @@ export default function PackingPage() {
       const el = document.elementFromPoint(touch.clientX, touch.clientY);
       const itemEl = el?.closest("[data-drag-id]") as HTMLElement | null;
       const newOverId = itemEl?.dataset.dragId ?? null;
-      if (newOverId !== dragRef.current.overId) {
+      let side: "before" | "after" | null = null;
+      if (itemEl && newOverId) {
+        const rect = itemEl.getBoundingClientRect();
+        side = touch.clientY < rect.top + rect.height / 2 ? "before" : "after";
+      }
+      if (newOverId !== dragRef.current.overId || side !== dragRef.current.overSide) {
         dragRef.current.overId = newOverId;
+        dragRef.current.overSide = side;
         setDragOverId(newOverId);
+        setDragOverSide(side);
       }
     }
     window.addEventListener("touchmove", onTouchMove, { passive: false });
@@ -170,7 +179,6 @@ export default function PackingPage() {
       .select("*")
       .eq("trip_id", tripId)
       .order("category")
-      .order("sort_order")
       .order("created_at");
 
     if (error) {
@@ -249,7 +257,7 @@ export default function PackingPage() {
     setErr(null);
 
     const catItems = tripItems.filter((i) => i.category === newItemCategory);
-    const maxOrder = catItems.length > 0 ? Math.max(...catItems.map((i) => i.sort_order)) : 0;
+    const maxOrder = catItems.length > 0 ? Math.max(...catItems.map((i) => i.sort_order ?? 0)) : 0;
 
     const { error } = await supabase.from("packing_trip_items").insert({
       trip_id: currentTrip.id,
@@ -361,7 +369,8 @@ export default function PackingPage() {
     table: "template" | "trip",
     category: Category,
     draggedId: string,
-    targetId: string
+    targetId: string,
+    side: "before" | "after"
   ) {
     if (draggedId === targetId) return;
 
@@ -374,7 +383,8 @@ export default function PackingPage() {
       const rest = items.filter((i) => i.id !== draggedId);
       const targetIdx = rest.findIndex((i) => i.id === targetId);
       if (targetIdx === -1) return;
-      rest.splice(targetIdx, 0, dragged);
+      const insertIdx = side === "after" ? targetIdx + 1 : targetIdx;
+      rest.splice(insertIdx, 0, dragged);
       const updates = rest.map((item, idx) => ({ id: item.id, sort_order: idx + 1 }));
       setTemplateItems((prev) =>
         prev.map((item) => {
@@ -394,7 +404,8 @@ export default function PackingPage() {
       const rest = items.filter((i) => i.id !== draggedId);
       const targetIdx = rest.findIndex((i) => i.id === targetId);
       if (targetIdx === -1) return;
-      rest.splice(targetIdx, 0, dragged);
+      const insertIdx = side === "after" ? targetIdx + 1 : targetIdx;
+      rest.splice(insertIdx, 0, dragged);
       const updates = rest.map((item, idx) => ({ id: item.id, sort_order: idx + 1 }));
       setTripItems((prev) =>
         prev.map((item) => {
@@ -410,16 +421,21 @@ export default function PackingPage() {
 
   // HTML5 drag handlers
   function onDragStart(e: React.DragEvent, table: "template" | "trip", id: string, category: Category) {
-    dragRef.current = { table, id, category, overId: null };
+    dragRef.current = { table, id, category, overId: null, overSide: null };
     e.dataTransfer.effectAllowed = "move";
   }
 
   function onDragOver(e: React.DragEvent, id: string) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    if (dragRef.current && dragRef.current.overId !== id) {
+    if (!dragRef.current) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const side: "before" | "after" = e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+    if (dragRef.current.overId !== id || dragRef.current.overSide !== side) {
       dragRef.current.overId = id;
+      dragRef.current.overSide = side;
       setDragOverId(id);
+      setDragOverSide(side);
     }
   }
 
@@ -427,19 +443,21 @@ export default function PackingPage() {
     e.preventDefault();
     const drag = dragRef.current;
     if (!drag) return;
-    reorderItems(drag.table, drag.category, drag.id, targetId);
+    reorderItems(drag.table, drag.category, drag.id, targetId, drag.overSide || "before");
     dragRef.current = null;
     setDragOverId(null);
+    setDragOverSide(null);
   }
 
   function onDragEnd() {
     dragRef.current = null;
     setDragOverId(null);
+    setDragOverSide(null);
   }
 
   // Touch drag handlers
   function onTouchStartDrag(table: "template" | "trip", id: string, category: Category) {
-    dragRef.current = { table, id, category, overId: null };
+    dragRef.current = { table, id, category, overId: null, overSide: null };
   }
 
   function onTouchEnd() {
@@ -447,19 +465,21 @@ export default function PackingPage() {
     if (!drag || !drag.overId || drag.id === drag.overId) {
       dragRef.current = null;
       setDragOverId(null);
+      setDragOverSide(null);
       return;
     }
-    reorderItems(drag.table, drag.category, drag.id, drag.overId);
+    reorderItems(drag.table, drag.category, drag.id, drag.overId, drag.overSide || "before");
     dragRef.current = null;
     setDragOverId(null);
+    setDragOverSide(null);
   }
 
   const itemsByCategory = useMemo(() => {
     const map = new Map<Category, TripItem[]>();
     for (const cat of CATEGORIES) {
       const filtered = tripItems.filter((item) => item.category === cat && !item.is_hidden);
-      const unpacked = filtered.filter((i) => !i.is_packed).sort((a, b) => a.sort_order - b.sort_order);
-      const packed = filtered.filter((i) => i.is_packed).sort((a, b) => a.sort_order - b.sort_order);
+      const unpacked = filtered.filter((i) => !i.is_packed).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      const packed = filtered.filter((i) => i.is_packed).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
       map.set(cat, [...unpacked, ...packed]);
     }
     return map;
@@ -598,7 +618,10 @@ export default function PackingPage() {
                         <div className="mb-3 text-sm font-semibold text-neutral-300">{category}</div>
                         <div className="space-y-2">
                           {items.map((item) => (
-                            <div key={item.id}>
+                            <div key={item.id} className="relative">
+                              {dragOverId === item.id && dragOverSide === "before" && (
+                                <div className="absolute -top-1.5 left-2 right-2 h-0.5 rounded-full bg-neutral-100 z-10" />
+                              )}
                               {editingId === item.id ? (
                                 <div className="rounded-xl border border-neutral-800 bg-black/20 px-3 py-2">
                                   <input
@@ -627,23 +650,19 @@ export default function PackingPage() {
                                   onDragOver={(e) => !item.is_packed && onDragOver(e, item.id)}
                                   onDrop={(e) => !item.is_packed && onDrop(e, item.id)}
                                   className={
-                                    "flex items-center justify-between gap-2 rounded-xl border px-3 py-2 transition-colors " +
-                                    (dragOverId === item.id
-                                      ? "border-white/40 bg-white/10"
-                                      : item.is_packed
+                                    "flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " +
+                                    (item.is_packed
                                       ? "border-emerald-700 bg-emerald-950/30"
                                       : "border-neutral-800 bg-black/20")
                                   }
                                 >
                                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    {!item.is_packed && (
-                                      <DragHandle
-                                        onDragStart={(e) => onDragStart(e, "trip", item.id, item.category)}
-                                        onDragEnd={onDragEnd}
-                                        onTouchStart={() => onTouchStartDrag("trip", item.id, item.category)}
-                                        onTouchEnd={onTouchEnd}
-                                      />
-                                    )}
+                                    <DragHandle
+                                      onDragStart={(e) => !item.is_packed ? onDragStart(e, "trip", item.id, item.category) : e.preventDefault()}
+                                      onDragEnd={onDragEnd}
+                                      onTouchStart={() => { if (!item.is_packed) onTouchStartDrag("trip", item.id, item.category); }}
+                                      onTouchEnd={onTouchEnd}
+                                    />
                                     <button
                                       onClick={() => togglePacked(item.id, item.is_packed)}
                                       className={
@@ -689,6 +708,9 @@ export default function PackingPage() {
                                     </button>
                                   </div>
                                 </div>
+                              )}
+                              {dragOverId === item.id && dragOverSide === "after" && (
+                                <div className="absolute -bottom-1.5 left-2 right-2 h-0.5 rounded-full bg-neutral-100 z-10" />
                               )}
                             </div>
                           ))}
@@ -742,35 +764,39 @@ export default function PackingPage() {
                     <div className="mb-3 text-sm font-semibold text-neutral-300">{category}</div>
                     <div className="space-y-2">
                       {items.map((item) => (
-                        <div
-                          key={item.id}
-                          data-drag-id={item.id}
-                          onDragOver={(e) => onDragOver(e, item.id)}
-                          onDrop={(e) => onDrop(e, item.id)}
-                          className={
-                            "flex items-center justify-between gap-2 rounded-xl border bg-black/20 px-3 py-2 transition-colors " +
-                            (dragOverId === item.id ? "border-white/40 bg-white/10" : "border-neutral-800")
-                          }
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <DragHandle
-                              onDragStart={(e) => onDragStart(e, "template", item.id, item.category)}
-                              onDragEnd={onDragEnd}
-                              onTouchStart={() => onTouchStartDrag("template", item.id, item.category)}
-                              onTouchEnd={onTouchEnd}
-                            />
-                            <span className="text-sm text-neutral-100">{item.item_name}</span>
-                          </div>
-                          <button
-                            onClick={() => {
-                              if (confirm(`Delete "${item.item_name}" from template?`)) {
-                                deleteTemplateItem(item.id);
-                              }
-                            }}
-                            className="shrink-0 text-xs text-red-400 hover:text-red-300"
+                        <div key={item.id} className="relative">
+                          {dragOverId === item.id && dragOverSide === "before" && (
+                            <div className="absolute -top-1.5 left-2 right-2 h-0.5 rounded-full bg-neutral-100 z-10" />
+                          )}
+                          <div
+                            data-drag-id={item.id}
+                            onDragOver={(e) => onDragOver(e, item.id)}
+                            onDrop={(e) => onDrop(e, item.id)}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-neutral-800 bg-black/20 px-3 py-2"
                           >
-                            Delete
-                          </button>
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <DragHandle
+                                onDragStart={(e) => onDragStart(e, "template", item.id, item.category)}
+                                onDragEnd={onDragEnd}
+                                onTouchStart={() => onTouchStartDrag("template", item.id, item.category)}
+                                onTouchEnd={onTouchEnd}
+                              />
+                              <span className="text-sm text-neutral-100">{item.item_name}</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                if (confirm(`Delete "${item.item_name}" from template?`)) {
+                                  deleteTemplateItem(item.id);
+                                }
+                              }}
+                              className="shrink-0 text-xs text-red-400 hover:text-red-300"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                          {dragOverId === item.id && dragOverSide === "after" && (
+                            <div className="absolute -bottom-1.5 left-2 right-2 h-0.5 rounded-full bg-neutral-100 z-10" />
+                          )}
                         </div>
                       ))}
                     </div>

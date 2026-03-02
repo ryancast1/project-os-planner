@@ -552,7 +552,7 @@ export default function DatabasePage() {
             placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-sm placeholder:text-white/40 outline-none"
+            className="flex-1 h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-[16px] sm:text-sm placeholder:text-white/40 outline-none"
           />
           <button
             onClick={() => setAddingRow(true)}

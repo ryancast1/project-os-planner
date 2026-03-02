@@ -1660,12 +1660,23 @@ function EditSheet({
               <div className="grid grid-cols-1 gap-2">
                 <div>
                   <div className="mb-1 text-xs text-neutral-400">Start (optional)</div>
-                  <input
-                    type="time"
-                    value={planStartTime}
-                    onChange={(e) => setPlanStartTime(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
-                  />
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="time"
+                      value={planStartTime}
+                      onChange={(e) => setPlanStartTime(e.target.value)}
+                      className="h-10 flex-1 rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
+                    />
+                    {planStartTime && (
+                      <button
+                        type="button"
+                        onClick={() => setPlanStartTime("")}
+                        className="shrink-0 rounded-lg border border-neutral-700 px-2 py-1.5 text-xs text-neutral-400 hover:text-neutral-200"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -3586,6 +3597,13 @@ function getWindowValue(which: DrawerWindow) {
       `and(window_kind.eq.weekend,window_start.eq.${windows.nextWeekendStart})`,
     ].join(",");
 
+    // For tasks: also fetch items from past windows so they roll over
+    const taskParkingOr = [
+      parkingOr,
+      `and(window_kind.eq.workweek,window_start.lt.${windows.thisWeekStart})`,
+      `and(window_kind.eq.weekend,window_start.lt.${windows.thisWeekendStart})`,
+    ].join(",");
+
     const [
       tasksScheduledRes,
       tasksOverdueRes,
@@ -3631,7 +3649,7 @@ function getWindowValue(which: DrawerWindow) {
         .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at,sort_order")
         .eq("status", "open")
         .is("scheduled_for", null)
-        .or(`${parkingOr},and(window_kind.is.null,window_start.is.null)`)
+        .or(`${taskParkingOr},and(window_kind.is.null,window_start.is.null)`)
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
 
@@ -4408,12 +4426,16 @@ setMovieItems(
       return null;
     };
 
-    const matchWindow = (kind: WindowKind | null, start: string | null) => {
+    const matchWindow = (kind: WindowKind | null, start: string | null, rollover = false) => {
       if (!kind || !start) return null;
       if (kind === "workweek" && start === windows.thisWeekStart) return "thisWeek" as const;
       if (kind === "weekend" && start === windows.thisWeekendStart) return "thisWeekend" as const;
       if (kind === "workweek" && start === windows.nextWeekStart) return "nextWeek" as const;
       if (kind === "weekend" && start === windows.nextWeekendStart) return "nextWeekend" as const;
+      if (rollover) {
+        if (kind === "workweek" && start < windows.thisWeekStart) return "thisWeek" as const;
+        if (kind === "weekend" && start < windows.thisWeekendStart) return "thisWeekend" as const;
+      }
       return null;
     };
 
@@ -4426,7 +4448,7 @@ setMovieItems(
         }
         continue;
       }
-      const which = matchWindow(t.window_kind, t.window_start);
+      const which = matchWindow(t.window_kind, t.window_start, true);
       if (which) out[which].task.push(t);
       else if (!t.window_kind && !t.window_start) out.open.task.push(t);
     }
@@ -4460,7 +4482,7 @@ setMovieItems(
       if (c.status !== "active") continue;
       if (c.is_ongoing) continue; // Ongoing items don't go to parking lots
 
-      const which = matchWindow(c.window_kind, c.window_start);
+      const which = matchWindow(c.window_kind, c.window_start, true);
       if (which) out[which].content.push(c);
       // Note: content items without window_kind stay in the content card, not in "open" drawer
     }
@@ -4468,7 +4490,7 @@ setMovieItems(
     // Add content sessions to parking lots (for ongoing items and movies)
     for (const s of contentSessions) {
       if (s.status === "done") continue;
-      const which = matchWindow(s.window_kind, s.window_start);
+      const which = matchWindow(s.window_kind, s.window_start, true);
       if (which) out[which].session.push(s);
     }
 
@@ -4707,12 +4729,19 @@ const { data, error } = await supabase
     const patch: any = { status: nextStatus };
     patch.completed_at = nextDone ? new Date().toISOString() : null;
 
-    // When marking done, move to top of list by setting sort_order to min - 1
+    // When marking done, move to bottom of done group (above open items)
     const task = tasks.find((t) => t.id === id);
     if (nextDone && task?.scheduled_for) {
       const dayTasks = tasksByDay[task.scheduled_for] ?? [];
-      const minOrder = dayTasks.length > 0 ? Math.min(...dayTasks.map((t) => t.sort_order ?? 0)) : 0;
-      patch.sort_order = minOrder - 1;
+      const others = dayTasks.filter((t) => t.id !== id);
+      const openOthers = others.filter((t) => t.status !== "done");
+      if (openOthers.length > 0) {
+        const minOpenOrder = Math.min(...openOthers.map((t) => t.sort_order ?? 0));
+        patch.sort_order = minOpenOrder - 1;
+      } else {
+        const doneOthers = others.filter((t) => t.status === "done");
+        patch.sort_order = doneOthers.length > 0 ? Math.max(...doneOthers.map((t) => t.sort_order ?? 0)) + 1 : 0;
+      }
     }
 
     const { error } = await supabase.from("tasks").update(patch).eq("id", id);
@@ -4832,14 +4861,19 @@ const { data, error } = await supabase
     const newStatus = item.status === "done" ? "active" : "done";
     const completed_at = newStatus === "done" ? new Date().toISOString() : null;
 
-    // When marking done, move to top of day's content list
+    // When marking done, move to bottom of done group (above open items)
     let newDaySortOrder = item.day_sort_order;
     if (newStatus === "done" && item.scheduled_for) {
       const dayContent = unifiedContentByDay[item.scheduled_for] ?? [];
-      const minOrder = dayContent.length > 0
-        ? Math.min(...dayContent.map((e) => e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0)))
-        : 0;
-      newDaySortOrder = minOrder - 1;
+      const others = dayContent.filter((e) => !(e.kind === "item" && e.item.id === itemId));
+      const openOthers = others.filter((e) => e.kind === "item" ? e.item.status !== "done" : e.session.status !== "done");
+      if (openOthers.length > 0) {
+        const minOpenOrder = Math.min(...openOthers.map((e) => e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0)));
+        newDaySortOrder = minOpenOrder - 1;
+      } else {
+        const doneOthers = others.filter((e) => e.kind === "item" ? e.item.status === "done" : e.session.status === "done");
+        newDaySortOrder = doneOthers.length > 0 ? Math.max(...doneOthers.map((e) => e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0))) + 1 : 0;
+      }
     }
 
     // Optimistic update
@@ -4869,14 +4903,19 @@ const { data, error } = await supabase
     const newStatus = session.status === "done" ? "open" : "done";
     const completed_at = newStatus === "done" ? new Date().toISOString() : null;
 
-    // When marking done, move to top of day's content list
+    // When marking done, move to bottom of done group (above open items)
     let newDaySortOrder = session.day_sort_order;
     if (newStatus === "done" && session.scheduled_for) {
       const dayContent = unifiedContentByDay[session.scheduled_for] ?? [];
-      const minOrder = dayContent.length > 0
-        ? Math.min(...dayContent.map((e) => e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0)))
-        : 0;
-      newDaySortOrder = minOrder - 1;
+      const others = dayContent.filter((e) => !(e.kind === "session" && e.session.id === sessionId));
+      const openOthers = others.filter((e) => e.kind === "item" ? e.item.status !== "done" : e.session.status !== "done");
+      if (openOthers.length > 0) {
+        const minOpenOrder = Math.min(...openOthers.map((e) => e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0)));
+        newDaySortOrder = minOpenOrder - 1;
+      } else {
+        const doneOthers = others.filter((e) => e.kind === "item" ? e.item.status === "done" : e.session.status === "done");
+        newDaySortOrder = doneOthers.length > 0 ? Math.max(...doneOthers.map((e) => e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0))) + 1 : 0;
+      }
     }
 
     // Optimistic update
