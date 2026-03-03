@@ -116,11 +116,14 @@ export async function fetchStockData(
   yahooRange: string,
   yahooInterval: string,
   /** Optional: filter history to only points at or after this Unix timestamp */
-  startTs?: number
+  startTs?: number,
+  /** Include extended / pre-post market data (futures, yields, crypto trade wider hours) */
+  includePrePost?: boolean
 ): Promise<StockSnapshot | null> {
   try {
+    const prepost = includePrePost ? "&prepost=true" : "";
     const res = await fetch(
-      `${PROXY}?endpoint=stock&ticker=${encodeURIComponent(ticker)}&range=${yahooRange}&interval=${yahooInterval}`
+      `${PROXY}?endpoint=stock&ticker=${encodeURIComponent(ticker)}&range=${yahooRange}&interval=${yahooInterval}${prepost}`
     );
     if (!res.ok) return null;
     const data = await res.json();

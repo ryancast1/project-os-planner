@@ -41,7 +41,8 @@ export async function GET(req: NextRequest) {
       const ticker = searchParams.get("ticker") ?? "";
       const yahooRange = searchParams.get("range") ?? "1d";
       const yahooInterval = searchParams.get("interval") ?? "5m";
-      url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${yahooInterval}&range=${yahooRange}&includePrePost=false`;
+      const prepost = searchParams.get("prepost") === "true";
+      url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${yahooInterval}&range=${yahooRange}&includePrePost=${prepost}`;
       break;
     }
     default:

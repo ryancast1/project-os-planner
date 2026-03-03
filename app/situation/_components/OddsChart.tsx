@@ -2,7 +2,7 @@
 
 import type { Outcome } from "../_lib/types";
 
-type ValueFormat = "percent" | "price";
+type ValueFormat = "percent" | "price" | "yield";
 
 /** Compute nice round price intervals for the Y axis */
 function getNicePriceLabels(min: number, max: number): number[] {
@@ -67,19 +67,18 @@ export default function OddsChart({
   const tMax = xMax ?? nowTs;
   const tRange = Math.max(1, tMax - tMin);
 
-  // Dynamic Y range — clamp to 0-1 for probabilities, free for prices
+  // Dynamic Y range — clamp to 0-1 for probabilities, free for prices/yields
   const allPrices = allPoints.map((p) => p.p);
   const dataMin = Math.min(...allPrices);
   const dataMax = Math.max(...allPrices);
   const spread = Math.max(valueFormat === "price" ? 1 : 0.01, dataMax - dataMin);
-  const yMin =
-    valueFormat === "price"
-      ? dataMin - spread * 0.08
-      : Math.max(0, dataMin - spread * 0.08);
-  const yMax =
-    valueFormat === "price"
-      ? dataMax + spread * 0.08
-      : Math.min(1, dataMax + spread * 0.08);
+  const isFreefloat = valueFormat === "price" || valueFormat === "yield";
+  const yMin = isFreefloat
+    ? dataMin - spread * 0.08
+    : Math.max(0, dataMin - spread * 0.08);
+  const yMax = isFreefloat
+    ? dataMax + spread * 0.08
+    : Math.min(1, dataMax + spread * 0.08);
 
   const xLeft = 5;
   const xRight = 97;
@@ -134,7 +133,7 @@ export default function OddsChart({
     timeLabels.push({ ts, label });
   }
 
-  // Y labels — different for price vs percent
+  // Y labels — different for price vs yield vs percent
   type YLabel = { value: number; display: string };
   let yLabels: YLabel[];
 
@@ -142,6 +141,12 @@ export default function OddsChart({
     yLabels = getNicePriceLabels(yMin, yMax).map((v) => ({
       value: v,
       display: formatPriceLabel(v),
+    }));
+  } else if (valueFormat === "yield") {
+    // Yield values are already in percent form (e.g. 4.25 = 4.25%)
+    yLabels = getNicePriceLabels(yMin, yMax).map((v) => ({
+      value: v,
+      display: `${v.toFixed(2)}%`,
     }));
   } else {
     const yMinPct = Math.ceil((yMin * 100) / 5) * 5;

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import type { LayoutMode, TimeRangeLabel, PanelSlot, SavedMarket, SavedView } from "./_lib/types";
-import { LAYOUT_CONFIGS } from "./_lib/constants";
+import { LAYOUT_CONFIGS, LAYOUT_OPTIONS, TIME_RANGES } from "./_lib/constants";
 import {
   loadLocalState,
   saveLayout,
@@ -248,37 +249,105 @@ export default function SituationDashboard() {
   }
 
   return (
-    <main className={`bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2 ${isMobilePortrait ? "min-h-dvh overflow-y-auto" : "h-dvh overflow-hidden"}`}>
-      {/* Single header row: nav controls | views bar ——— Manage */}
-      <div className="shrink-0 flex items-center gap-1 md:gap-1.5">
-        <Header
-          layout={layout}
-          timeRange={timeRange}
-          onLayoutChange={handleLayoutChange}
-          onTimeRangeChange={handleTimeRangeChange}
-        />
+    <main className="bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2 h-dvh overflow-hidden">
+      {/* Header: 3-row stacked on portrait mobile, single row otherwise */}
+      {isMobilePortrait ? (
+        <div className="shrink-0 flex flex-col gap-1.5">
+          {/* Row 1: Grid type (layout picker) */}
+          <div className="flex items-center gap-1">
+            <Link
+              href="/"
+              className="text-xs text-white/50 hover:text-white/80 transition mr-1 shrink-0"
+            >
+              &larr; Home
+            </Link>
+            <span className="shrink-0 text-white/10 text-xs select-none">|</span>
+            <div className="flex items-center gap-0.5">
+              {LAYOUT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleLayoutChange(opt.value)}
+                  className={`px-2 py-0.5 text-[10px] rounded-md transition ${
+                    layout === opt.value
+                      ? "bg-white/15 text-white"
+                      : "text-white/40 hover:text-white/70"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-        <span className="shrink-0 text-white/10 text-xs select-none">|</span>
+          {/* Row 2: Time scale */}
+          <div className="flex items-center gap-0.5">
+            {TIME_RANGES.map((r) => (
+              <button
+                key={r.label}
+                onClick={() => handleTimeRangeChange(r.label)}
+                className={`px-2 py-0.5 text-[10px] rounded-md transition ${
+                  timeRange === r.label
+                    ? "bg-white/15 text-white"
+                    : "text-white/40 hover:text-white/70"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
 
-        <ViewsBar
-          savedViews={savedViews}
-          activeViewId={activeViewId}
-          isDirty={isDirty}
-          onLoadView={handleLoadView}
-          onSaveView={handleSaveView}
-          onCreateView={handleCreateView}
-          onDeleteView={handleDeleteView}
-        />
+          {/* Row 3: Views dropdown/saver + Manage */}
+          <div className="flex items-center gap-1">
+            <ViewsBar
+              savedViews={savedViews}
+              activeViewId={activeViewId}
+              isDirty={isDirty}
+              onLoadView={handleLoadView}
+              onSaveView={handleSaveView}
+              onCreateView={handleCreateView}
+              onDeleteView={handleDeleteView}
+            />
+            <div className="flex-1" />
+            <button
+              onClick={() => setManageOpen(true)}
+              className="shrink-0 text-xs text-white/50 hover:text-white/80 transition"
+            >
+              Manage
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Desktop / landscape: single row */
+        <div className="shrink-0 flex items-center gap-1 md:gap-1.5">
+          <Header
+            layout={layout}
+            timeRange={timeRange}
+            onLayoutChange={handleLayoutChange}
+            onTimeRangeChange={handleTimeRangeChange}
+          />
 
-        <div className="flex-1" />
+          <span className="shrink-0 text-white/10 text-xs select-none">|</span>
 
-        <button
-          onClick={() => setManageOpen(true)}
-          className="shrink-0 text-xs text-white/50 hover:text-white/80 transition"
-        >
-          Manage
-        </button>
-      </div>
+          <ViewsBar
+            savedViews={savedViews}
+            activeViewId={activeViewId}
+            isDirty={isDirty}
+            onLoadView={handleLoadView}
+            onSaveView={handleSaveView}
+            onCreateView={handleCreateView}
+            onDeleteView={handleDeleteView}
+          />
+
+          <div className="flex-1" />
+
+          <button
+            onClick={() => setManageOpen(true)}
+            className="shrink-0 text-xs text-white/50 hover:text-white/80 transition"
+          >
+            Manage
+          </button>
+        </div>
+      )}
 
       <PanelGrid
         layout={layout}

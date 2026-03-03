@@ -14,6 +14,16 @@ function formatPrice(p: number): string {
   return `$${p.toFixed(2)}`;
 }
 
+/** Format a treasury yield — e.g. 4.25 → "4.25%" */
+function formatYield(p: number): string {
+  return `${p.toFixed(2)}%`;
+}
+
+/** Format an absolute yield change — e.g. 0.05 → "+0.050%" */
+function formatYieldDelta(delta: number): string {
+  return `${delta >= 0 ? "+" : ""}${delta.toFixed(3)}%`;
+}
+
 export default function StockDisplay({
   snapshot,
   compact,
@@ -23,7 +33,8 @@ export default function StockDisplay({
   compact: boolean;
   mobileLandscape?: boolean;
 }) {
-  const { label, currentPrice, previousClose } = snapshot;
+  const { label, currentPrice, previousClose, displayType } = snapshot;
+  const isYield = displayType === "yield";
 
   const change =
     previousClose != null ? currentPrice - previousClose : null;
@@ -60,7 +71,7 @@ export default function StockDisplay({
         }
         style={{ color: accentColor }}
       >
-        {formatPrice(currentPrice)}
+        {isYield ? formatYield(currentPrice) : formatPrice(currentPrice)}
       </div>
 
       {changePct != null && (
@@ -74,9 +85,9 @@ export default function StockDisplay({
           }
           style={{ color: accentColor }}
         >
-          {isUp ? "+" : ""}
-          {formatPrice(Math.abs(change!))} ({isUp ? "+" : ""}
-          {changePct.toFixed(2)}%)
+          {isYield
+            ? formatYieldDelta(change!)
+            : `${isUp ? "+" : ""}${formatPrice(Math.abs(change!))} (${isUp ? "+" : ""}${changePct.toFixed(2)}%)`}
         </div>
       )}
     </div>

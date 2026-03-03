@@ -79,6 +79,10 @@ export const BUILTIN_MARKETS: BuiltinMarket[] = [
   { id: "builtin:br",     label: "Broadridge", ticker: "BR",      category: "Stocks" },
   { id: "builtin:btc",    label: "Bitcoin",    ticker: "BTC-USD", category: "Crypto/Commodities" },
   { id: "builtin:gold",   label: "Gold",       ticker: "GC=F",    category: "Crypto/Commodities" },
+  { id: "builtin:oil",    label: "Crude Oil",  ticker: "CL=F",    category: "Futures" },
+  { id: "builtin:spfut",  label: "S&P Futures",ticker: "ES=F",    category: "Futures" },
+  { id: "builtin:10y",    label: "10Y Yield",  ticker: "^TNX",    category: "Rates",  displayType: "yield" },
+  { id: "builtin:30y",    label: "30Y Yield",  ticker: "^TYX",    category: "Rates",  displayType: "yield" },
 ];
 
 // Unique categories in display order

@@ -96,13 +96,19 @@ export default function Panel({
 
   // ---- STOCK refresh ----
   const refreshStockData = useCallback(
-    async (ticker: string, label: string, range: TimeRangeLabel) => {
+    async (
+      ticker: string,
+      label: string,
+      range: TimeRangeLabel,
+      displayType?: "price" | "yield",
+      includePrePost?: boolean
+    ) => {
       const { range: yahooRange, interval: yahooInterval } = getYahooParams(range);
       const startTs =
         range === "1H" || range === "4H" ? getStartTs(range) : undefined;
-      const snap = await fetchStockData(ticker, yahooRange, yahooInterval, startTs);
+      const snap = await fetchStockData(ticker, yahooRange, yahooInterval, startTs, includePrePost);
       if (snap) {
-        const withLabel: StockSnapshot = { ...snap, label };
+        const withLabel: StockSnapshot = { ...snap, label, displayType };
         stockRef.current = withLabel;
         setStockSnapshot(withLabel);
       }
@@ -138,7 +144,8 @@ export default function Panel({
       let cancelled = false;
       setLoading(true);
 
-      refreshStockData(builtin.ticker, builtin.label, timeRangeRef.current).then(() => {
+      const prepost = !US_EQUITY_BUILTIN_IDS.has(builtin.id);
+      refreshStockData(builtin.ticker, builtin.label, timeRangeRef.current, builtin.displayType, prepost).then(() => {
         if (!cancelled) setLoading(false);
       });
 
@@ -174,7 +181,7 @@ export default function Panel({
     if (isBuiltin) {
       if (!stockRef.current) return;
       const builtin = BUILTIN_MARKETS.find((m) => m.id === marketId);
-      if (builtin) refreshStockData(builtin.ticker, builtin.label, timeRange);
+      if (builtin) refreshStockData(builtin.ticker, builtin.label, timeRange, builtin.displayType, !US_EQUITY_BUILTIN_IDS.has(builtin.id));
     } else {
       if (outcomesRef.current.length === 0) return;
       refreshPolyData(outcomesRef.current, timeRange);
@@ -191,7 +198,7 @@ export default function Panel({
     intervalRef.current = setInterval(() => {
       if (isBuiltin) {
         const builtin = BUILTIN_MARKETS.find((m) => m.id === marketId);
-        if (builtin) refreshStockData(builtin.ticker, builtin.label, timeRangeRef.current);
+        if (builtin) refreshStockData(builtin.ticker, builtin.label, timeRangeRef.current, builtin.displayType, !US_EQUITY_BUILTIN_IDS.has(builtin.id));
       } else {
         refreshPolyData(outcomesRef.current, timeRangeRef.current);
       }
@@ -302,7 +309,7 @@ export default function Panel({
                   outcomes={stockChartOutcomes}
                   colors={[stockColor]}
                   startTs={getStartTs(timeRange)}
-                  valueFormat="price"
+                  valueFormat={stockSnapshot.displayType === "yield" ? "yield" : "price"}
                   xMin={chartXMin}
                   xMax={chartXMax}
                   mobileLandscape={mobileLandscape}

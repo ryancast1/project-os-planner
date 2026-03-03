@@ -39,6 +39,8 @@ export type BuiltinMarket = {
   label: string;   // e.g. "S&P 500"
   ticker: string;  // Yahoo Finance ticker e.g. "^GSPC"
   category: string; // e.g. "Stocks"
+  /** How to format the price value. Default "price" = dollar format. "yield" = 4.25% format */
+  displayType?: "price" | "yield";
 };
 
 export type StockSnapshot = {
@@ -47,6 +49,8 @@ export type StockSnapshot = {
   currentPrice: number;
   previousClose: number | null;
   history: PricePoint[];
+  /** Carried from BuiltinMarket.displayType — controls how price is rendered */
+  displayType?: "price" | "yield";
 };
 
 export type SavedView = {
