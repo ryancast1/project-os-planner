@@ -1,6 +1,7 @@
 "use client";
 
-import type { Outcome } from "../_lib/types";
+import { useState, useRef, useCallback } from "react";
+import type { Outcome, PricePoint } from "../_lib/types";
 
 type ValueFormat = "percent" | "price" | "yield";
 
@@ -32,6 +33,36 @@ function formatPriceLabel(v: number): string {
   return `$${v.toFixed(2)}`;
 }
 
+/** Format a value for the hover tooltip — more precise than axis labels */
+function formatHoverValue(v: number, fmt: ValueFormat): string {
+  switch (fmt) {
+    case "percent":
+      return `${(v * 100).toFixed(1)}%`;
+    case "yield":
+      return `${v.toFixed(3)}%`;
+    case "price":
+      if (v >= 10000)
+        return `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+      return `$${v.toFixed(2)}`;
+  }
+}
+
+/** Binary search for the data point closest in time to `ts` */
+function findNearest(history: PricePoint[], ts: number): PricePoint | null {
+  if (history.length === 0) return null;
+  let lo = 0;
+  let hi = history.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (history[mid].t < ts) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo === 0) return history[0];
+  const before = history[lo - 1];
+  const after = history[lo];
+  return Math.abs(before.t - ts) <= Math.abs(after.t - ts) ? before : after;
+}
+
 export default function OddsChart({
   outcomes,
   colors,
@@ -52,6 +83,10 @@ export default function OddsChart({
   /** Landscape mobile: hide legend, X-axis, and reduce Y to top+bottom only */
   mobileLandscape?: boolean;
 }) {
+  // -- Crosshair / tooltip state --
+  const [hoverSvgX, setHoverSvgX] = useState<number | null>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
+
   const allPoints = outcomes.flatMap((o) => o.history);
 
   if (allPoints.length === 0) {
@@ -164,6 +199,49 @@ export default function OddsChart({
       ? [yLabels[0], yLabels[yLabels.length - 1]]
       : yLabels;
 
+  // -- Hover / crosshair --
+  const enableHover = !mobileLandscape;
+
+  // Convert hoverSvgX to a timestamp + find nearest data points
+  const hoverTs =
+    hoverSvgX != null
+      ? tMin + ((hoverSvgX - xLeft) / xSpan) * tRange
+      : null;
+
+  const hoverPoints =
+    hoverTs != null
+      ? outcomes.map((o, i) => {
+          const pt = findNearest(o.history, hoverTs);
+          if (!pt) return null;
+          return {
+            color: colors[i % colors.length],
+            name: o.name,
+            point: pt,
+            valueStr: formatHoverValue(pt.p, valueFormat),
+          };
+        })
+      : [];
+
+  const hoverTimeStr =
+    hoverTs != null
+      ? (() => {
+          const d = new Date(hoverTs * 1000);
+          if (duration < 7 * 86400) {
+            return d.toLocaleString("en-US", {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            });
+          }
+          return d.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          });
+        })()
+      : "";
+
   return (
     <div className="h-full flex flex-col">
       {/* Legend — hidden in landscape mobile (colors match inline %) */}
@@ -181,14 +259,43 @@ export default function OddsChart({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 rounded-2xl border border-white/10 bg-black/30 relative overflow-hidden">
+      <div
+        ref={chartRef}
+        className="flex-1 min-h-0 rounded-2xl border border-white/10 bg-black/30 relative overflow-hidden"
+        style={enableHover ? { touchAction: "none" } : undefined}
+        onPointerDown={
+          enableHover
+            ? (e) => {
+                if (!chartRef.current) return;
+                const rect = chartRef.current.getBoundingClientRect();
+                const svgX = ((e.clientX - rect.left) / rect.width) * 100;
+                if (svgX >= xLeft && svgX <= xRight) setHoverSvgX(svgX);
+              }
+            : undefined
+        }
+        onPointerMove={
+          enableHover
+            ? (e) => {
+                if (!chartRef.current) return;
+                // Desktop (mouse): always track. Mobile (touch): only while down.
+                if (e.pointerType === "touch" && e.pressure === 0) return;
+                const rect = chartRef.current.getBoundingClientRect();
+                const svgX = ((e.clientX - rect.left) / rect.width) * 100;
+                if (svgX >= xLeft && svgX <= xRight) setHoverSvgX(svgX);
+                else setHoverSvgX(null);
+              }
+            : undefined
+        }
+        onPointerUp={enableHover ? () => setHoverSvgX(null) : undefined}
+        onPointerLeave={enableHover ? () => setHoverSvgX(null) : undefined}
+      >
         {/* Y axis labels */}
         {displayYLabels.map((yl) => {
           const topPct = (toSvgY(yl.value) / 100) * 100;
           return (
             <div
               key={yl.value}
-              className="absolute left-1 text-[11px] text-white/50 -translate-y-1/2 z-10"
+              className="absolute left-1 text-[11px] text-white/50 -translate-y-1/2 z-10 pointer-events-none"
               style={{ top: `${topPct}%` }}
             >
               {yl.display}
@@ -202,13 +309,69 @@ export default function OddsChart({
           return (
             <div
               key={tl.ts}
-              className="absolute bottom-1 text-[10px] text-white/45 -translate-x-1/2 z-10"
+              className="absolute bottom-1 text-[10px] text-white/45 -translate-x-1/2 z-10 pointer-events-none"
               style={{ left: `${leftPct}%` }}
             >
               {tl.label}
             </div>
           );
         })}
+
+        {/* Hover crosshair + tooltip */}
+        {hoverSvgX != null && (
+          <>
+            {/* Vertical crosshair line */}
+            <div
+              className="absolute top-0 bottom-0 w-px bg-white/30 z-20 pointer-events-none"
+              style={{ left: `${hoverSvgX}%` }}
+            />
+
+            {/* Dots on each line at nearest data point */}
+            {hoverPoints.map(
+              (hp, i) =>
+                hp && (
+                  <div
+                    key={i}
+                    className="absolute w-2.5 h-2.5 rounded-full border-2 border-black/60 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none"
+                    style={{
+                      left: `${toSvgX(hp.point.t)}%`,
+                      top: `${toSvgY(hp.point.p)}%`,
+                      backgroundColor: hp.color,
+                    }}
+                  />
+                )
+            )}
+
+            {/* Tooltip */}
+            <div
+              className="absolute top-2 z-30 pointer-events-none bg-black/85 backdrop-blur-sm border border-white/15 rounded-lg px-2.5 py-1.5 text-[11px] whitespace-nowrap"
+              style={
+                hoverSvgX < 50
+                  ? { left: `${hoverSvgX + 2}%` }
+                  : { right: `${100 - hoverSvgX + 2}%` }
+              }
+            >
+              <div className="text-white/50 mb-0.5">{hoverTimeStr}</div>
+              {hoverPoints.map(
+                (hp, i) =>
+                  hp && (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <div
+                        className="w-2 h-0.5 rounded shrink-0"
+                        style={{ backgroundColor: hp.color }}
+                      />
+                      {outcomes.length > 1 && (
+                        <span className="text-white/50">{hp.name}</span>
+                      )}
+                      <span className="text-white font-medium">
+                        {hp.valueStr}
+                      </span>
+                    </div>
+                  )
+              )}
+            </div>
+          </>
+        )}
 
         <svg
           viewBox="0 0 100 100"
