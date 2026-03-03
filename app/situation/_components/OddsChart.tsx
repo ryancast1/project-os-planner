@@ -267,6 +267,10 @@ export default function OddsChart({
           enableHover
             ? (e) => {
                 if (!chartRef.current) return;
+                // Capture pointer so all subsequent move events stay on this element (critical for touch drag)
+                if (e.pointerType !== "mouse") {
+                  (e.target as Element).setPointerCapture(e.pointerId);
+                }
                 const rect = chartRef.current.getBoundingClientRect();
                 const svgX = ((e.clientX - rect.left) / rect.width) * 100;
                 if (svgX >= xLeft && svgX <= xRight) setHoverSvgX(svgX);
@@ -277,8 +281,6 @@ export default function OddsChart({
           enableHover
             ? (e) => {
                 if (!chartRef.current) return;
-                // Desktop (mouse): always track. Mobile (touch): only while down.
-                if (e.pointerType === "touch" && e.pressure === 0) return;
                 const rect = chartRef.current.getBoundingClientRect();
                 const svgX = ((e.clientX - rect.left) / rect.width) * 100;
                 if (svgX >= xLeft && svgX <= xRight) setHoverSvgX(svgX);
@@ -286,7 +288,14 @@ export default function OddsChart({
               }
             : undefined
         }
-        onPointerUp={enableHover ? () => setHoverSvgX(null) : undefined}
+        onPointerUp={
+          enableHover
+            ? (e) => {
+                // Touch: clear crosshair on finger lift. Mouse: keep hovering.
+                if (e.pointerType !== "mouse") setHoverSvgX(null);
+              }
+            : undefined
+        }
         onPointerLeave={enableHover ? () => setHoverSvgX(null) : undefined}
       >
         {/* Y axis labels */}
