@@ -70,6 +70,7 @@ export default function OddsChart({
   valueFormat = "percent",
   xMin,
   xMax,
+  previousClose,
   mobileLandscape = false,
 }: {
   outcomes: Outcome[];
@@ -80,6 +81,8 @@ export default function OddsChart({
   xMin?: number;
   /** Override the right edge of the X-axis (Unix seconds) */
   xMax?: number;
+  /** Previous close price — renders a dashed reference line when provided */
+  previousClose?: number | null;
   /** Landscape mobile: hide legend, X-axis, and reduce Y to top+bottom only */
   mobileLandscape?: boolean;
 }) {
@@ -103,9 +106,10 @@ export default function OddsChart({
   const tRange = Math.max(1, tMax - tMin);
 
   // Dynamic Y range — clamp to 0-1 for probabilities, free for prices/yields
+  // Include previousClose so the reference line is always visible
   const allPrices = allPoints.map((p) => p.p);
-  const dataMin = Math.min(...allPrices);
-  const dataMax = Math.max(...allPrices);
+  const dataMin = Math.min(...allPrices, ...(previousClose != null ? [previousClose] : []));
+  const dataMax = Math.max(...allPrices, ...(previousClose != null ? [previousClose] : []));
   const spread = Math.max(valueFormat === "price" ? 1 : 0.01, dataMax - dataMin);
   const isFreefloat = valueFormat === "price" || valueFormat === "yield";
   const yMin = isFreefloat
@@ -381,6 +385,22 @@ export default function OddsChart({
             </div>
           </>
         )}
+
+        {/* Previous close reference line */}
+        {previousClose != null && (
+            <>
+              <div
+                className="absolute left-0 right-0 border-t border-dashed border-white/20 z-10 pointer-events-none"
+                style={{ top: `${toSvgY(previousClose)}%` }}
+              />
+              <div
+                className="absolute right-1.5 text-[9px] text-white/30 -translate-y-full z-10 pointer-events-none"
+                style={{ top: `${toSvgY(previousClose)}%` }}
+              >
+                {formatHoverValue(previousClose, valueFormat)}
+              </div>
+            </>
+          )}
 
         <svg
           viewBox="0 0 100 100"

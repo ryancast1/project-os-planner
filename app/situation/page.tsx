@@ -9,6 +9,8 @@ import {
   saveLayout,
   savePanels,
   saveTimeRange,
+  loadActiveViewId,
+  saveActiveViewId,
 } from "./_lib/storage";
 import { getUserId, loadSavedMarkets } from "./_lib/markets";
 import { loadViews, createView, updateView, deleteView } from "./_lib/views";
@@ -16,6 +18,7 @@ import Header from "./_components/Header";
 import PanelGrid from "./_components/PanelGrid";
 import ViewsBar from "./_components/ViewsBar";
 import ManageMarketsModal from "./_components/ManageMarketsModal";
+import { useViewSwipe } from "./_lib/useViewSwipe";
 
 export default function SituationDashboard() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -57,7 +60,7 @@ export default function SituationDashboard() {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  // -- On mount: load localStorage + auth + saved markets + views --
+  // -- On mount: load localStorage + auth  saved markets + views --
   useEffect(() => {
     const local = loadLocalState();
     setLayout(local.layout);
@@ -76,6 +79,12 @@ export default function SituationDashboard() {
         ]);
         setSavedMarkets(markets);
         setSavedViews(views);
+
+        // Restore last active view if it still exists
+        const savedViewId = loadActiveViewId();
+        if (savedViewId && views.some((v) => v.id === savedViewId)) {
+          setActiveViewId(savedViewId);
+        }
 
         // Reconcile panels: clear stale Polymarket IDs (built-ins are always valid)
         const marketIds = new Set(markets.map((m) => m.id));
@@ -153,6 +162,7 @@ export default function SituationDashboard() {
   const handleLoadView = useCallback(
     (view: SavedView) => {
       setActiveViewId(view.id);
+      saveActiveViewId(view.id);
       setIsDirty(false);
       setLayout(view.layout);
       saveLayout(view.layout);
@@ -206,6 +216,7 @@ export default function SituationDashboard() {
         const views = await loadViews(userId);
         setSavedViews(views);
         setActiveViewId(newView.id);
+        saveActiveViewId(newView.id);
         setIsDirty(false);
       }
     },
@@ -221,12 +232,21 @@ export default function SituationDashboard() {
         setSavedViews(views);
         if (activeViewId === id) {
           setActiveViewId(null);
+          saveActiveViewId(null);
           setIsDirty(false);
         }
       }
     },
     [userId, activeViewId]
   );
+
+  // -- Swipe between saved views (desktop trackpad + iPhone landscape) --
+  const { containerRef: swipeRef, transitionLabel } = useViewSwipe({
+    savedViews,
+    activeViewId,
+    onSwitchView: handleLoadView,
+    enabled: !isMobilePortrait && !manageOpen,
+  });
 
   // -- Auth loading --
   if (authLoading) {
@@ -249,7 +269,10 @@ export default function SituationDashboard() {
   }
 
   return (
-    <main className="bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2 h-dvh overflow-hidden">
+    <main
+      ref={swipeRef}
+      className={`bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2 ${isMobilePortrait ? "min-h-dvh overflow-y-auto" : "h-dvh overflow-hidden"}`}
+    >
       {/* Header: 3-row stacked on portrait mobile, single row otherwise */}
       {isMobilePortrait ? (
         <div className="shrink-0 flex flex-col gap-1.5">
@@ -367,6 +390,14 @@ export default function SituationDashboard() {
         userId={userId}
         onMarketsChange={handleMarketsChange}
       />
+      {/* View-switch toast */}
+      {transitionLabel && (
+        <div className="fixed inset-x-0 top-12 flex justify-center z-40 pointer-events-none">
+          <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-lg px-4 py-2 text-sm text-white/80 view-switch-toast">
+            {transitionLabel}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

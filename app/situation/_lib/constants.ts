@@ -88,7 +88,7 @@ export const BUILTIN_MARKETS: BuiltinMarket[] = [
 // Unique categories in display order
 export const BUILTIN_CATEGORIES = [...new Set(BUILTIN_MARKETS.map((m) => m.category))];
 
-/** US equity builtins that trade 9:30 AM – 4:00 PM ET */
+/** US equity builtins — used for includePrePost=false logic */
 export const US_EQUITY_BUILTIN_IDS = new Set([
   "builtin:sp500",
   "builtin:nasdaq",
@@ -97,11 +97,47 @@ export const US_EQUITY_BUILTIN_IDS = new Set([
 ]);
 
 /**
- * Given any Unix timestamp, returns the NYSE market open (9:30 AM ET) and
- * close (4:00 PM ET) for the Eastern-timezone calendar date of that timestamp.
+ * Per-market trading session windows (Eastern Time) for 1D chart X-axis pinning.
+ * Markets not listed here (BTC, Gold) show the full data range on 1D.
+ */
+type TradingSession = {
+  openHour: number;
+  openMin: number;
+  closeHour: number;
+  closeMin: number;
+};
+
+const TRADING_SESSIONS: Record<string, TradingSession> = {
+  // US equities: NYSE 9:30 AM – 4:00 PM ET
+  "builtin:sp500":  { openHour: 9,  openMin: 30, closeHour: 16, closeMin: 0 },
+  "builtin:nasdaq": { openHour: 9,  openMin: 30, closeHour: 16, closeMin: 0 },
+  "builtin:dow":    { openHour: 9,  openMin: 30, closeHour: 16, closeMin: 0 },
+  "builtin:br":     { openHour: 9,  openMin: 30, closeHour: 16, closeMin: 0 },
+  // Treasuries: bond market ~8:00 AM – 5:00 PM ET
+  "builtin:10y":    { openHour: 8,  openMin: 0,  closeHour: 17, closeMin: 0 },
+  "builtin:30y":    { openHour: 8,  openMin: 0,  closeHour: 17, closeMin: 0 },
+  // Oil, S&P Futures, BTC, Gold: no entry → no 1D pinning (trade ~24 hrs)
+};
+
+/** Look up the trading session for a builtin market. Returns null for 24-hr markets. */
+export function getTradingSession(builtinId: string): TradingSession | null {
+  return TRADING_SESSIONS[builtinId] ?? null;
+}
+
+/**
+ * Given a Unix timestamp and a trading session, returns the session open/close
+ * as Unix timestamps for the Eastern-timezone calendar date of that timestamp.
+ * Defaults to NYSE hours (9:30 AM – 4:00 PM ET) if no session is provided.
  * Automatically handles EST (UTC-5) vs EDT (UTC-4).
  */
-export function getMarketHoursForTs(ts: number): { openTs: number; closeTs: number } {
+export function getMarketHoursForTs(
+  ts: number,
+  session?: TradingSession,
+): { openTs: number; closeTs: number } {
+  const { openHour, openMin, closeHour, closeMin } = session ?? {
+    openHour: 9, openMin: 30, closeHour: 16, closeMin: 0,
+  };
+
   const date = new Date(ts * 1000);
 
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -133,10 +169,8 @@ export function getMarketHoursForTs(ts: number): { openTs: number; closeTs: numb
   // UTC milliseconds for midnight of the Eastern date
   const dayStartUtc = Date.UTC(nyYear, nyMonth, nyDay);
 
-  // 9:30 AM ET  → add (9h30m - offsetMins) from UTC midnight
-  // 4:00 PM ET  → add (16h00m - offsetMins) from UTC midnight
-  const openUtcMs  = dayStartUtc + (9 * 60 + 30 - offsetMins) * 60_000;
-  const closeUtcMs = dayStartUtc + (16 * 60       - offsetMins) * 60_000;
+  const openUtcMs  = dayStartUtc + (openHour * 60 + openMin - offsetMins) * 60_000;
+  const closeUtcMs = dayStartUtc + (closeHour * 60 + closeMin - offsetMins) * 60_000;
 
   return {
     openTs:  Math.floor(openUtcMs  / 1000),

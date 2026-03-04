@@ -20,6 +20,7 @@ import {
   getFidelity,
   getYahooParams,
   getMarketHoursForTs,
+  getTradingSession,
 } from "../_lib/constants";
 import { fetchEvent, fetchPrice, fetchPriceHistory, fetchStockData } from "../_lib/api";
 import OddsChart from "./OddsChart";
@@ -279,16 +280,16 @@ export default function Panel({
 
         {/* Stock panel */}
         {isBuiltin && !loading && !error && stockSnapshot && (() => {
-          // For US equity indices on 1D: pin X-axis to 9:30 AM – 4:00 PM ET
+          // On 1D: pin X-axis to the market's trading session hours
           // Use the last data point's date so weekends show the last trading day
-          const isUSEquity = US_EQUITY_BUILTIN_IDS.has(marketId ?? "");
+          const session = getTradingSession(marketId ?? "");
           const lastTs =
             stockSnapshot.history.length > 0
               ? stockSnapshot.history[stockSnapshot.history.length - 1].t
               : null;
           const mktHours =
-            isUSEquity && timeRange === "1D" && lastTs != null
-              ? getMarketHoursForTs(lastTs)
+            session && timeRange === "1D" && lastTs != null
+              ? getMarketHoursForTs(lastTs, session)
               : null;
           const nowSec = Math.floor(Date.now() / 1000);
           const chartXMin = mktHours?.openTs;
@@ -296,14 +297,32 @@ export default function Panel({
             ? Math.min(nowSec, mktHours.closeTs)
             : undefined;
 
+          // Chart line: previous close for intraday, period start for longer ranges
+          const isIntraday = timeRange === "1H" || timeRange === "4H" || timeRange === "1D";
+          const chartReference = isIntraday
+            ? stockSnapshot.previousClose
+            : stockSnapshot.history.length > 0
+              ? stockSnapshot.history[0].p
+              : stockSnapshot.previousClose;
+
+          // % change: 1D uses previous close; other ranges use first data point of the period
+          const periodStart = timeRange === "1D"
+            ? stockSnapshot.previousClose
+            : stockSnapshot.history.length > 0
+              ? stockSnapshot.history[0].p
+              : stockSnapshot.previousClose;
+
           const isDown =
-            stockSnapshot.previousClose != null &&
-            stockSnapshot.currentPrice < stockSnapshot.previousClose;
+            periodStart != null &&
+            stockSnapshot.currentPrice < periodStart;
           const stockColor = isDown ? COLOR_RED : COLOR_GREEN;
+
+          // Override previousClose with period start so StockDisplay shows period change
+          const displaySnapshot = { ...stockSnapshot, previousClose: periodStart };
 
           return (
             <>
-              <StockDisplay snapshot={stockSnapshot} compact={compact} mobileLandscape={mobileLandscape} />
+              <StockDisplay snapshot={displaySnapshot} compact={compact} mobileLandscape={mobileLandscape} />
               <div className="mt-1 flex-1 min-h-0">
                 <OddsChart
                   outcomes={stockChartOutcomes}
@@ -312,6 +331,7 @@ export default function Panel({
                   valueFormat={stockSnapshot.displayType === "yield" ? "yield" : "price"}
                   xMin={chartXMin}
                   xMax={chartXMax}
+                  previousClose={chartReference}
                   mobileLandscape={mobileLandscape}
                 />
               </div>

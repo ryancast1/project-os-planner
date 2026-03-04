@@ -5,6 +5,7 @@ const STORAGE_KEYS = {
   layout: "situation-layout",
   panels: "situation-panels",
   timeRange: "situation-timerange",
+  activeViewId: "situation-active-view",
 } as const;
 
 export type LocalState = {
@@ -60,4 +61,17 @@ export function savePanels(panels: PanelSlot[]) {
 
 export function saveTimeRange(timeRange: TimeRangeLabel) {
   localStorage.setItem(STORAGE_KEYS.timeRange, timeRange);
+}
+
+export function loadActiveViewId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(STORAGE_KEYS.activeViewId) ?? null;
+}
+
+export function saveActiveViewId(id: string | null) {
+  if (id) {
+    localStorage.setItem(STORAGE_KEYS.activeViewId, id);
+  } else {
+    localStorage.removeItem(STORAGE_KEYS.activeViewId);
+  }
 }
