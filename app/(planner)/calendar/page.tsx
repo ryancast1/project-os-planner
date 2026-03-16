@@ -93,6 +93,12 @@ function addDays(d: Date, n: number) {
   return x;
 }
 
+function diffWholeWeeks(start: Date, end: Date) {
+  const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.round((endUtc - startUtc) / (7 * 24 * 60 * 60 * 1000));
+}
+
 function fmtWeekday(d: Date) {
   return d.toLocaleDateString(undefined, { weekday: "long" });
 }
@@ -884,8 +890,7 @@ export default function CalendarPage() {
 
   // Calculate how many past weeks to show (from app start to last week)
   const pastWeeksCount = useMemo(() => {
-    const diffMs = week0.getTime() - appStartWeek.getTime();
-    const diffWeeks = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
+    const diffWeeks = diffWholeWeeks(appStartWeek, week0);
     return Math.max(0, diffWeeks);
   }, [week0, appStartWeek]);
 

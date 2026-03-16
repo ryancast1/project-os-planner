@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -14,28 +15,6 @@ type GoalRow = {
   notes: string | null;
   sort_order: number;
   archived: boolean;
-};
-
-type Task = {
-  id: string;
-  title: string;
-  status: "open" | "done" | "canceled";
-  scheduled_for: string | null;
-};
-
-type Plan = {
-  id: string;
-  title: string;
-  status: "open" | "done" | "canceled";
-  scheduled_for: string | null;
-  starts_at: string | null;
-};
-
-type Focus = {
-  id: string;
-  title: string;
-  status: "active" | "archived";
-  scheduled_for: string | null;
 };
 
 const DEFAULT_BUCKET_ORDER = ["Baseline", "Growth", "Progress", "Project"];
@@ -168,152 +147,6 @@ function Select({
   );
 }
 
-function LinkedItemsSheet({
-  open,
-  goal,
-  tasks,
-  plans,
-  focuses,
-  loading,
-  onClose,
-}: {
-  open: boolean;
-  goal: GoalRow | null;
-  tasks: Task[];
-  plans: Plan[];
-  focuses: Focus[];
-  loading: boolean;
-  onClose: () => void;
-}) {
-  if (!open || !goal) return null;
-
-  const totalCount = tasks.length + plans.length + focuses.length;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4">
-      <div
-        className="relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-neutral-950 shadow-2xl sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-neutral-800 px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-neutral-100">{goal.goal}</h2>
-            {goal.bucket && <p className="text-sm text-neutral-400">{goal.bucket}</p>}
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          {loading ? (
-            <div className="py-8 text-center text-neutral-400">Loading...</div>
-          ) : totalCount === 0 ? (
-            <div className="py-8 text-center text-neutral-500">
-              No items linked to this goal yet.
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {tasks.length > 0 && (
-                <div>
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-300">Tasks ({tasks.length})</h3>
-                  <div className="space-y-1">
-                    {tasks.map((t) => (
-                      <div
-                        key={t.id}
-                        className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2"
-                      >
-                        <span className={clsx(
-                          "text-sm",
-                          t.status === "done" ? "text-neutral-500 line-through" : "text-neutral-100"
-                        )}>
-                          {t.title}
-                        </span>
-                        {t.scheduled_for && (
-                          <span className="ml-auto text-xs text-neutral-500">
-                            {new Date(t.scheduled_for).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {plans.length > 0 && (
-                <div>
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-300">Plans ({plans.length})</h3>
-                  <div className="space-y-1">
-                    {plans.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2"
-                      >
-                        <span className={clsx(
-                          "text-sm",
-                          p.status === "done" ? "text-neutral-500 line-through" : "text-neutral-100"
-                        )}>
-                          {p.title}
-                        </span>
-                        {p.scheduled_for && (
-                          <span className="ml-auto text-xs text-neutral-500">
-                            {new Date(p.scheduled_for).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {focuses.length > 0 && (
-                <div>
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-300">Intentions ({focuses.length})</h3>
-                  <div className="space-y-1">
-                    {focuses.map((f) => (
-                      <div
-                        key={f.id}
-                        className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2"
-                      >
-                        <span className="text-sm text-neutral-100">{f.title}</span>
-                        {f.scheduled_for && (
-                          <span className="ml-auto text-xs text-neutral-500">
-                            {new Date(f.scheduled_for).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-neutral-800 px-6 py-4">
-          <button
-            onClick={onClose}
-            className="w-full rounded-xl bg-neutral-800 px-4 py-2 text-sm font-semibold text-neutral-100 hover:bg-neutral-700"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-type LinkedItem = {
-  id: string;
-  title: string;
-  type: "task" | "plan" | "focus";
-  status?: string;
-  scheduled_for: string | null;
-};
-
 function EditSheet({
   open,
   title,
@@ -335,53 +168,10 @@ function EditSheet({
 }) {
   const [draft, setDraft] = useState<GoalRow | null>(initial);
   const [saving, setSaving] = useState(false);
-  const [linkedItems, setLinkedItems] = useState<LinkedItem[]>([]);
-  const [loadingLinked, setLoadingLinked] = useState(false);
 
   useEffect(() => {
     setDraft(initial);
     setSaving(false);
-
-    // Load linked items when opening
-    async function loadLinkedItems() {
-      if (!initial?.id) {
-        setLinkedItems([]);
-        return;
-      }
-
-      setLoadingLinked(true);
-      try {
-        const [tasksRes, plansRes, focusesRes] = await Promise.all([
-          supabase.from("tasks").select("id, title, status, scheduled_for").eq("project_goal_id", initial.id).in("status", ["open", "done"]),
-          supabase.from("plans").select("id, title, status, scheduled_for").eq("project_goal_id", initial.id).in("status", ["open", "done"]),
-          supabase.from("focuses").select("id, title, status, scheduled_for").eq("project_goal_id", initial.id).eq("status", "active"),
-        ]);
-
-        const items: LinkedItem[] = [
-          ...(tasksRes.data ?? []).map(t => ({ ...t, type: "task" as const })),
-          ...(plansRes.data ?? []).map(p => ({ ...p, type: "plan" as const })),
-          ...(focusesRes.data ?? []).map(f => ({ ...f, type: "focus" as const })),
-        ];
-
-        items.sort((a, b) => {
-          if (a.scheduled_for && b.scheduled_for) {
-            return new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime();
-          }
-          if (a.scheduled_for) return -1;
-          if (b.scheduled_for) return 1;
-          return 0;
-        });
-        setLinkedItems(items);
-      } finally {
-        setLoadingLinked(false);
-      }
-    }
-
-    if (open && initial) {
-      loadLinkedItems();
-    } else {
-      setLinkedItems([]);
-    }
   }, [initial, open]);
 
   if (!open || !draft) return null;
@@ -484,44 +274,6 @@ function EditSheet({
               placeholder="Review notes…"
             />
           </div>
-
-          {/* Linked Items Section */}
-          <div>
-            <div className="mb-2 text-xs font-semibold text-neutral-400">
-              Linked Items ({linkedItems.length})
-            </div>
-            {loadingLinked ? (
-              <div className="text-xs text-neutral-500">Loading linked items…</div>
-            ) : linkedItems.length === 0 ? (
-              <div className="text-xs text-neutral-500">No linked items yet.</div>
-            ) : (
-              <div className="space-y-1.5">
-                {linkedItems.map((item) => (
-                  <div
-                    key={`${item.type}-${item.id}`}
-                    className="flex items-start gap-2 rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2"
-                  >
-                    <div className="shrink-0 rounded-md border border-neutral-700 bg-neutral-950 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
-                      {item.type === "task" ? "Task" : item.type === "plan" ? "Plan" : "Intent"}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className={clsx(
-                        "text-sm",
-                        item.status === "done" ? "text-neutral-500 line-through" : "text-neutral-200"
-                      )}>
-                        {item.title}
-                      </div>
-                      {item.scheduled_for && (
-                        <div className="mt-0.5 text-[11px] text-neutral-500">
-                          {new Date(item.scheduled_for).toLocaleDateString()}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
         </div>
 
@@ -578,6 +330,7 @@ function EditSheet({
 }
 
 export default function GoalsPage() {
+  const router = useRouter();
   const [goals, setGoals] = useState<GoalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -587,12 +340,6 @@ export default function GoalsPage() {
     () => goals.find((g) => g.id === editingId) ?? null,
     [goals, editingId]
   );
-
-  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
-  const [linkedTasks, setLinkedTasks] = useState<Task[]>([]);
-  const [linkedPlans, setLinkedPlans] = useState<Plan[]>([]);
-  const [linkedFocuses, setLinkedFocuses] = useState<Focus[]>([]);
-  const [loadingLinked, setLoadingLinked] = useState(false);
 
   // track saves per-row so we can show subtle feedback
   const savingIdsRef = useRef(new Set<string>());
@@ -618,50 +365,25 @@ export default function GoalsPage() {
   }
 
   useEffect(() => {
-    loadGoals();
+    let alive = true;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("projects_goals")
+        .select("id, created_at, bucket, goal, rating, actions, notes, sort_order, archived")
+        .order("bucket", { ascending: true })
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+
+      if (!alive) return;
+      if (!error) setGoals((data as GoalRow[]) ?? []);
+      setLoading(false);
+    })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
-
-  async function loadLinkedItems(goalId: string) {
-    setLoadingLinked(true);
-    const [tasksRes, plansRes, focusesRes] = await Promise.all([
-      supabase
-        .from("tasks")
-        .select("id,title,status,scheduled_for")
-        .eq("project_goal_id", goalId)
-        .in("status", ["open", "done"])
-        .order("scheduled_for", { ascending: true, nullsFirst: false })
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("plans")
-        .select("id,title,status,scheduled_for,starts_at")
-        .eq("project_goal_id", goalId)
-        .in("status", ["open", "done"])
-        .order("scheduled_for", { ascending: true, nullsFirst: false })
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("focuses")
-        .select("id,title,status,scheduled_for")
-        .eq("project_goal_id", goalId)
-        .eq("status", "active")
-        .order("scheduled_for", { ascending: true, nullsFirst: false })
-        .order("created_at", { ascending: true }),
-    ]);
-
-    setLinkedTasks((tasksRes.data as Task[]) ?? []);
-    setLinkedPlans((plansRes.data as Plan[]) ?? []);
-    setLinkedFocuses((focusesRes.data as Focus[]) ?? []);
-    setLoadingLinked(false);
-  }
-
-  useEffect(() => {
-    if (selectedGoalId) {
-      loadLinkedItems(selectedGoalId);
-    } else {
-      setLinkedTasks([]);
-      setLinkedPlans([]);
-      setLinkedFocuses([]);
-    }
-  }, [selectedGoalId]);
 
   const visibleGoals = useMemo(() => {
     const filtered = goals.filter((g) => (showArchived ? true : !g.archived));
@@ -778,7 +500,7 @@ export default function GoalsPage() {
                   <div className="pr-3">
                     <button
                       type="button"
-                      onClick={() => setSelectedGoalId(g.id)}
+                      onClick={() => router.push(`/goals/${g.id}`)}
                       className={clsx(
                         "w-full text-left",
                         "text-sm font-semibold text-neutral-100",
@@ -880,16 +602,19 @@ export default function GoalsPage() {
                 </div>
                 <div className="divide-y divide-neutral-800 overflow-hidden rounded-xl border border-neutral-800">
                   {items.map((g) => (
-                    <button
+                    <div
                       key={g.id}
                       className={clsx(
-                        "w-full text-left px-3 py-3",
+                        "flex items-start justify-between gap-3 px-3 py-3",
                         "bg-neutral-950/20 hover:bg-neutral-950/30",
                         g.archived && "opacity-60"
                       )}
-                      onClick={() => setEditingId(g.id)}
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 text-left"
+                        onClick={() => router.push(`/goals/${g.id}`)}
+                      >
                         <div className="min-w-0">
                           <div className="truncate text-[16px] font-semibold text-neutral-100">
                             {g.goal || "(Untitled goal)"}
@@ -898,11 +623,20 @@ export default function GoalsPage() {
                             {(g.actions ?? "").replace(/\n/g, " • ")}
                           </div>
                         </div>
+                      </button>
+                      <div className="flex shrink-0 items-start gap-2">
                         <div className="shrink-0 rounded-xl border border-neutral-800 bg-neutral-950/40 px-2 py-1 text-xs font-semibold text-neutral-200">
                           {fmtRating(g.rating)}
                         </div>
+                        <button
+                          type="button"
+                          className="rounded-xl border border-neutral-800 bg-neutral-950/40 px-2 py-1 text-xs font-semibold text-neutral-200"
+                          onClick={() => setEditingId(g.id)}
+                        >
+                          Edit
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -917,16 +651,6 @@ export default function GoalsPage() {
           Add
         </button>
       </div>
-
-      <LinkedItemsSheet
-        open={Boolean(selectedGoalId)}
-        goal={goals.find((g) => g.id === selectedGoalId) ?? null}
-        tasks={linkedTasks}
-        plans={linkedPlans}
-        focuses={linkedFocuses}
-        loading={loadingLinked}
-        onClose={() => setSelectedGoalId(null)}
-      />
 
       <EditSheet
         open={Boolean(editingId && editing)}
