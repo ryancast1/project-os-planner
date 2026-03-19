@@ -68,6 +68,7 @@ export default function OddsChart({
   colors,
   startTs,
   valueFormat = "percent",
+  showLegend = true,
   xMin,
   xMax,
   previousClose,
@@ -77,6 +78,7 @@ export default function OddsChart({
   colors: string[];
   startTs: number;
   valueFormat?: ValueFormat;
+  showLegend?: boolean;
   /** Override the left edge of the X-axis (Unix seconds) */
   xMin?: number;
   /** Override the right edge of the X-axis (Unix seconds) */
@@ -249,7 +251,7 @@ export default function OddsChart({
   return (
     <div className="h-full flex flex-col">
       {/* Legend — hidden in landscape mobile (colors match inline %) */}
-      {outcomes.length > 1 && !mobileLandscape && (
+      {showLegend && outcomes.length > 1 && !mobileLandscape && (
         <div className="flex items-center justify-center gap-4 mb-1 shrink-0">
           {outcomes.map((o, i) => (
             <div key={o.tokenId} className="flex items-center gap-1.5">

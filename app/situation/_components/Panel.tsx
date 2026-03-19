@@ -23,6 +23,7 @@ import {
   getTradingSession,
 } from "../_lib/constants";
 import { fetchEvent, fetchPrice, fetchPriceHistory, fetchStockData } from "../_lib/api";
+import { getVisiblePolymarketOutcomes } from "../_lib/outcomes";
 import OddsChart from "./OddsChart";
 import OddsDisplay from "./OddsDisplay";
 import StockDisplay from "./StockDisplay";
@@ -47,6 +48,11 @@ export default function Panel({
   onChangeMarket: (slotIndex: number, marketId: string | null) => void;
   onManageMarkets: () => void;
 }) {
+  function trimHistoryToRange(history: Outcome["history"], startTs: number) {
+    if (startTs <= 0) return history;
+    return history.filter((pt) => pt.t >= startTs);
+  }
+
   // -- Polymarket state --
   const [market, setMarket] = useState<MarketInfo | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
@@ -82,10 +88,32 @@ export default function Panel({
             fetchPrice(o.tokenId),
             fetchPriceHistory(o.tokenId, startTs, now, fidelity),
           ]);
+
+          let nextHistory = history;
+
+          // Some Polymarket range queries intermittently return empty history.
+          // When that happens, reuse prior data only if it already covers the
+          // requested window; otherwise fall back to all history and trim it.
+          if (nextHistory.length === 0) {
+            const currentCoversRange =
+              o.history.length > 0 &&
+              (startTs <= 0 || o.history[0].t <= startTs);
+
+            if (currentCoversRange) {
+              nextHistory = trimHistoryToRange(o.history, startTs);
+            } else {
+              const allHistory = await fetchPriceHistory(o.tokenId, 0, now, fidelity);
+              nextHistory =
+                allHistory.length > 0
+                  ? trimHistoryToRange(allHistory, startTs)
+                  : o.history;
+            }
+          }
+
           return {
             ...o,
             currentPrice: price ?? o.currentPrice,
-            history: history.length > 0 ? history : o.history,
+            history: nextHistory,
           };
         })
       );
@@ -212,9 +240,11 @@ export default function Panel({
 
   // Chart outcomes for polymarket
   const isBinary = market && outcomes.length === 2 && outcomes[0].name === "Yes";
+  const visibleMultiOutcomes = getVisiblePolymarketOutcomes(outcomes, compact);
+  const displayOutcomes = isBinary ? outcomes : visibleMultiOutcomes;
   const chartOutcomes = isBinary
     ? [outcomes[0]]
-    : outcomes.slice(0, compact ? 2 : 4);
+    : visibleMultiOutcomes;
 
   // Stock outcome shaped for OddsChart (reuses chart component)
   const stockChartOutcomes: Outcome[] = stockSnapshot
@@ -342,13 +372,20 @@ export default function Panel({
         {/* Polymarket panel */}
         {!isBuiltin && !loading && !error && market && outcomes.length > 0 && (
           <>
-            <OddsDisplay market={market} outcomes={outcomes} compact={compact} mobileLandscape={mobileLandscape} />
+            <OddsDisplay
+              market={market}
+              outcomes={outcomes}
+              visibleOutcomes={displayOutcomes}
+              compact={compact}
+              mobileLandscape={mobileLandscape}
+            />
             <div className="mt-1 flex-1 min-h-0">
               <OddsChart
                 outcomes={chartOutcomes}
                 colors={COLORS}
                 startTs={getStartTs(timeRange)}
                 valueFormat="percent"
+                showLegend={!compact}
                 mobileLandscape={mobileLandscape}
               />
             </div>
