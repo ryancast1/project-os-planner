@@ -71,6 +71,35 @@ function guessISODateFromRow(row: any): string | null {
   return null;
 }
 
+async function fetchAllTrichEventsInRange(userId: string, startIso: string, endIso: string) {
+  const pageSize = 1000;
+  let from = 0;
+  const all: Array<{ occurred_on: string; trich: number }> = [];
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("trich_events")
+      .select("occurred_on,trich")
+      .eq("user_id", userId)
+      .gte("occurred_on", startIso)
+      .lte("occurred_on", endIso)
+      .order("occurred_on", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+
+    const rows = (data ?? []) as Array<{ occurred_on: string; trich: number }>;
+    all.push(...rows);
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
+
+    if (from > 50000) break;
+  }
+
+  return all;
+}
+
 function Modal({
   open,
   onClose,
@@ -203,12 +232,21 @@ export default function HabitsPage() {
         .gte("performed_on", START_ISO)
         .lte("performed_on", todayIso);
 
-      // 3) trich_events for T2 column - fetch all events to count T2 per day
-      const trichRes = await supabase
-        .from("trich_events")
-        .select("occurred_on,trich")
-        .gte("occurred_on", START_ISO)
-        .lte("occurred_on", todayIso);
+      // 3) trich_events for T2 column - paginate so older days do not disappear past the row cap
+      const authRes = await supabase.auth.getUser();
+      const trichRes = authRes.error || !authRes.data.user?.id
+        ? { data: null, error: authRes.error ?? new Error("Not logged in") }
+        : await (async () => {
+            try {
+              const data = await fetchAllTrichEventsInRange(authRes.data.user.id, START_ISO, todayIso);
+              return { data, error: null };
+            } catch (error) {
+              return {
+                data: null,
+                error: error instanceof Error ? error : new Error("Failed to load trich events"),
+              };
+            }
+          })();
 
       if (!alive) return;
 

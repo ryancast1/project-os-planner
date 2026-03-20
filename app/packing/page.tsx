@@ -79,6 +79,9 @@ export default function PackingPage() {
   const [currentTrip, setCurrentTrip] = useState<Trip | null>(null);
   const [tripItems, setTripItems] = useState<TripItem[]>([]);
   const [newTripName, setNewTripName] = useState("");
+  const [expandedArchivedTripId, setExpandedArchivedTripId] = useState<string | null>(null);
+  const [archivedTripItemsById, setArchivedTripItemsById] = useState<Record<string, TripItem[]>>({});
+  const [busyArchivedTripId, setBusyArchivedTripId] = useState<string | null>(null);
 
   // Trip items
   const [newItemName, setNewItemName] = useState("");
@@ -187,6 +190,18 @@ export default function PackingPage() {
     }
 
     setTripItems((data as TripItem[]) || []);
+  }
+
+  async function fetchTripItems(tripId: string) {
+    const { data, error } = await supabase
+      .from("packing_trip_items")
+      .select("*")
+      .eq("trip_id", tripId)
+      .order("category")
+      .order("created_at");
+
+    if (error) throw error;
+    return (data as TripItem[]) || [];
   }
 
   async function createTrip() {
@@ -357,11 +372,143 @@ export default function PackingPage() {
     await loadData();
   }
 
-  async function viewArchivedTrip(tripId: string) {
-    await loadTripItems(tripId);
+  async function toggleArchivedTripExpanded(tripId: string) {
+    if (expandedArchivedTripId === tripId) {
+      setExpandedArchivedTripId(null);
+      return;
+    }
+
+    setErr(null);
+
+    if (!archivedTripItemsById[tripId]) {
+      try {
+        const items = await fetchTripItems(tripId);
+        setArchivedTripItemsById((prev) => ({ ...prev, [tripId]: items }));
+      } catch (error) {
+        setErr(error instanceof Error ? error.message : "Failed to load archived trip");
+        return;
+      }
+    }
+
+    setExpandedArchivedTripId(tripId);
+  }
+
+  async function deleteArchivedTrip(tripId: string) {
     const trip = trips.find((t) => t.id === tripId);
-    setCurrentTrip(trip || null);
-    setView("current");
+    if (!trip) return;
+    if (!confirm(`Delete archived trip "${trip.trip_name}"? This cannot be undone.`)) return;
+
+    setErr(null);
+    setBusyArchivedTripId(tripId);
+
+    const { error: itemsError } = await supabase
+      .from("packing_trip_items")
+      .delete()
+      .eq("trip_id", tripId);
+
+    if (itemsError) {
+      setErr(itemsError.message);
+      setBusyArchivedTripId(null);
+      return;
+    }
+
+    const { error: tripError } = await supabase
+      .from("packing_trips")
+      .delete()
+      .eq("id", tripId);
+
+    if (tripError) {
+      setErr(tripError.message);
+      setBusyArchivedTripId(null);
+      return;
+    }
+
+    setArchivedTripItemsById((prev) => {
+      const next = { ...prev };
+      delete next[tripId];
+      return next;
+    });
+    if (expandedArchivedTripId === tripId) {
+      setExpandedArchivedTripId(null);
+    }
+    setBusyArchivedTripId(null);
+    await loadData();
+  }
+
+  async function copyArchivedTripToCurrent(tripId: string) {
+    const trip = trips.find((t) => t.id === tripId);
+    if (!trip) return;
+
+    setErr(null);
+    setBusyArchivedTripId(tripId);
+
+    try {
+      const sourceItems = archivedTripItemsById[tripId] || await fetchTripItems(tripId);
+      if (!archivedTripItemsById[tripId]) {
+        setArchivedTripItemsById((prev) => ({ ...prev, [tripId]: sourceItems }));
+      }
+
+      let targetTripId = currentTrip?.id ?? null;
+
+      if (targetTripId) {
+        const shouldReplace = confirm(
+          `Replace the current trip "${currentTrip.trip_name}" with the archived list from "${trip.trip_name}"?`
+        );
+        if (!shouldReplace) {
+          setBusyArchivedTripId(null);
+          return;
+        }
+
+        const { error: clearError } = await supabase
+          .from("packing_trip_items")
+          .delete()
+          .eq("trip_id", targetTripId);
+
+        if (clearError) throw clearError;
+
+        const { error: renameError } = await supabase
+          .from("packing_trips")
+          .update({ trip_name: trip.trip_name })
+          .eq("id", targetTripId);
+
+        if (renameError) throw renameError;
+      } else {
+        const { data: createdTrip, error: createError } = await supabase
+          .from("packing_trips")
+          .insert({ trip_name: trip.trip_name, is_archived: false })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        targetTripId = (createdTrip as Trip).id;
+      }
+
+      const visibleItems = sourceItems.filter((item) => !item.is_hidden);
+      if (visibleItems.length > 0) {
+        const { error: insertError } = await supabase
+          .from("packing_trip_items")
+          .insert(
+            visibleItems.map((item) => ({
+              trip_id: targetTripId,
+              category: item.category,
+              item_name: item.item_name,
+              is_packed: false,
+              is_hidden: false,
+              is_one_off: item.is_one_off,
+              sort_order: item.sort_order,
+            }))
+          );
+
+        if (insertError) throw insertError;
+      }
+
+      await loadData();
+      setView("current");
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : "Failed to copy archived trip");
+    } finally {
+      setBusyArchivedTripId(null);
+    }
   }
 
   // Reorder items within a category
@@ -498,6 +645,20 @@ export default function PackingPage() {
 
   const packedCount = useMemo(() => tripItems.filter((i) => !i.is_hidden && i.is_packed).length, [tripItems]);
   const totalCount = useMemo(() => tripItems.filter((i) => !i.is_hidden).length, [tripItems]);
+  const archivedTrips = useMemo(() => trips.filter((t) => t.is_archived), [trips]);
+
+  function getVisibleItemsByCategory(items: TripItem[]) {
+    const map = new Map<Category, TripItem[]>();
+    for (const cat of CATEGORIES) {
+      map.set(
+        cat,
+        items
+          .filter((item) => item.category === cat && !item.is_hidden)
+          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      );
+    }
+    return map;
+  }
 
   return (
     <main className="min-h-[calc(100vh-80px)] bg-black px-4 pb-28 pt-4 text-neutral-100">
@@ -809,21 +970,85 @@ export default function PackingPage() {
           <>
             {/* Archived trips */}
             <section className="mt-4 space-y-2">
-              {trips
-                .filter((t) => t.is_archived)
-                .map((trip) => (
-                  <button
+              {archivedTrips.map((trip) => {
+                const isExpanded = expandedArchivedTripId === trip.id;
+                const isBusy = busyArchivedTripId === trip.id;
+                const archivedItems = archivedTripItemsById[trip.id] || [];
+                const archivedItemsByCategory = getVisibleItemsByCategory(archivedItems);
+                const visibleItemCount = archivedItems.filter((item) => !item.is_hidden).length;
+
+                return (
+                  <div
                     key={trip.id}
-                    onClick={() => viewArchivedTrip(trip.id)}
-                    className="w-full rounded-2xl border border-neutral-800 bg-neutral-950/30 p-4 text-left hover:bg-neutral-950/50"
+                    className="rounded-2xl border border-neutral-800 bg-neutral-950/30 p-4"
                   >
-                    <div className="text-sm font-semibold text-neutral-100">{trip.trip_name}</div>
-                    <div className="mt-1 text-xs text-neutral-400">
-                      Archived {trip.archived_at ? new Date(trip.archived_at).toLocaleDateString() : ""}
+                    <div className="flex items-start justify-between gap-3">
+                      <button
+                        onClick={() => toggleArchivedTripExpanded(trip.id)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <div className="text-sm font-semibold text-neutral-100">{trip.trip_name}</div>
+                        <div className="mt-1 text-xs text-neutral-400">
+                          Archived {trip.archived_at ? new Date(trip.archived_at).toLocaleDateString() : ""}
+                        </div>
+                        {isExpanded && (
+                          <div className="mt-1 text-xs text-neutral-500">
+                            {visibleItemCount} visible item{visibleItemCount === 1 ? "" : "s"}
+                          </div>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => deleteArchivedTrip(trip.id)}
+                        disabled={isBusy}
+                        className="shrink-0 text-xs text-red-400 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
                     </div>
-                  </button>
-                ))}
-              {trips.filter((t) => t.is_archived).length === 0 && (
+
+                    {isExpanded && (
+                      <div className="mt-4 border-t border-neutral-800 pt-4">
+                        <div className="mb-4 flex justify-end">
+                          <button
+                            onClick={() => copyArchivedTripToCurrent(trip.id)}
+                            disabled={isBusy}
+                            className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-950 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Copy to Current Trip
+                          </button>
+                        </div>
+
+                        <div className="space-y-4">
+                          {CATEGORIES.map((category) => {
+                            const items = archivedItemsByCategory.get(category) || [];
+                            if (items.length === 0) return null;
+
+                            return (
+                              <section
+                                key={category}
+                                className="rounded-2xl border border-neutral-800 bg-black/20 p-4"
+                              >
+                                <div className="mb-3 text-sm font-semibold text-neutral-300">{category}</div>
+                                <div className="space-y-2">
+                                  {items.map((item) => (
+                                    <div
+                                      key={item.id}
+                                      className="rounded-xl border border-neutral-800 bg-black/30 px-3 py-2 text-sm text-neutral-100"
+                                    >
+                                      {item.item_name}
+                                    </div>
+                                  ))}
+                                </div>
+                              </section>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {archivedTrips.length === 0 && (
                 <div className="rounded-2xl border border-neutral-800 bg-neutral-950/20 px-4 py-3 text-sm text-neutral-500">
                   No archived trips yet.
                 </div>
