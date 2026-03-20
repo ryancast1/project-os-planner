@@ -449,10 +449,11 @@ export default function PackingPage() {
       }
 
       let targetTripId = currentTrip?.id ?? null;
+      const currentTripName = currentTrip?.trip_name ?? "";
 
       if (targetTripId) {
         const shouldReplace = confirm(
-          `Replace the current trip "${currentTrip.trip_name}" with the archived list from "${trip.trip_name}"?`
+          `Replace the current trip "${currentTripName}" with the archived list from "${trip.trip_name}"?`
         );
         if (!shouldReplace) {
           setBusyArchivedTripId(null);
