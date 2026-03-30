@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 const PACIFIC_TZ = "America/Los_Angeles";
 
 type DailyRow = { date: string; t1: number; t2: number };
+type IndexPoint = { date: string; index: number };
 
 function pacificISODate(d = new Date()) {
   // en-CA => YYYY-MM-DD
@@ -27,6 +28,54 @@ function dateFromISO(iso: string) {
   return new Date(`${iso}T12:00:00Z`);
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
+function buildWeightedIndexData(dailyRows: DailyRow[], key: "t1" | "t2"): IndexPoint[] {
+  // dailyRows is ordered newest first, so reverse to get chronological order
+  const chronological = [...dailyRows].reverse();
+  if (chronological.length < 21) return []; // Need at least 21 days for full calculation
+
+  const weights = [
+    1.0,    // day 0 (current day in window)
+    0.95,   // day -1
+    0.90,   // day -2
+    0.85,   // day -3
+    0.80,   // day -4
+    0.75,   // day -5
+    0.70,   // day -6
+    0.65,   // day -7
+    0.60,   // day -8
+    0.55,   // day -9
+    0.50,   // day -10
+    0.45,   // day -11
+    0.40,   // day -12
+    0.35,   // day -13
+    0.30,   // day -14
+    0.25,   // day -15
+    0.20,   // day -16
+    0.15,   // day -17
+    0.10,   // day -18
+    0.05,   // day -19
+    0.025,  // day -20
+  ];
+
+  const result: IndexPoint[] = [];
+
+  // Start from day 20 (21st day, 0-indexed) since we need 21 days of history
+  for (let i = 20; i < chronological.length; i++) {
+    let sum = 0;
+    for (let j = 0; j < 21; j++) {
+      sum += chronological[i - j][key] * weights[j];
+    }
+    result.push({ date: chronological[i].date, index: sum });
+  }
+
+  return result;
+}
+
 export default function Home() {
   const [userId, setUserId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "idle" | "saving" | "error">("loading");
@@ -40,53 +89,10 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
 
-  // Calculate weighted rolling index for chart
+  // Calculate weighted rolling indices separately for T1 and T2.
   // Weights: today = 1.0, yesterday = 0.95, -2d = 0.90, ..., -18d = 0.10, -19d = 0.05, -20d = 0.025
-  // Uses T1 + T2 total for each day
-  const indexData = useMemo(() => {
-    // dailyRows is ordered newest first, so reverse to get chronological order
-    const chronological = [...dailyRows].reverse();
-    if (chronological.length < 21) return []; // Need at least 21 days for full calculation
-
-    const weights = [
-      1.0,    // day 0 (current day in window)
-      0.95,   // day -1
-      0.90,   // day -2
-      0.85,   // day -3
-      0.80,   // day -4
-      0.75,   // day -5
-      0.70,   // day -6
-      0.65,   // day -7
-      0.60,   // day -8
-      0.55,   // day -9
-      0.50,   // day -10
-      0.45,   // day -11
-      0.40,   // day -12
-      0.35,   // day -13
-      0.30,   // day -14
-      0.25,   // day -15
-      0.20,   // day -16
-      0.15,   // day -17
-      0.10,   // day -18
-      0.05,   // day -19
-      0.025,  // day -20
-    ];
-
-    const result: { date: string; index: number }[] = [];
-
-    // Start from day 20 (21st day, 0-indexed) since we need 21 days of history
-    for (let i = 20; i < chronological.length; i++) {
-      let sum = 0;
-      for (let j = 0; j < 21; j++) {
-        const dayData = chronological[i - j];
-        const total = dayData.t1 + dayData.t2;
-        sum += total * weights[j];
-      }
-      result.push({ date: chronological[i].date, index: sum });
-    }
-
-    return result;
-  }, [dailyRows]);
+  const t1IndexData = useMemo(() => buildWeightedIndexData(dailyRows, "t1"), [dailyRows]);
+  const t2IndexData = useMemo(() => buildWeightedIndexData(dailyRows, "t2"), [dailyRows]);
 
   // Keep "today" updated (Pacific midnight boundary)
   useEffect(() => {
@@ -197,8 +203,8 @@ export default function Home() {
       setT2(todayAgg.t2);
 
       setStatus("idle");
-    } catch (e: any) {
-      setErr(e?.message ?? "Failed to load data.");
+    } catch (error: unknown) {
+      setErr(getErrorMessage(error, "Failed to load data."));
       setStatus("error");
     }
   }
@@ -245,6 +251,8 @@ export default function Home() {
       return ordered.range(from, from + pageSize - 1);
     }
 
+    type ExportQueryRow = { occurred_on: string; trich: number; [key: string]: string | number | null };
+
     // First, detect which timestamp column exists (if any)
     for (const c of timestampCandidates) {
       const { error } = await supabase
@@ -260,7 +268,7 @@ export default function Home() {
       }
 
       // If the error is NOT about a missing column, stop trying and just proceed without ts.
-      const msg = (error as any)?.message ?? "";
+      const msg = error.message ?? "";
       if (msg && !msg.toLowerCase().includes("does not exist")) break;
     }
 
@@ -271,7 +279,7 @@ export default function Home() {
       const { data, error } = await runPage(sel);
       if (error) throw error;
 
-      const rows = (data ?? []) as any[];
+      const rows = (data ?? []) as ExportQueryRow[];
       for (const r of rows) {
         all.push({
           occurred_on: r.occurred_on,
@@ -322,8 +330,8 @@ export default function Home() {
 
       const filename = `trich-events-${today}.csv`;
       downloadTextFile(filename, prefix + csvBody);
-    } catch (e: any) {
-      setExportErr(e?.message ?? "Export failed.");
+    } catch (error: unknown) {
+      setExportErr(getErrorMessage(error, "Export failed."));
     } finally {
       setExporting(false);
     }
@@ -437,16 +445,28 @@ export default function Home() {
           {exportErr && <div className="mt-3 text-center text-sm text-red-300">{exportErr}</div>}
         </section>
 
-        {/* Weighted Index Chart */}
-        {indexData.length >= 2 && (
+        {/* Weighted Index Charts */}
+        {t1IndexData.length >= 2 && (
           <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-xs text-white/60">21-Day Weighted Index</div>
+              <div className="text-xs text-white/60">21-Day Weighted Index: T1</div>
               <div className="text-xs text-white/50">
-                Current: {indexData.length > 0 ? indexData[indexData.length - 1].index.toFixed(1) : "—"}
+                Current: {t1IndexData[t1IndexData.length - 1].index.toFixed(1)}
               </div>
             </div>
-            <TrichIndexChart data={indexData} />
+            <TrichIndexChart data={t1IndexData} />
+          </section>
+        )}
+
+        {t2IndexData.length >= 2 && (
+          <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-xs text-white/60">21-Day Weighted Index: T2</div>
+              <div className="text-xs text-white/50">
+                Current: {t2IndexData[t2IndexData.length - 1].index.toFixed(1)}
+              </div>
+            </div>
+            <TrichIndexChart data={t2IndexData} />
           </section>
         )}
       </div>
@@ -454,7 +474,9 @@ export default function Home() {
   );
 }
 
-function TrichIndexChart({ data }: { data: { date: string; index: number }[] }) {
+function TrichIndexChart({ data }: { data: IndexPoint[] }) {
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const indices = data.map((d) => d.index);
   const minIdx = Math.min(...indices);
   const maxIdx = Math.max(...indices);
@@ -472,9 +494,32 @@ function TrichIndexChart({ data }: { data: { date: string; index: number }[] }) 
 
   const firstDate = data[0]?.date ?? "";
   const lastDate = data[data.length - 1]?.date ?? "";
+  const activePoint = activeIndex == null ? null : data[activeIndex];
+
+  const getPointX = (index: number) => 8 + (index / (n - 1)) * 89;
+  const getPointY = (index: number) => 92 - ((data[index].index - yMin) / (yMax - yMin)) * 84;
+
+  const updateActiveIndex = (clientX: number) => {
+    const el = chartRef.current;
+    if (!el) return;
+
+    const rect = el.getBoundingClientRect();
+    const relativeX = Math.min(Math.max(clientX - rect.left, 0), rect.width);
+    const ratio = rect.width > 0 ? relativeX / rect.width : 0;
+    const nextIndex = Math.round(ratio * (n - 1));
+    setActiveIndex(Math.min(n - 1, Math.max(0, nextIndex)));
+  };
 
   return (
-    <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 relative h-[200px]">
+    <div
+      ref={chartRef}
+      className="w-full overflow-hidden rounded-xl border border-white/10 bg-black/30 relative h-[200px] touch-none"
+      onMouseMove={(event) => updateActiveIndex(event.clientX)}
+      onMouseLeave={() => setActiveIndex(null)}
+      onTouchStart={(event) => updateActiveIndex(event.touches[0].clientX)}
+      onTouchMove={(event) => updateActiveIndex(event.touches[0].clientX)}
+      onTouchEnd={() => setActiveIndex(null)}
+    >
       {/* Y axis labels - HTML positioned */}
       <div className="absolute left-1 top-1 text-[9px] text-white/50">{Math.round(yMax)}</div>
       <div className="absolute left-1 bottom-5 text-[9px] text-white/50">{Math.round(yMin)}</div>
@@ -482,6 +527,11 @@ function TrichIndexChart({ data }: { data: { date: string; index: number }[] }) 
       {/* X axis labels - HTML positioned */}
       <div className="absolute left-7 bottom-1 text-[9px] text-white/45">{fmt(firstDate)}</div>
       <div className="absolute right-2 bottom-1 text-[9px] text-white/45">{fmt(lastDate)}</div>
+      {activePoint && (
+        <div className="absolute right-2 top-2 rounded-md border border-white/10 bg-black/70 px-2 py-1 text-[10px] text-white/85">
+          {isoToMDY(activePoint.date)} · {activePoint.index.toFixed(1)}
+        </div>
+      )}
 
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
         {/* Baseline */}
@@ -494,12 +544,34 @@ function TrichIndexChart({ data }: { data: { date: string; index: number }[] }) 
           strokeWidth="0.6"
           points={data
             .map((d, i) => {
-              const xPct = 8 + (i / (n - 1)) * 89;
-              const yPct = 92 - ((d.index - yMin) / (yMax - yMin)) * 84;
+              const xPct = getPointX(i);
+              const yPct = getPointY(i);
               return `${xPct},${yPct}`;
             })
             .join(" ")}
         />
+
+        {activeIndex != null && (
+          <>
+            <line
+              x1={getPointX(activeIndex)}
+              y1="8"
+              x2={getPointX(activeIndex)}
+              y2="92"
+              stroke="rgba(255,255,255,0.18)"
+              strokeDasharray="1.5 1.5"
+              strokeWidth="0.4"
+            />
+            <circle
+              cx={getPointX(activeIndex)}
+              cy={getPointY(activeIndex)}
+              r="1.2"
+              fill="rgba(251,146,60,1)"
+              stroke="rgba(255,255,255,0.9)"
+              strokeWidth="0.25"
+            />
+          </>
+        )}
 
         {/* Latest point */}
         {(() => {
