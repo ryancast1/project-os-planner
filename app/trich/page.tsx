@@ -33,6 +33,13 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function isExportQueryRow(value: unknown): value is { occurred_on: string; trich: number; [key: string]: string | number | null } {
+  if (!value || typeof value !== "object") return false;
+
+  const row = value as Record<string, unknown>;
+  return typeof row.occurred_on === "string" && (typeof row.trich === "number" || typeof row.trich === "string");
+}
+
 function buildWeightedIndexData(dailyRows: DailyRow[], key: "t1" | "t2"): IndexPoint[] {
   // dailyRows is ordered newest first, so reverse to get chronological order
   const chronological = [...dailyRows].reverse();
@@ -251,8 +258,6 @@ export default function Home() {
       return ordered.range(from, from + pageSize - 1);
     }
 
-    type ExportQueryRow = { occurred_on: string; trich: number; [key: string]: string | number | null };
-
     // First, detect which timestamp column exists (if any)
     for (const c of timestampCandidates) {
       const { error } = await supabase
@@ -279,12 +284,14 @@ export default function Home() {
       const { data, error } = await runPage(sel);
       if (error) throw error;
 
-      const rows = (data ?? []) as ExportQueryRow[];
+      const rawRows: unknown[] = Array.isArray(data) ? data : [];
+      const rows = rawRows.filter(isExportQueryRow);
       for (const r of rows) {
+        const timestampValue = tsCol ? r[tsCol] : null;
         all.push({
           occurred_on: r.occurred_on,
           trich: Number(r.trich),
-          ts: tsCol ? (r[tsCol] ?? null) : null,
+          ts: typeof timestampValue === "string" ? timestampValue : null,
         });
       }
 
