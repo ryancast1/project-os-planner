@@ -93,10 +93,23 @@ function addDays(d: Date, n: number) {
   return x;
 }
 
-function diffWholeWeeks(start: Date, end: Date) {
-  const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
-  const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
-  return Math.round((endUtc - startUtc) / (7 * 24 * 60 * 60 * 1000));
+function buildWeekRows(start: Date, weekCount: number) {
+  return Array.from({ length: weekCount }).map((_, w) => {
+    const rowStart = addDays(start, w * 7);
+    return Array.from({ length: 7 }).map((__, i) => addDays(rowStart, i));
+  });
+}
+
+function buildYearWeekRows(year: number) {
+  const firstWeekStart = startOfWeekMonday(new Date(year, 0, 1));
+  const lastWeekStart = startOfWeekMonday(new Date(year, 11, 31));
+  const out: Date[][] = [];
+
+  for (let start = firstWeekStart; start <= lastWeekStart; start = addDays(start, 7)) {
+    out.push(Array.from({ length: 7 }).map((_, i) => addDays(start, i)));
+  }
+
+  return out;
 }
 
 function fmtWeekday(d: Date) {
@@ -105,6 +118,10 @@ function fmtWeekday(d: Date) {
 
 function fmtMonthDay(d: Date) {
   return d.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+}
+
+function fmtShortMonth(d: Date) {
+  return d.toLocaleDateString(undefined, { month: "short" });
 }
 
 function isWeekend(d: Date) {
@@ -881,44 +898,15 @@ export default function CalendarPage() {
   }, []);
 
   const week0 = useMemo(() => startOfWeekMonday(today), [today]);
-
-  // App start date - January 12, 2026
-  const appStartDate = useMemo(() => new Date(2026, 0, 12), []);
-  const appStartWeek = useMemo(() => startOfWeekMonday(appStartDate), [appStartDate]);
-
-  const [showPast, setShowPast] = useState(false);
-
-  // Calculate how many past weeks to show (from app start to last week)
-  const pastWeeksCount = useMemo(() => {
-    const diffWeeks = diffWholeWeeks(appStartWeek, week0);
-    return Math.max(0, diffWeeks);
-  }, [week0, appStartWeek]);
-
-  // Index where current week starts (0 if not showing past, pastWeeksCount if showing past)
-  const currentWeekIndex = showPast ? pastWeeksCount : 0;
+  const [yearView, setYearView] = useState(false);
+  const [visibleYear, setVisibleYear] = useState(() => today.getFullYear());
 
   const weeks = useMemo(() => {
-    const out: Date[][] = [];
+    if (yearView) return buildYearWeekRows(visibleYear);
 
-    // Add past weeks if showing past
-    if (showPast && pastWeeksCount > 0) {
-      for (let w = 0; w < pastWeeksCount; w++) {
-        const row: Date[] = [];
-        const start = addDays(appStartWeek, w * 7);
-        for (let i = 0; i < 7; i++) row.push(addDays(start, i));
-        out.push(row);
-      }
-    }
-
-    // Add current week + next 12 weeks (13 total future weeks)
-    for (let w = 0; w < 13; w++) {
-      const row: Date[] = [];
-      const start = addDays(week0, w * 7);
-      for (let i = 0; i < 7; i++) row.push(addDays(start, i));
-      out.push(row);
-    }
-    return out;
-  }, [week0, showPast, pastWeeksCount, appStartWeek]);
+    // Current week + next 12 weeks (13 total future weeks).
+    return buildWeekRows(week0, 13);
+  }, [week0, yearView, visibleYear]);
 
   const range = useMemo(() => {
     const start = toISODate(weeks[0][0]);
@@ -1003,8 +991,8 @@ export default function CalendarPage() {
         supabase
           .from("plans")
           .select("id,title,scheduled_for,end_date,starts_at,ends_at,status,day_off")
-          .gte("scheduled_for", range.start)
           .lte("scheduled_for", range.end)
+          .or(`end_date.gte.${range.start},and(end_date.is.null,scheduled_for.gte.${range.start})`)
           .order("scheduled_for", { ascending: true })
           .order("starts_at", { ascending: true, nullsFirst: true })
           .order("created_at", { ascending: true }),
@@ -1204,9 +1192,14 @@ export default function CalendarPage() {
   };
 
   const spansByWeek = useMemo(() => {
+    const yearStartIso = `${visibleYear}-01-01`;
+    const yearEndIso = `${visibleYear}-12-31`;
+
     return weeks.map((row) => {
       const weekStartIso = toISODate(row[0]);
       const weekEndIso = toISODate(row[6]);
+      const spanStartBound = yearView ? isoMax(weekStartIso, yearStartIso) : weekStartIso;
+      const spanEndBound = yearView ? isoMin(weekEndIso, yearEndIso) : weekEndIso;
 
       const raw: Omit<WeekSpan, "lane">[] = [];
 
@@ -1215,10 +1208,10 @@ export default function CalendarPage() {
         const endIso = p._end;
 
         // No overlap
-        if (endIso < weekStartIso || startIso > weekEndIso) continue;
+        if (endIso < spanStartBound || startIso > spanEndBound) continue;
 
-        const segStart = isoMax(startIso, weekStartIso);
-        const segEnd = isoMin(endIso, weekEndIso);
+        const segStart = isoMax(startIso, spanStartBound);
+        const segEnd = isoMin(endIso, spanEndBound);
 
         const startCol = row.findIndex((d) => toISODate(d) === segStart);
         const endCol = row.findIndex((d) => toISODate(d) === segEnd);
@@ -1252,9 +1245,19 @@ export default function CalendarPage() {
 
       return spans;
     });
-  }, [weeks, multiDayPlans]);
+  }, [weeks, multiDayPlans, yearView, visibleYear]);
 
   const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+  function monthLabelForWeek(row: Date[], weekIndex: number) {
+    if (weekIndex === 0) {
+      const firstInView = yearView ? row.find((d) => d.getFullYear() === visibleYear) : row[0];
+      return firstInView ? fmtShortMonth(firstInView) : "";
+    }
+
+    const monthStart = row.find((d) => d.getDate() === 1 && (!yearView || d.getFullYear() === visibleYear));
+    return monthStart ? fmtShortMonth(monthStart) : "";
+  }
 
   function dayModalContent(iso: string) {
     const d = new Date(iso + "T00:00:00");
@@ -1389,64 +1392,107 @@ export default function CalendarPage() {
 
   return (
     <main className="h-full overflow-y-auto px-3 py-3 pb-[calc(100px+env(safe-area-inset-bottom))] sm:px-6 sm:py-6">
-      {/* Show Past button */}
-      <div className="mx-auto w-full max-w-[1200px] mb-3 flex justify-end">
+      {/* Calendar view controls */}
+      <div className="mx-auto mb-3 flex w-full max-w-[1200px] items-center justify-between gap-3">
+        {yearView ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setVisibleYear((y) => y - 1)}
+              className="grid h-10 w-10 place-items-center rounded-xl border border-neutral-700 bg-neutral-900 text-lg font-semibold text-neutral-200 transition-colors hover:bg-neutral-800"
+              aria-label="Previous year"
+              title="Previous year"
+            >
+              ←
+            </button>
+            <div className="min-w-16 text-center text-lg font-semibold tracking-tight text-neutral-100">
+              {visibleYear}
+            </div>
+            <button
+              type="button"
+              onClick={() => setVisibleYear((y) => y + 1)}
+              className="grid h-10 w-10 place-items-center rounded-xl border border-neutral-700 bg-neutral-900 text-lg font-semibold text-neutral-200 transition-colors hover:bg-neutral-800"
+              aria-label="Next year"
+              title="Next year"
+            >
+              →
+            </button>
+          </div>
+        ) : (
+          <div />
+        )}
         <button
-          onClick={() => setShowPast((s) => !s)}
+          onClick={() => {
+            if (!yearView) setVisibleYear(today.getFullYear());
+            setYearView((v) => !v);
+          }}
           className={clsx(
             "rounded-xl border px-4 py-2 text-sm font-semibold transition-colors",
-            showPast
+            yearView
               ? "border-neutral-200 bg-neutral-100 text-neutral-900"
               : "border-neutral-700 bg-neutral-900 text-neutral-200"
           )}
         >
-          {showPast ? "Hide Past" : "Show Past"}
+          {yearView ? "Planner View" : "Year View"}
         </button>
       </div>
 
       {/* Weekday headers */}
       <div className="mx-auto w-full max-w-[1200px]">
-        <div className="grid grid-cols-7 shadow-sm">
-          {weekdays.map((w, idx) => (
-            <div
-              key={w}
-              className={clsx(
-                "border-r border-b border-neutral-700/50 bg-neutral-900/60 px-0.5 py-2 text-center text-[10px] font-medium tracking-wide leading-none text-neutral-200 sm:text-xs md:landscape:text-sm",
-                idx === 6 ? "border-r-0" : "",
-                idx >= 5 ? "bg-neutral-800/60" : ""
-              )}
-            >
-              {w}
-            </div>
-          ))}
+        <div className="flex shadow-sm">
+          <div className="grid flex-1 grid-cols-7">
+            {weekdays.map((w, idx) => (
+              <div
+                key={w}
+                className={clsx(
+                  "border-r border-b border-neutral-700/50 bg-neutral-900/60 px-0.5 py-2 text-center text-[10px] font-medium tracking-wide leading-none text-neutral-200 sm:text-xs md:landscape:text-sm",
+                  idx === 6 ? "border-r-0" : "",
+                  idx >= 5 ? "bg-neutral-800/60" : ""
+                )}
+              >
+                {w}
+              </div>
+            ))}
+          </div>
+          <div className="w-8 shrink-0 border-b border-neutral-700/50 sm:w-11" />
         </div>
 
         {/* Week grid */}
-        <div className="border-x border-b border-neutral-700/50 shadow-lg">
+        <div className="border-b border-neutral-700/50 shadow-lg">
           <div>
             {weeks.map((row, wIdx) => {
-              // Show divider before current week when viewing past
-              const isCurrentWeekStart = showPast && wIdx === currentWeekIndex;
+              const monthLabel = monthLabelForWeek(row, wIdx);
 
               return (
-                <div key={`week-${wIdx}`}>
-                  {/* Divider between past and current week */}
-                  {isCurrentWeekStart && (
-                    <div className="h-1.5 bg-neutral-500/80" />
-                  )}
-                  <div className="relative">
+                <div key={`week-${wIdx}`} className="flex">
+                  <div className="relative flex-1 border-l border-neutral-700/50">
                   <div className="grid grid-cols-7">
                     {row.map((d, dIdx) => {
                       const iso = toISODate(d);
+                      const isInVisibleYear = !yearView || d.getFullYear() === visibleYear;
                       const isToday = iso === todayIso;
                       const dayPlans = plansByDay[iso] ?? [];
                       const weekend = isWeekend(d);
                       const dayOff = !!dayOffByDay[iso];
 
                       const monthChangeFromTop =
-                        wIdx > 0 && weeks[wIdx - 1][dIdx].getMonth() !== d.getMonth() && !isCurrentWeekStart;
+                        wIdx > 0 && weeks[wIdx - 1][dIdx].getMonth() !== d.getMonth();
                       const monthChangeFromLeft =
                         dIdx > 0 && row[dIdx - 1].getMonth() !== d.getMonth();
+
+                      if (!isInVisibleYear) {
+                        return (
+                          <div
+                            key={iso}
+                            className={clsx(
+                              "relative aspect-square select-none bg-neutral-950/10 p-1",
+                              dIdx === 6 ? "border-r-0" : "border-r border-r-neutral-700/40",
+                              monthChangeFromTop ? "border-t-2 border-t-neutral-500/70" : "border-t border-t-neutral-700/40",
+                              monthChangeFromLeft ? "border-l-2 border-l-neutral-500/70" : ""
+                            )}
+                          />
+                        );
+                      }
 
                       return (
                         <DayCell
@@ -1523,6 +1569,9 @@ export default function CalendarPage() {
                     </div>
                   ) : null}
                   </div>
+                  <div className="w-8 shrink-0 border-l border-neutral-700/50 pt-2 text-center text-[10px] font-semibold uppercase tracking-wide text-neutral-500 sm:w-11 sm:text-xs">
+                    {monthLabel}
+                  </div>
                 </div>
               );
             })}
@@ -1559,7 +1608,7 @@ export default function CalendarPage() {
           return d.toLocaleDateString(undefined, { weekday: 'long' });
         })() : ''}
         items={scheduleItems}
-        plans={scheduleViewDate ? plans.filter(p => p.scheduled_for === scheduleViewDate) : []}
+        plans={scheduleViewDate ? plans.filter((p) => p.scheduled_for <= scheduleViewDate && scheduleViewDate <= planEndIso(p)) : []}
         onClose={() => { setScheduleViewDate(null); setScheduleItems([]); }}
         onCreateItem={createScheduleItem}
         onUpdateItem={updateScheduleItem}

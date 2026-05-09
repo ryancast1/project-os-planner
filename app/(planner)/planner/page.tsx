@@ -590,6 +590,7 @@ function TaskRow({
 }) {
   const isDone = task.status === "done";
   const [showMove, setShowMove] = useState(false);
+  const todayTarget = moveTargets.find((t) => t.group === "days" && t.label === "Today") ?? moveTargets.find((t) => t.group === "days");
 
   return (
     <RowShell
@@ -642,7 +643,27 @@ function TaskRow({
         <DragHandle className={compact ? "ml-1" : "ml-2"} onTouchDragStart={() => onTouchDragStart?.(task.id)} />
       )}
 
-      {showMove && (
+      {showMove && tone === "overdue" && todayTarget && (
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowMove(false);
+            onMove(task.id, todayTarget.value);
+          }}
+          className={clsx(
+            "shrink-0 rounded-lg border border-red-500/60 bg-red-500/10 font-semibold text-red-100 outline-none hover:bg-red-500/20",
+            compact ? "h-6 px-2 text-[11px]" : "h-8 px-3 text-[16px] sm:text-xs"
+          )}
+          aria-label="Move overdue task to today"
+          title="Move overdue task to today"
+        >
+          Today
+        </button>
+      )}
+
+      {showMove && tone !== "overdue" && (
         <MoveSelect compact={compact} value={locationValueFor(task)} onChange={(v) => onMove(task.id, v)} moveTargets={moveTargets} />
       )}
     </RowShell>
@@ -4731,8 +4752,14 @@ const { data, error } = await supabase
 
     // When marking done, move to bottom of done group (above open items)
     const task = tasks.find((t) => t.id === id);
+    if (nextDone && task?.scheduled_for && task.scheduled_for < dayRangeStart) {
+      patch.scheduled_for = dayRangeStart;
+      patch.window_kind = null;
+      patch.window_start = null;
+    }
     if (nextDone && task?.scheduled_for) {
-      const dayTasks = tasksByDay[task.scheduled_for] ?? [];
+      const sortDate = patch.scheduled_for ?? task.scheduled_for;
+      const dayTasks = tasksByDay[sortDate] ?? [];
       const others = dayTasks.filter((t) => t.id !== id);
       const openOthers = others.filter((t) => t.status !== "done");
       if (openOthers.length > 0) {
@@ -4748,7 +4775,7 @@ const { data, error } = await supabase
     if (error) return console.error(error);
 
     setTasks((p) =>
-      p.map((t) => (t.id === id ? ({ ...t, status: nextStatus, completed_at: patch.completed_at, sort_order: patch.sort_order ?? t.sort_order } as Task) : t))
+      p.map((t) => (t.id === id ? ({ ...t, ...patch, status: nextStatus, completed_at: patch.completed_at, sort_order: patch.sort_order ?? t.sort_order } as Task) : t))
     );
   }
 

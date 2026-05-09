@@ -13,6 +13,11 @@ export default function HomePage() {
     { href: "/sick", title: "Sick Log", icon: "/icons/sick.png" },
   ];
 
+  const bottomTiles: { href: string; title: string; icon: string }[] = [
+    { href: "/moving", title: "Moving", icon: "/moving-512.png" },
+    { href: "/database", title: "Database", icon: "/icons/database.png" },
+  ];
+
   return (
     <main className="min-h-dvh p-6">
       <div className="mx-auto max-w-md">
@@ -42,26 +47,29 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Database tile */}
-          <div className="mt-6 flex justify-center px-4">
-            <Link
-              href="/database"
-              className="relative w-36 aspect-square overflow-hidden rounded-3xl bg-neutral-900 shadow-sm transition active:scale-[0.99]"
-              aria-label="Database"
-              title="Database"
-            >
-              <span className="sr-only">Database</span>
-              <div className="absolute inset-0 p-3">
-                <Image
-                  src="/icons/database.png"
-                  alt=""
-                  fill
-                  sizes="(max-width: 768px) 50vw, 240px"
-                  className="object-contain"
-                  priority
-                />
-              </div>
-            </Link>
+          {/* Bottom row */}
+          <div className="mt-6 grid grid-cols-2 gap-x-4 px-4 justify-items-center">
+            {bottomTiles.map((t) => (
+              <Link
+                key={t.href}
+                href={t.href}
+                className="relative w-36 aspect-square overflow-hidden rounded-3xl bg-neutral-900 shadow-sm transition active:scale-[0.99]"
+                aria-label={t.title}
+                title={t.title}
+              >
+                <span className="sr-only">{t.title}</span>
+                <div className="absolute inset-0 p-3">
+                  <Image
+                    src={t.icon}
+                    alt=""
+                    fill
+                    sizes="(max-width: 768px) 50vw, 240px"
+                    className="object-contain"
+                    priority
+                  />
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
       </div>

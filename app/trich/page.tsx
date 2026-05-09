@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -40,7 +41,7 @@ function isExportQueryRow(value: unknown): value is { occurred_on: string; trich
   return typeof row.occurred_on === "string" && (typeof row.trich === "number" || typeof row.trich === "string");
 }
 
-function buildWeightedIndexData(dailyRows: DailyRow[], key: "t1" | "t2"): IndexPoint[] {
+function buildWeightedIndexData(dailyRows: DailyRow[], getValue: (row: DailyRow) => number): IndexPoint[] {
   // dailyRows is ordered newest first, so reverse to get chronological order
   const chronological = [...dailyRows].reverse();
   if (chronological.length < 21) return []; // Need at least 21 days for full calculation
@@ -75,7 +76,7 @@ function buildWeightedIndexData(dailyRows: DailyRow[], key: "t1" | "t2"): IndexP
   for (let i = 20; i < chronological.length; i++) {
     let sum = 0;
     for (let j = 0; j < 21; j++) {
-      sum += chronological[i - j][key] * weights[j];
+      sum += getValue(chronological[i - j]) * weights[j];
     }
     result.push({ date: chronological[i].date, index: sum });
   }
@@ -98,8 +99,9 @@ export default function Home() {
 
   // Calculate weighted rolling indices separately for T1 and T2.
   // Weights: today = 1.0, yesterday = 0.95, -2d = 0.90, ..., -18d = 0.10, -19d = 0.05, -20d = 0.025
-  const t1IndexData = useMemo(() => buildWeightedIndexData(dailyRows, "t1"), [dailyRows]);
-  const t2IndexData = useMemo(() => buildWeightedIndexData(dailyRows, "t2"), [dailyRows]);
+  const t1IndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t1), [dailyRows]);
+  const t2IndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t2), [dailyRows]);
+  const combinedIndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t1 + row.t2), [dailyRows]);
 
   // Keep "today" updated (Pacific midnight boundary)
   useEffect(() => {
@@ -380,11 +382,20 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-5 py-10 text-white">
       <div className="mx-auto w-full max-w-md">
-        <header className="mb-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-center">Trich Tracker</h1>
-          <div className="mt-2 text-center text-xs text-white/50">
-            {isoToMDY(today)}
+        <header className="mb-8 grid grid-cols-[72px_1fr_72px] items-start">
+          <Link
+            href="/"
+            className="h-9 w-[60px] rounded-xl border border-white/10 bg-white/5 grid place-items-center text-xs font-semibold text-white/80 hover:text-white hover:bg-white/10 active:scale-[0.97] transition"
+          >
+            Home
+          </Link>
+          <div className="text-center">
+            <h1 className="text-3xl font-semibold tracking-tight">Trich Tracker</h1>
+            <div className="mt-2 text-xs text-white/50">
+              {isoToMDY(today)}
+            </div>
           </div>
+          <div aria-hidden="true" />
         </header>
 
         <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -474,6 +485,18 @@ export default function Home() {
               </div>
             </div>
             <TrichIndexChart data={t2IndexData} />
+          </section>
+        )}
+
+        {combinedIndexData.length >= 2 && (
+          <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-xs text-white/60">21-Day Weighted Index: Combined</div>
+              <div className="text-xs text-white/50">
+                Current: {combinedIndexData[combinedIndexData.length - 1].index.toFixed(1)}
+              </div>
+            </div>
+            <TrichIndexChart data={combinedIndexData} />
           </section>
         )}
       </div>
