@@ -101,7 +101,7 @@ export default function Home() {
   // Weights: today = 1.0, yesterday = 0.95, -2d = 0.90, ..., -18d = 0.10, -19d = 0.05, -20d = 0.025
   const t1IndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t1), [dailyRows]);
   const t2IndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t2), [dailyRows]);
-  const combinedIndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t1 + row.t2), [dailyRows]);
+  const combinedIndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t1 * 2 + row.t2), [dailyRows]);
 
   // Keep "today" updated (Pacific midnight boundary)
   useEffect(() => {
