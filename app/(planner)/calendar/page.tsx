@@ -1454,7 +1454,7 @@ export default function CalendarPage() {
               </div>
             ))}
           </div>
-          <div className="w-8 shrink-0 border-b border-neutral-700/50 sm:w-11" />
+          <div className="w-7 shrink-0 border-b border-neutral-700/50 sm:w-8" />
         </div>
 
         {/* Week grid */}
@@ -1569,7 +1569,7 @@ export default function CalendarPage() {
                     </div>
                   ) : null}
                   </div>
-                  <div className="w-8 shrink-0 border-l border-neutral-700/50 pt-2 text-center text-[10px] font-semibold uppercase tracking-wide text-neutral-500 sm:w-11 sm:text-xs">
+                  <div className="w-7 shrink-0 border-l border-neutral-700/50 pt-2 text-center text-[10px] font-semibold uppercase tracking-normal text-neutral-500 sm:w-8 sm:text-xs">
                     {monthLabel}
                   </div>
                 </div>
