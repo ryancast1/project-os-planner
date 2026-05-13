@@ -48,10 +48,10 @@ function statusClass(status: MovingBox["status"]) {
   }
 }
 
-function nextStatus(status: MovingBox["status"]): BoxStatus | null {
+function nextStatus(status: MovingBox["status"]): BoxStatus {
   if (cleanStatus(status) === "Open") return "Packed";
   if (cleanStatus(status) === "Packed") return "Unpacked";
-  return null;
+  return "Open";
 }
 
 function makeNextBoxId(boxes: MovingBox[]) {
@@ -84,6 +84,8 @@ export default function MovingPage() {
   const [editItemName, setEditItemName] = useState("");
   const [editItemBoxId, setEditItemBoxId] = useState("");
   const [editItemNotes, setEditItemNotes] = useState("");
+  const [confirmingDeleteBox, setConfirmingDeleteBox] = useState(false);
+  const [confirmingDeleteItem, setConfirmingDeleteItem] = useState(false);
 
   async function loadData() {
     setLoading(true);
@@ -210,6 +212,80 @@ export default function MovingPage() {
     }
   }
 
+  async function renameBox(box: MovingBox, rawBoxId: string) {
+    const nextBoxId = rawBoxId.trim().toUpperCase();
+    if (!nextBoxId || nextBoxId === box.box_id) return;
+
+    if (boxes.some((candidate) => candidate.id !== box.id && candidate.box_id === nextBoxId)) {
+      setErr(`${nextBoxId} already exists.`);
+      return;
+    }
+
+    setErr(null);
+    const { data: createdBox, error: createError } = await supabase
+      .from("moving_boxes")
+      .insert({
+        box_id: nextBoxId,
+        room: box.room,
+        notes: box.notes,
+        priority: box.priority,
+        status: cleanStatus(box.status),
+      })
+      .select("*")
+      .single();
+
+    if (createError) {
+      setErr(createError.message);
+      return;
+    }
+
+    const { error: itemsError } = await supabase
+      .from("moving_items")
+      .update({ box_id: nextBoxId })
+      .eq("box_id", box.box_id);
+
+    if (itemsError) {
+      setErr(itemsError.message);
+      await supabase.from("moving_boxes").delete().eq("id", (createdBox as MovingBox).id);
+      await loadData();
+      return;
+    }
+
+    const { error: deleteError } = await supabase.from("moving_boxes").delete().eq("id", box.id);
+    if (deleteError) {
+      setErr(deleteError.message);
+      await loadData();
+      return;
+    }
+
+    const renamedBox = createdBox as MovingBox;
+    setBoxes((prev) => prev.filter((candidate) => candidate.id !== box.id).concat(renamedBox));
+    setItems((prev) =>
+      prev.map((item) => (item.box_id === box.box_id ? { ...item, box_id: nextBoxId } : item))
+    );
+    setSelectedBoxId(renamedBox.id);
+  }
+
+  async function deleteBox(box: MovingBox) {
+    const { error: itemsError } = await supabase.from("moving_items").delete().eq("box_id", box.box_id);
+    if (itemsError) {
+      setErr(itemsError.message);
+      return;
+    }
+
+    const { error: boxError } = await supabase.from("moving_boxes").delete().eq("id", box.id);
+    if (boxError) {
+      setErr(boxError.message);
+      await loadData();
+      return;
+    }
+
+    setItems((prev) => prev.filter((item) => item.box_id !== box.box_id));
+    setBoxes((prev) => prev.filter((candidate) => candidate.id !== box.id));
+    setSelectedBoxId(null);
+    setConfirmingDeleteBox(false);
+  }
+
   async function addItem(e: FormEvent) {
     e.preventDefault();
     if (!selectedBox) return;
@@ -236,6 +312,7 @@ export default function MovingPage() {
     setEditItemName(item.item);
     setEditItemBoxId(item.box_id ?? "");
     setEditItemNotes(item.notes ?? "");
+    setConfirmingDeleteItem(false);
   }
 
   function closeItemEditor() {
@@ -243,6 +320,7 @@ export default function MovingPage() {
     setEditItemName("");
     setEditItemBoxId("");
     setEditItemNotes("");
+    setConfirmingDeleteItem(false);
   }
 
   async function saveItemEditor(e: FormEvent) {
@@ -264,6 +342,17 @@ export default function MovingPage() {
       return;
     }
 
+    closeItemEditor();
+  }
+
+  async function deleteItem(item: MovingItem) {
+    const { error } = await supabase.from("moving_items").delete().eq("id", item.id);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
+    setItems((prev) => prev.filter((candidate) => candidate.id !== item.id));
     closeItemEditor();
   }
 
@@ -290,7 +379,6 @@ export default function MovingPage() {
             onClick={() => {
               setAddingBox((value) => !value);
               setSelectedBoxId(null);
-              setNewBoxId((value) => value || makeNextBoxId(boxes));
             }}
             className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white text-xl font-semibold text-neutral-950 active:scale-[0.98]"
             aria-label="Add box"
@@ -310,20 +398,34 @@ export default function MovingPage() {
           <section className="flex min-h-0 flex-1 flex-col">
             <button
               type="button"
-              onClick={() => setSelectedBoxId(null)}
+              onClick={() => {
+                setSelectedBoxId(null);
+                setConfirmingDeleteBox(false);
+              }}
               className="mb-3 w-fit rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 active:scale-[0.98]"
             >
               Back to boxes
             </button>
 
             <div className="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <div className="text-xs uppercase text-neutral-500">Box ID</div>
-                <h2 className="text-3xl font-semibold tracking-normal">{selectedBox.box_id}</h2>
-              </div>
-              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusClass(selectedBox.status)}`}>
+              <label className="min-w-0 flex-1">
+                <span className="mb-1 block text-xs uppercase text-neutral-500">Box ID</span>
+                <input
+                  key={selectedBox.id}
+                  defaultValue={selectedBox.box_id}
+                  onBlur={(e) => renameBox(selectedBox, e.target.value)}
+                  className="h-12 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-2xl font-semibold text-white outline-none focus:border-white/30"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => saveBox(selectedBox.id, { status: nextStatus(selectedBox.status) })}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold active:scale-[0.98] ${statusClass(selectedBox.status)}`}
+                aria-label={`Current status ${cleanStatus(selectedBox.status)}. Change status to ${nextStatus(selectedBox.status)}.`}
+                title={`Change to ${nextStatus(selectedBox.status)}`}
+              >
                 {cleanStatus(selectedBox.status)}
-              </span>
+              </button>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-[1fr_150px_auto]">
@@ -334,7 +436,6 @@ export default function MovingPage() {
                   onChange={(e) => updateBoxDraft(selectedBox.id, { room: e.target.value })}
                   onBlur={(e) => saveBox(selectedBox.id, { room: e.target.value.trim() || null })}
                   className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
-                  placeholder="Kitchen"
                 />
               </label>
               <label className="block">
@@ -344,23 +445,16 @@ export default function MovingPage() {
                   onChange={(e) => updateBoxDraft(selectedBox.id, { priority: e.target.value })}
                   onBlur={(e) => saveBox(selectedBox.id, { priority: e.target.value.trim() || null })}
                   className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
-                  placeholder="High"
                 />
               </label>
               <div className="flex items-end">
-                {nextStatus(selectedBox.status) ? (
-                  <button
-                    type="button"
-                    onClick={() => saveBox(selectedBox.id, { status: nextStatus(selectedBox.status)! })}
-                    className="h-11 w-full rounded-xl border border-white/10 bg-white px-4 text-sm font-semibold text-neutral-950 active:scale-[0.98] sm:w-auto"
-                  >
-                    Mark {nextStatus(selectedBox.status)}
-                  </button>
-                ) : (
-                  <div className="grid h-11 w-full place-items-center rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-neutral-400 sm:w-auto">
-                    Complete
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={() => saveBox(selectedBox.id, { status: nextStatus(selectedBox.status) })}
+                  className="h-11 w-full rounded-xl border border-white/10 bg-white px-4 text-sm font-semibold text-neutral-950 active:scale-[0.98] sm:w-auto"
+                >
+                  Status: {cleanStatus(selectedBox.status)}
+                </button>
               </div>
             </div>
 
@@ -370,7 +464,7 @@ export default function MovingPage() {
                   value={newItemName}
                   onChange={(e) => setNewItemName(e.target.value)}
                   className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
-                  placeholder="Add item to box"
+                  placeholder="Add Item to box"
                 />
                 <button
                   type="submit"
@@ -406,30 +500,62 @@ export default function MovingPage() {
                 onChange={(e) => updateBoxDraft(selectedBox.id, { notes: e.target.value })}
                 onBlur={(e) => saveBox(selectedBox.id, { notes: e.target.value.trim() || null })}
                 className="min-h-36 w-full resize-y rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none focus:border-white/30"
-                placeholder="Anything useful about this box..."
               />
             </label>
+
+            <div className="mt-3 flex justify-end gap-2">
+              {confirmingDeleteBox ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDeleteBox(false)}
+                    className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white/80 active:scale-[0.98]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteBox(selectedBox)}
+                    className="h-10 rounded-xl border border-red-300/30 bg-red-500 px-4 text-sm font-semibold text-white active:scale-[0.98]"
+                  >
+                    Confirm delete
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDeleteBox(true)}
+                  className="h-10 rounded-xl border border-red-300/30 bg-red-500/10 px-4 text-sm font-semibold text-red-100 active:scale-[0.98]"
+                >
+                  Delete box
+                </button>
+              )}
+            </div>
           </section>
         ) : (
           <section>
             {addingBox ? (
               <form onSubmit={createBox} className="mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
                 <div className="grid gap-2 sm:grid-cols-[160px_1fr_auto]">
-                  <input
-                    value={newBoxId}
-                    onChange={(e) => setNewBoxId(e.target.value)}
-                    className="h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
-                    placeholder="BOX-01"
-                  />
-                  <input
-                    value={newBoxRoom}
-                    onChange={(e) => setNewBoxRoom(e.target.value)}
-                    className="h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
-                    placeholder="Room"
-                  />
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold text-neutral-400">Box ID</span>
+                    <input
+                      value={newBoxId}
+                      onChange={(e) => setNewBoxId(e.target.value)}
+                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold text-neutral-400">Room</span>
+                    <input
+                      value={newBoxRoom}
+                      onChange={(e) => setNewBoxRoom(e.target.value)}
+                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
+                    />
+                  </label>
                   <button
                     type="submit"
-                    className="h-11 rounded-xl border border-white/10 bg-white px-4 text-sm font-semibold text-neutral-950 active:scale-[0.98]"
+                    className="h-11 rounded-xl border border-white/10 bg-white px-4 text-sm font-semibold text-neutral-950 active:scale-[0.98] sm:self-end"
                   >
                     Create
                   </button>
@@ -440,8 +566,8 @@ export default function MovingPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search items"
               className="mb-3 h-12 w-full rounded-xl border border-white/10 bg-black/30 px-4 text-base text-white outline-none focus:border-white/30"
-              placeholder="Search item or box ID"
             />
 
             {search.trim() ? (
@@ -557,11 +683,28 @@ export default function MovingPage() {
                 value={editItemNotes}
                 onChange={(e) => setEditItemNotes(e.target.value)}
                 className="min-h-32 w-full resize-y rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none focus:border-white/30"
-                placeholder="Notes about this item..."
               />
             </label>
 
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-between gap-2">
+              {confirmingDeleteItem ? (
+                <button
+                  type="button"
+                  onClick={() => deleteItem(editingItem)}
+                  className="h-11 rounded-xl border border-red-300/30 bg-red-500 px-4 text-sm font-semibold text-white active:scale-[0.98]"
+                >
+                  Confirm delete
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDeleteItem(true)}
+                  className="h-11 rounded-xl border border-red-300/30 bg-red-500/10 px-4 text-sm font-semibold text-red-100 active:scale-[0.98]"
+                >
+                  Delete item
+                </button>
+              )}
+              <div className="flex gap-2">
               <button
                 type="button"
                 onClick={closeItemEditor}
@@ -575,6 +718,7 @@ export default function MovingPage() {
               >
                 Save
               </button>
+              </div>
             </div>
           </form>
         </div>
