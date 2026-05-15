@@ -435,7 +435,7 @@ export default function MovingPage() {
                   value={selectedBox.room ?? ""}
                   onChange={(e) => updateBoxDraft(selectedBox.id, { room: e.target.value })}
                   onBlur={(e) => saveBox(selectedBox.id, { room: e.target.value.trim() || null })}
-                  className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
+                  className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
                 />
               </label>
               <label className="block">
@@ -444,7 +444,7 @@ export default function MovingPage() {
                   value={selectedBox.priority ?? ""}
                   onChange={(e) => updateBoxDraft(selectedBox.id, { priority: e.target.value })}
                   onBlur={(e) => saveBox(selectedBox.id, { priority: e.target.value.trim() || null })}
-                  className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
+                  className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
                 />
               </label>
               <div className="flex items-end">
@@ -463,7 +463,7 @@ export default function MovingPage() {
                 <input
                   value={newItemName}
                   onChange={(e) => setNewItemName(e.target.value)}
-                  className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
+                  className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
                   placeholder="Add Item to box"
                 />
                 <button
@@ -499,7 +499,7 @@ export default function MovingPage() {
                 value={selectedBox.notes ?? ""}
                 onChange={(e) => updateBoxDraft(selectedBox.id, { notes: e.target.value })}
                 onBlur={(e) => saveBox(selectedBox.id, { notes: e.target.value.trim() || null })}
-                className="min-h-36 w-full resize-y rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none focus:border-white/30"
+                className="min-h-36 w-full resize-y rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-[16px] text-white outline-none focus:border-white/30"
               />
             </label>
 
@@ -542,7 +542,7 @@ export default function MovingPage() {
                     <input
                       value={newBoxId}
                       onChange={(e) => setNewBoxId(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
+                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
                     />
                   </label>
                   <label className="block">
@@ -550,7 +550,7 @@ export default function MovingPage() {
                     <input
                       value={newBoxRoom}
                       onChange={(e) => setNewBoxRoom(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
+                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
                     />
                   </label>
                   <button
@@ -656,7 +656,7 @@ export default function MovingPage() {
               <input
                 value={editItemName}
                 onChange={(e) => setEditItemName(e.target.value)}
-                className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
+                className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
               />
             </label>
 
@@ -665,7 +665,7 @@ export default function MovingPage() {
               <select
                 value={editItemBoxId}
                 onChange={(e) => setEditItemBoxId(e.target.value)}
-                className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/30"
+                className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
               >
                 <option value="">No box</option>
                 {sortedBoxes.map((box) => (
@@ -682,7 +682,7 @@ export default function MovingPage() {
               <textarea
                 value={editItemNotes}
                 onChange={(e) => setEditItemNotes(e.target.value)}
-                className="min-h-32 w-full resize-y rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none focus:border-white/30"
+                className="min-h-32 w-full resize-y rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-[16px] text-white outline-none focus:border-white/30"
               />
             </label>
 

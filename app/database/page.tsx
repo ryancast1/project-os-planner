@@ -535,7 +535,7 @@ export default function DatabasePage() {
           <select
             value={selectedTable}
             onChange={(e) => handleTableChange(e.target.value)}
-            className="w-full h-11 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-sm"
+            className="w-full h-11 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-[16px]"
           >
             {TABLE_NAMES.map((name) => (
               <option key={name} value={name}>
@@ -552,7 +552,7 @@ export default function DatabasePage() {
             placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-[16px] sm:text-sm placeholder:text-white/40 outline-none"
+            className="flex-1 h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-[16px] placeholder:text-white/40 outline-none"
           />
           <button
             onClick={() => setAddingRow(true)}
@@ -919,7 +919,7 @@ function FieldInput({
   onChange: (val: any) => void;
 }) {
   const inputClass =
-    "w-full h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-sm outline-none disabled:opacity-50 disabled:cursor-not-allowed";
+    "w-full h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-[16px] outline-none disabled:opacity-50 disabled:cursor-not-allowed";
 
   if (col.type === "boolean") {
     return (
@@ -986,7 +986,7 @@ function FieldInput({
           {col.name} {col.readonly && <span className="text-white/40">(readonly)</span>}
         </label>
         {col.readonly ? (
-          <div className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 flex items-center text-white/50 text-sm">
+          <div className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 flex items-center text-white/50 text-[16px]">
             {formatDatetime(value)}
           </div>
         ) : (
@@ -1029,7 +1029,7 @@ function FieldInput({
           onChange={(e) => onChange(e.target.value)}
           disabled={col.readonly}
           rows={3}
-          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white text-sm outline-none resize-none disabled:opacity-50"
+          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white text-[16px] outline-none resize-none disabled:opacity-50"
         />
       ) : (
         <input
