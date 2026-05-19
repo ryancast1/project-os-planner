@@ -65,6 +65,20 @@ function makeNextBoxId(boxes: MovingBox[]) {
   return `BOX-${String(max + 1).padStart(2, "0")}`;
 }
 
+function inferRoomFromBoxId(boxId: string): string | null {
+  const prefix = boxId.trim().slice(0, 3).toUpperCase();
+  const rooms: Record<string, string> = {
+    OFF: "Office",
+    KIT: "Kitchen",
+    BAT: "Bathroom",
+    BED: "Bedroom",
+    DIN: "Dining Room",
+    LIV: "Living Room",
+    CLO: "Closet",
+  };
+  return rooms[prefix] ?? null;
+}
+
 export default function MovingPage() {
   const [boxes, setBoxes] = useState<MovingBox[]>([]);
   const [items, setItems] = useState<MovingItem[]>([]);
@@ -76,7 +90,6 @@ export default function MovingPage() {
 
   const [addingBox, setAddingBox] = useState(false);
   const [newBoxId, setNewBoxId] = useState("");
-  const [newBoxRoom, setNewBoxRoom] = useState("");
 
   const [newItemName, setNewItemName] = useState("");
 
@@ -178,7 +191,7 @@ export default function MovingPage() {
   async function createBox(e: FormEvent) {
     e.preventDefault();
     const boxId = (newBoxId.trim() || makeNextBoxId(boxes)).toUpperCase();
-    const room = newBoxRoom.trim() || null;
+    const room = inferRoomFromBoxId(boxId);
 
     const { data, error } = await supabase
       .from("moving_boxes")
@@ -195,7 +208,6 @@ export default function MovingPage() {
     setBoxes((prev) => [...prev, created]);
     setSelectedBoxId(created.id);
     setNewBoxId("");
-    setNewBoxRoom("");
     setAddingBox(false);
   }
 
@@ -362,11 +374,11 @@ export default function MovingPage() {
         <header className="mb-4 flex items-center justify-between gap-3">
           <Link
             href="/"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-lg text-white/80 active:scale-[0.98]"
+            className="grid h-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white/80 active:scale-[0.98]"
             aria-label="Back to home"
             title="Back"
           >
-            &lt;
+            Home
           </Link>
           <div className="min-w-0 flex-1 text-center">
             <h1 className="truncate text-xl font-semibold tracking-normal">Moving</h1>
@@ -428,47 +440,17 @@ export default function MovingPage() {
               </button>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-[1fr_150px_auto]">
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-neutral-400">Room</span>
-                <input
-                  value={selectedBox.room ?? ""}
-                  onChange={(e) => updateBoxDraft(selectedBox.id, { room: e.target.value })}
-                  onBlur={(e) => saveBox(selectedBox.id, { room: e.target.value.trim() || null })}
-                  className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-neutral-400">Priority</span>
-                <input
-                  value={selectedBox.priority ?? ""}
-                  onChange={(e) => updateBoxDraft(selectedBox.id, { priority: e.target.value })}
-                  onBlur={(e) => saveBox(selectedBox.id, { priority: e.target.value.trim() || null })}
-                  className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
-                />
-              </label>
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={() => saveBox(selectedBox.id, { status: nextStatus(selectedBox.status) })}
-                  className="h-11 w-full rounded-xl border border-white/10 bg-white px-4 text-sm font-semibold text-neutral-950 active:scale-[0.98] sm:w-auto"
-                >
-                  Status: {cleanStatus(selectedBox.status)}
-                </button>
-              </div>
-            </div>
-
-            <section className="mt-5 min-h-0 flex-1">
-              <form onSubmit={addItem} className="mb-3 flex gap-2">
+            <section className="mt-4 min-h-0 flex-1">
+              <form onSubmit={addItem} className="mb-4 flex gap-2">
                 <input
                   value={newItemName}
                   onChange={(e) => setNewItemName(e.target.value)}
-                  className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
+                  className="h-14 min-w-0 flex-1 rounded-2xl border border-white/25 bg-white/10 px-4 text-[16px] font-semibold text-white outline-none placeholder:text-white/55 focus:border-white/50"
                   placeholder="Add Item to box"
                 />
                 <button
                   type="submit"
-                  className="h-11 rounded-xl border border-white/10 bg-white px-4 text-sm font-semibold text-neutral-950 active:scale-[0.98]"
+                  className="h-14 rounded-2xl border border-white/10 bg-white px-5 text-base font-semibold text-neutral-950 active:scale-[0.98]"
                 >
                   Add
                 </button>
@@ -492,6 +474,27 @@ export default function MovingPage() {
                 )}
               </div>
             </section>
+
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-neutral-500">Room</span>
+                <input
+                  value={selectedBox.room ?? ""}
+                  onChange={(e) => updateBoxDraft(selectedBox.id, { room: e.target.value })}
+                  onBlur={(e) => saveBox(selectedBox.id, { room: e.target.value.trim() || null })}
+                  className="h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-[16px] text-white outline-none focus:border-white/25"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-neutral-500">Priority</span>
+                <input
+                  value={selectedBox.priority ?? ""}
+                  onChange={(e) => updateBoxDraft(selectedBox.id, { priority: e.target.value })}
+                  onBlur={(e) => saveBox(selectedBox.id, { priority: e.target.value.trim() || null })}
+                  className="h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-[16px] text-white outline-none focus:border-white/25"
+                />
+              </label>
+            </div>
 
             <label className="mt-5 block">
               <span className="mb-1 block text-xs font-semibold text-neutral-400">Box notes</span>
@@ -536,20 +539,12 @@ export default function MovingPage() {
           <section>
             {addingBox ? (
               <form onSubmit={createBox} className="mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
-                <div className="grid gap-2 sm:grid-cols-[160px_1fr_auto]">
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold text-neutral-400">Box ID</span>
                     <input
                       value={newBoxId}
                       onChange={(e) => setNewBoxId(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-neutral-400">Room</span>
-                    <input
-                      value={newBoxRoom}
-                      onChange={(e) => setNewBoxRoom(e.target.value)}
                       className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
                     />
                   </label>
