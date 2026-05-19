@@ -425,6 +425,10 @@ export default function MovingPage() {
                 <input
                   key={selectedBox.id}
                   defaultValue={selectedBox.box_id}
+                  autoCapitalize="characters"
+                  onChange={(e) => {
+                    e.target.value = e.target.value.toUpperCase();
+                  }}
                   onBlur={(e) => renameBox(selectedBox, e.target.value)}
                   className="h-12 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-2xl font-semibold text-white outline-none focus:border-white/30"
                 />
@@ -544,7 +548,8 @@ export default function MovingPage() {
                     <span className="mb-1 block text-xs font-semibold text-neutral-400">Box ID</span>
                     <input
                       value={newBoxId}
-                      onChange={(e) => setNewBoxId(e.target.value)}
+                      autoCapitalize="characters"
+                      onChange={(e) => setNewBoxId(e.target.value.toUpperCase())}
                       className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[16px] text-white outline-none focus:border-white/30"
                     />
                   </label>
