@@ -84,6 +84,28 @@ function buildWeightedIndexData(dailyRows: DailyRow[], getValue: (row: DailyRow)
   return result;
 }
 
+function buildRegrowthIndexData(dailyRows: DailyRow[], getValue: (row: DailyRow) => number): IndexPoint[] {
+  // Excel formula: current day plus 79 prior days at full weight, then 33 older days fade by 0.03/day.
+  const chronological = [...dailyRows].reverse();
+  const fullWeightDays = 80;
+  const fadeDays = 33;
+  const windowDays = fullWeightDays + fadeDays;
+  if (chronological.length < windowDays) return [];
+
+  const result: IndexPoint[] = [];
+
+  for (let i = windowDays - 1; i < chronological.length; i++) {
+    let sum = 0;
+    for (let j = 0; j < windowDays; j++) {
+      const weight = j < fullWeightDays ? 1 : 1 - (j - fullWeightDays + 1) * 0.03;
+      sum += getValue(chronological[i - j]) * weight;
+    }
+    result.push({ date: chronological[i].date, index: sum });
+  }
+
+  return result;
+}
+
 export default function Home() {
   const [userId, setUserId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "idle" | "saving" | "error">("loading");
@@ -102,6 +124,8 @@ export default function Home() {
   const t1IndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t1), [dailyRows]);
   const t2IndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t2), [dailyRows]);
   const combinedIndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t1 * 2 + row.t2), [dailyRows]);
+  const t1RegrowthIndexData = useMemo(() => buildRegrowthIndexData(dailyRows, (row) => row.t1), [dailyRows]);
+  const t2RegrowthIndexData = useMemo(() => buildRegrowthIndexData(dailyRows, (row) => row.t2), [dailyRows]);
 
   // Keep "today" updated (Pacific midnight boundary)
   useEffect(() => {
@@ -499,6 +523,30 @@ export default function Home() {
             <TrichIndexChart data={combinedIndexData} />
           </section>
         )}
+
+        {t1RegrowthIndexData.length >= 2 && (
+          <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-xs text-white/60">Regrowth Index: T1</div>
+              <div className="text-xs text-white/50">
+                Current: {t1RegrowthIndexData[t1RegrowthIndexData.length - 1].index.toFixed(1)}
+              </div>
+            </div>
+            <TrichIndexChart data={t1RegrowthIndexData} />
+          </section>
+        )}
+
+        {t2RegrowthIndexData.length >= 2 && (
+          <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-xs text-white/60">Regrowth Index: T2</div>
+              <div className="text-xs text-white/50">
+                Current: {t2RegrowthIndexData[t2RegrowthIndexData.length - 1].index.toFixed(1)}
+              </div>
+            </div>
+            <TrichIndexChart data={t2RegrowthIndexData} />
+          </section>
+        )}
       </div>
     </main>
   );
@@ -508,11 +556,9 @@ function TrichIndexChart({ data }: { data: IndexPoint[] }) {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const indices = data.map((d) => d.index);
-  const minIdx = Math.min(...indices);
   const maxIdx = Math.max(...indices);
-  const spread = Math.max(1, maxIdx - minIdx);
-  const yMin = Math.max(0, minIdx - spread * 0.1);
-  const yMax = maxIdx + spread * 0.1;
+  const yMin = 0;
+  const yMax = Math.max(1, maxIdx * 1.1);
 
   const n = data.length;
 

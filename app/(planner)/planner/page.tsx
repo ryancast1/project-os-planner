@@ -787,7 +787,6 @@ function ContentRow({
   itemId,
   contentType,
   onEdit,
-  onDelete,
 }: {
   title: string;
   isDone: boolean;
@@ -811,26 +810,19 @@ function ContentRow({
   onDelete?: () => void;
 }) {
   const [showMove, setShowMove] = useState(false);
-  const [showContextMenu, setShowContextMenu] = useState(false);
-  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const hasContextMenu = onEdit || onDelete;
-
-  // Context menu handlers
   const handleContextMenu = (e: React.MouseEvent) => {
-    if (!hasContextMenu) return;
+    if (!onEdit) return;
     e.preventDefault();
-    setContextMenuPos({ x: e.clientX, y: e.clientY });
-    setShowContextMenu(true);
+    onEdit();
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (!hasContextMenu) return;
-    const touch = e.touches[0];
+    if (!onEdit) return;
     longPressTimer.current = setTimeout(() => {
-      setContextMenuPos({ x: touch.clientX, y: touch.clientY });
-      setShowContextMenu(true);
+      longPressTimer.current = null;
+      onEdit();
     }, 500);
   };
 
@@ -847,14 +839,6 @@ function ContentRow({
       longPressTimer.current = null;
     }
   };
-
-  // Close context menu when clicking outside
-  useEffect(() => {
-    if (!showContextMenu) return;
-    const handleClick = () => setShowContextMenu(false);
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
-  }, [showContextMenu]);
 
   return (
     <div
@@ -918,38 +902,6 @@ function ContentRow({
           <DragHandle className={compact ? "ml-1" : "ml-2"} onTouchDragStart={onTouchDragStart} />
         )}
       </RowShell>
-
-      {/* Context menu */}
-      {showContextMenu && hasContextMenu && (
-        <div
-          className="fixed z-[100] bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl py-1 min-w-[120px]"
-          style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {onEdit && (
-            <button
-              onClick={() => {
-                setShowContextMenu(false);
-                onEdit();
-              }}
-              className="w-full px-4 py-2 text-left text-sm text-neutral-200 hover:bg-neutral-700"
-            >
-              Edit
-            </button>
-          )}
-          {onDelete && (
-            <button
-              onClick={() => {
-                setShowContextMenu(false);
-                onDelete();
-              }}
-              className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-neutral-700"
-            >
-              Delete
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -961,7 +913,6 @@ function ContentTabItem({
   onSchedule,
   onToggleDone,
   onEdit,
-  onDelete,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -987,8 +938,6 @@ function ContentTabItem({
   dropPosition?: "above" | "below" | null;
 }) {
   const [showDropdown, setShowDropdown] = useState(false);
-  const [showContextMenu, setShowContextMenu] = useState(false);
-  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -1011,18 +960,15 @@ function ContentTabItem({
     return "none";
   }, [item.scheduled_for, item.window_kind, item.window_start, moveTargets]);
 
-  // Context menu handlers
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    setContextMenuPos({ x: e.clientX, y: e.clientY });
-    setShowContextMenu(true);
+    onEdit();
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
     longPressTimer.current = setTimeout(() => {
-      setContextMenuPos({ x: touch.clientX, y: touch.clientY });
-      setShowContextMenu(true);
+      longPressTimer.current = null;
+      onEdit();
     }, 500);
   };
 
@@ -1039,14 +985,6 @@ function ContentTabItem({
       longPressTimer.current = null;
     }
   };
-
-  // Close context menu when clicking outside
-  useEffect(() => {
-    if (!showContextMenu) return;
-    const handleClick = () => setShowContextMenu(false);
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
-  }, [showContextMenu]);
 
   return (
     <div
@@ -1127,33 +1065,6 @@ function ContentTabItem({
             }}
             moveTargets={moveTargets}
           />
-        </div>
-      )}
-      {/* Context menu */}
-      {showContextMenu && (
-        <div
-          className="fixed z-[100] bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl py-1 min-w-[120px]"
-          style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => {
-              setShowContextMenu(false);
-              onEdit();
-            }}
-            className="w-full px-4 py-2 text-left text-sm text-neutral-200 hover:bg-neutral-700"
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => {
-              setShowContextMenu(false);
-              onDelete();
-            }}
-            className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-neutral-700"
-          >
-            Delete
-          </button>
         </div>
       )}
     </div>
@@ -3384,6 +3295,7 @@ const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
   });
 
   const [contentDraft, setContentDraft] = useState("");
+  const [contentDraftOngoing, setContentDraftOngoing] = useState(false);
   const [editingContentItem, setEditingContentItem] = useState<ContentItemRow | null>(null);
   const [contentDragId, setContentDragId] = useState<string | null>(null);
   const [contentDropTargetId, setContentDropTargetId] = useState<string | null>(null);
@@ -4860,7 +4772,7 @@ const { data, error } = await supabase
         title,
         notes: null,
         category: contentTab,
-        is_ongoing: false,
+        is_ongoing: contentDraftOngoing,
         status: "active",
         scheduled_for: null,
         window_kind: null,
@@ -4878,6 +4790,7 @@ const { data, error } = await supabase
 
     if (data) setContentItems((p) => [data as ContentItemRow, ...p]);
     setContentDraft("");
+    setContentDraftOngoing(false);
   }
 
   // Toggle a scheduled one-off content item done (on day card)
@@ -5911,6 +5824,21 @@ const { error } = await supabase
                           placeholder="Add…"
                           className="h-10 w-full flex-1 rounded-xl border border-neutral-800 bg-neutral-950 px-3 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                         />
+                        <button
+                          type="button"
+                          onClick={() => setContentDraftOngoing((v) => !v)}
+                          className={clsx(
+                            "grid h-10 w-10 shrink-0 place-items-center rounded-xl border active:scale-[0.99]",
+                            contentDraftOngoing
+                              ? "border-emerald-400/70 bg-emerald-300 text-neutral-900"
+                              : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                          )}
+                          aria-label="Ongoing"
+                          aria-pressed={contentDraftOngoing}
+                          title="Ongoing"
+                        >
+                          ↻
+                        </button>
                         <button
                           type="button"
                           onClick={addNewContentItem}
@@ -7363,7 +7291,23 @@ const { error } = await supabase
             onClick={() => setEditingContentItem(null)}
           />
           <div className="relative w-full max-w-md rounded-2xl border border-neutral-700 bg-neutral-950 p-4 shadow-2xl">
-            <div className="text-lg font-semibold mb-4">Edit Content Item</div>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="text-lg font-semibold">Edit Content Item</div>
+              <button
+                type="button"
+                onClick={() => {
+                  updateContentItem(editingContentItem.id, {
+                    title: editingContentItem.title,
+                    notes: editingContentItem.notes,
+                    is_ongoing: editingContentItem.is_ongoing,
+                  });
+                  setEditingContentItem(null);
+                }}
+                className="rounded-lg border border-neutral-800 bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-900 active:scale-[0.99]"
+              >
+                Save
+              </button>
+            </div>
 
             <label className="block text-xs text-neutral-400 mb-1">Title</label>
             <input
@@ -7403,16 +7347,13 @@ const { error } = await supabase
               <button
                 type="button"
                 onClick={() => {
-                  updateContentItem(editingContentItem.id, {
-                    title: editingContentItem.title,
-                    notes: editingContentItem.notes,
-                    is_ongoing: editingContentItem.is_ongoing,
-                  });
+                  if (!confirm("Delete this content item?")) return;
+                  deleteContentItem(editingContentItem.id);
                   setEditingContentItem(null);
                 }}
-                className="h-11 flex-1 rounded-xl bg-white text-black font-semibold hover:bg-neutral-100 transition"
+                className="h-11 flex-1 rounded-xl border border-red-900/60 bg-red-950/30 text-red-200 font-semibold hover:bg-red-950/50 transition"
               >
-                Save
+                Delete
               </button>
             </div>
           </div>
