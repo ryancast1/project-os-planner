@@ -21,7 +21,7 @@ type TableConfig = {
   defaultSort: { column: string; desc: boolean };
 };
 
-// Table configurations for all 18 tables
+// Table configurations
 const TABLE_CONFIG: Record<string, TableConfig> = {
   // Workout System
   workout_sessions: {
@@ -54,6 +54,26 @@ const TABLE_CONFIG: Record<string, TableConfig> = {
       { name: "user_id", type: "text" },
       { name: "planned_on", type: "date" },
       { name: "workout_slug", type: "text" },
+    ],
+  },
+
+  // Running System
+  running_runs: {
+    label: "Runs",
+    primaryKey: "id",
+    defaultSort: { column: "run_date", desc: true },
+    columns: [
+      { name: "id", type: "text", readonly: true },
+      { name: "user_id", type: "text" },
+      { name: "run_date", type: "date" },
+      { name: "duration_seconds", type: "number" },
+      { name: "distance", type: "number" },
+      { name: "distance_unit", type: "select", options: ["km", "mi"] },
+      { name: "temperature_f", type: "number" },
+      { name: "notes", type: "text" },
+      { name: "is_east_river_3k", type: "boolean" },
+      { name: "created_at", type: "datetime", readonly: true },
+      { name: "updated_at", type: "datetime", readonly: true },
     ],
   },
 
