@@ -5837,7 +5837,7 @@ const { error } = await supabase
                           aria-pressed={contentDraftOngoing}
                           title="Ongoing"
                         >
-                          ↻
+                          <span className="rotate-90">↻</span>
                         </button>
                         <button
                           type="button"
