@@ -5556,6 +5556,7 @@ const { error } = await supabase
                             onPointerDown={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
+                              setDrawerType(k as ItemType);
                             }}
                             onClick={() => setDrawerType(k as ItemType)}
                             className={clsx(
@@ -6064,6 +6065,8 @@ const { error } = await supabase
                     onPointerDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
+                      ensureDayDraft(todayIso);
+                      setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
                     }}
                     onClick={() => {
                       ensureDayDraft(todayIso);
@@ -6414,6 +6417,8 @@ const { error } = await supabase
                           onPointerDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            ensureDayDraft(tomorrowIso);
+                            setDraftTypeByDay((p) => ({ ...p, [tomorrowIso]: k as ItemType }));
                           }}
                           onClick={() => {
                             ensureDayDraft(tomorrowIso);
@@ -6773,6 +6778,8 @@ const { error } = await supabase
                               onPointerDown={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
+                                ensureDayDraft(iso);
+                                setDraftTypeByDay((p) => ({ ...p, [iso]: k as ItemType }));
                               }}
                               onClick={() => {
                                 ensureDayDraft(iso);

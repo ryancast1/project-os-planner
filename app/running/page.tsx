@@ -52,10 +52,10 @@ function BenchmarkChart({ runs }: { runs: Run[] }) {
     return <div className="py-16 text-center text-sm text-neutral-500">Log an East River 3K to start the chart.</div>;
   }
 
-  const width = 720;
-  const height = 280;
-  const left = 58;
-  const right = 20;
+  const width = 360;
+  const height = 240;
+  const left = 44;
+  const right = 12;
   const top = 24;
   const bottom = 48;
   const values = points.map((run) => run.duration_seconds);
@@ -72,8 +72,8 @@ function BenchmarkChart({ runs }: { runs: Run[] }) {
   const ticks = [max, Math.round((max + min) / 2), min];
 
   return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[620px] w-full" role="img" aria-label="East River 3K times over time">
+    <div className="w-full overflow-hidden">
+      <svg viewBox={`0 0 ${width} ${height}`} className="block h-auto w-full" role="img" aria-label="East River 3K times over time">
         {ticks.map((tick) => (
           <g key={tick}>
             <line x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} stroke="#262626" strokeWidth="1" />
@@ -86,9 +86,17 @@ function BenchmarkChart({ runs }: { runs: Run[] }) {
         {points.map((run, index) => (
           <g key={run.id}>
             <circle cx={x(index)} cy={y(run.duration_seconds)} r="5" fill="#34d399" />
-            <text x={x(index)} y={height - 18} textAnchor="middle" fill="#a3a3a3" fontSize="11">
-              {new Date(`${run.run_date}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-            </text>
+            {index === 0 || index === points.length - 1 ? (
+              <text
+                x={x(index)}
+                y={height - 18}
+                textAnchor={points.length === 1 ? "middle" : index === 0 ? "start" : "end"}
+                fill="#a3a3a3"
+                fontSize="11"
+              >
+                {new Date(`${run.run_date}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+              </text>
+            ) : null}
           </g>
         ))}
       </svg>

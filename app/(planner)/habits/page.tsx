@@ -163,6 +163,7 @@ export default function HabitsPage() {
   const [gridLoading, setGridLoading] = useState(false);
   const [doneByDate, setDoneByDate] = useState<Record<string, Record<string, true>>>({});
   const [gymDoneByDate, setGymDoneByDate] = useState<Record<string, true>>({});
+  const [runDoneByDate, setRunDoneByDate] = useState<Record<string, true>>({});
   const [t2ZeroByDate, setT2ZeroByDate] = useState<Record<string, true>>({});
 
   // Add bar
@@ -207,6 +208,7 @@ export default function HabitsPage() {
       if (activeHabits.length === 0) {
         setDoneByDate({});
         setGymDoneByDate({});
+        setRunDoneByDate({});
         setT2ZeroByDate({});
         return;
       }
@@ -232,7 +234,14 @@ export default function HabitsPage() {
         .gte("performed_on", START_ISO)
         .lte("performed_on", todayIso);
 
-      // 3) trich_events for T2 column - paginate so older days do not disappear past the row cap
+      // 3) running_runs for RUN column (best-effort)
+      const runsRes = await supabase
+        .from("running_runs")
+        .select("run_date")
+        .gte("run_date", START_ISO)
+        .lte("run_date", todayIso);
+
+      // 4) trich_events for T2 column - paginate so older days do not disappear past the row cap
       const authRes = await supabase.auth.getUser();
       const trichRes = authRes.error || !authRes.data.user?.id
         ? { data: null, error: authRes.error ?? new Error("Not logged in") }
@@ -265,6 +274,11 @@ export default function HabitsPage() {
         // don't fail the whole grid for this
       }
 
+      if (runsRes.error) {
+        console.warn(runsRes.error);
+        // don't fail the whole grid for this
+      }
+
       const nextDoneByDate: Record<string, Record<string, true>> = {};
       for (const r of (logsRes.data ?? []) as any[]) {
         const date = typeof r.done_on === "string" ? r.done_on : null;
@@ -281,6 +295,16 @@ export default function HabitsPage() {
           if (!iso) continue;
           if (iso < START_ISO || iso > todayIso) continue;
           nextGymDone[iso] = true;
+        }
+      }
+
+      const nextRunDone: Record<string, true> = {};
+      if (!runsRes.error) {
+        for (const r of (runsRes.data ?? []) as any[]) {
+          const iso = typeof r.run_date === "string" ? r.run_date : null;
+          if (!iso) continue;
+          if (iso < START_ISO || iso > todayIso) continue;
+          nextRunDone[iso] = true;
         }
       }
 
@@ -312,6 +336,7 @@ export default function HabitsPage() {
 
       setDoneByDate(nextDoneByDate);
       setGymDoneByDate(nextGymDone);
+      setRunDoneByDate(nextRunDone);
       setT2ZeroByDate(nextT2Zero);
       setGridLoading(false);
     })();
@@ -611,20 +636,33 @@ export default function HabitsPage() {
                 <div
                   className="grid gap-0"
                   style={{
-                    gridTemplateColumns: `56px 28px repeat(${activeHabits.length}, 28px)`,
+                    gridTemplateColumns: `56px 28px repeat(${activeHabits.length + (gymHabitId ? 1 : 0)}, 28px)`,
                   }}
                 >
                   {/* Header */}
                   <div className="text-[11px] font-semibold text-neutral-400">Date</div>
                   <div className="text-center text-[11px] font-semibold text-neutral-400">T2</div>
-                  {activeHabits.map((h) => (
-                    <div
-                      key={h.id}
-                      className="text-center text-[11px] font-semibold text-neutral-400"
-                    >
-                      {(h.short_label ?? "").toUpperCase() || clampLabel(h.name)}
-                    </div>
-                  ))}
+                  {activeHabits.flatMap((h) => {
+                    const isGym = gymHabitId && h.id === gymHabitId;
+                    return [
+                      <div
+                        key={h.id}
+                        className="text-center text-[11px] font-semibold text-neutral-400"
+                      >
+                        {(h.short_label ?? "").toUpperCase() || clampLabel(h.name)}
+                      </div>,
+                      ...(isGym
+                        ? [
+                            <div
+                              key="run-header"
+                              className="text-center text-[11px] font-semibold text-neutral-400"
+                            >
+                              RUN
+                            </div>,
+                          ]
+                        : []),
+                    ];
+                  })}
 
                   {/* Rows */}
                   {dateRows.map((iso) => {
@@ -651,11 +689,11 @@ export default function HabitsPage() {
                           )}
                         />
 
-                        {activeHabits.map((h) => {
+                        {activeHabits.flatMap((h) => {
                           const isGym = gymHabitId && h.id === gymHabitId;
                           const done = isGym ? !!gymDoneByDate[iso] : !!doneByDate[iso]?.[h.id];
 
-                          return (
+                          return [
                             <div
                               key={h.id + iso}
                               className={clsx(
@@ -665,8 +703,22 @@ export default function HabitsPage() {
                                   ? "border-emerald-200/30 bg-emerald-400/75"
                                   : "border-neutral-800 bg-neutral-950/60"
                               )}
-                            />
-                          );
+                            />,
+                            ...(isGym
+                              ? [
+                                  <div
+                                    key={`run-${iso}`}
+                                    className={clsx(
+                                      "h-7 w-7 rounded-lg border",
+                                      "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
+                                      runDoneByDate[iso]
+                                        ? "border-emerald-200/30 bg-emerald-400/75"
+                                        : "border-neutral-800 bg-neutral-950/60"
+                                    )}
+                                  />,
+                                ]
+                              : []),
+                          ];
                         })}
 
                         {/* Gap between weeks (between Sunday and Monday). Since we're rendering descending,
@@ -675,9 +727,13 @@ export default function HabitsPage() {
                           <>
                             <div className="h-2" />
                             <div className="h-2" /> {/* T2 column gap */}
-                            {activeHabits.map((h) => (
-                              <div key={`gap-${iso}-${h.id}`} className="h-2" />
-                            ))}
+                            {activeHabits.flatMap((h) => {
+                              const isGym = gymHabitId && h.id === gymHabitId;
+                              return [
+                                <div key={`gap-${iso}-${h.id}`} className="h-2" />,
+                                ...(isGym ? [<div key={`gap-${iso}-run`} className="h-2" />] : []),
+                              ];
+                            })}
                           </>
                         ) : null}
                       </div>
