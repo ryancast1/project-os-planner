@@ -8,11 +8,11 @@ export default function HomePage() {
     { href: "/workout-tracker", title: "Gym", icon: "/icons/workout.png" },
     { href: "/running", title: "Running", icon: "/icons/running.png" },
     { href: "/movie-tracker", title: "Movies", icon: "/icons/movie.png" },
-    { href: "/trich", title: "Trich Tracker", icon: "/icons/trich.png" },
     { href: "/packing", title: "Packing", icon: "/icons/packing.png" },
-    { href: "/sick", title: "Sick Log", icon: "/icons/sick.png" },
+    { href: "/vice", title: "Vices", icon: "/icons/vice.png" },
+    { href: "/trich", title: "Trich Tracker", icon: "/icons/trich.png" },
     { href: "/cc", title: "CC", icon: "/icons/cc.png" },
-    { href: "/database", title: "Database", icon: "/icons/database.png" },
+    { href: "/sick", title: "Sick Log", icon: "/icons/sick.png" },
   ];
 
   return (
@@ -46,6 +46,14 @@ export default function HomePage() {
                 </div>
               </Link>
             ))}
+            <Link
+              href="/database"
+              className="col-span-2 flex h-16 w-full items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900 text-base font-semibold text-neutral-100 shadow-sm transition active:scale-[0.99]"
+              aria-label="Database"
+              title="Database"
+            >
+              Database
+            </Link>
           </div>
         </div>
       </div>
