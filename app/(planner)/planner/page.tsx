@@ -3266,6 +3266,7 @@ export default function PlannerPage() {
 
   const [draftByDay, setDraftByDay] = useState<Record<string, Record<ItemType, string>>>({});
   const [draftTypeByDay, setDraftTypeByDay] = useState<Record<string, ItemType>>({});
+  const [activeInlineAddKey, setActiveInlineAddKey] = useState<string | null>(null);
 
   const PARKING_TAB_KEY = "planner.parkingTab";
   const PARKING_OPEN_KEY = "planner.parkingOpen";
@@ -5544,7 +5545,7 @@ const { error } = await supabase
                   <div className="mt-1.5">
                     <div className="mb-2 hidden gap-2 sm:mb-2 sm:gap-2 group-focus-within:flex" />
                     <div className="group">
-                      <div className="mb-2 hidden gap-2 group-focus-within:flex">
+                      <div className={clsx("mb-2 gap-2", activeInlineAddKey === "drawer" ? "flex" : "hidden group-focus-within:flex")}>
                         {([
                           ["task", "Task"],
                           ["plan", "Plan"],
@@ -5556,11 +5557,13 @@ const { error } = await supabase
                             onPointerDown={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
+                              setActiveInlineAddKey("drawer");
                               setDrawerType(k as ItemType);
                             }}
                             onTouchStart={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
+                              setActiveInlineAddKey("drawer");
                               setDrawerType(k as ItemType);
                             }}
                             onClick={() => setDrawerType(k as ItemType)}
@@ -5579,6 +5582,7 @@ const { error } = await supabase
                       <div className="flex gap-2">
                         <input
                           value={drawerDraft}
+                          onFocus={() => setActiveInlineAddKey("drawer")}
                           onChange={(e) => setDrawerDraft(e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
@@ -5586,7 +5590,6 @@ const { error } = await supabase
                               addDrawer();
                             }
                           }}
-                          placeholder="Add…"
                           className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                         />
 
@@ -5827,7 +5830,6 @@ const { error } = await supabase
                               addNewContentItem();
                             }
                           }}
-                          placeholder="Add…"
                           className="h-10 w-full flex-1 rounded-xl border border-neutral-800 bg-neutral-950 px-3 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                         />
                         <button
@@ -6058,7 +6060,7 @@ const { error } = await supabase
 
             {/* Inline add */}
             <div className="mt-3 group">
-              <div className="mb-2 hidden gap-2 group-focus-within:flex">
+              <div className={clsx("mb-2 gap-2", activeInlineAddKey === `day:${todayIso}` ? "flex" : "hidden group-focus-within:flex")}>
                 {([
                   ["task", "Task"],
                   ["plan", "Plan"],
@@ -6070,12 +6072,14 @@ const { error } = await supabase
                     onPointerDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
+                      setActiveInlineAddKey(`day:${todayIso}`);
                       ensureDayDraft(todayIso);
                       setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
                     }}
                     onTouchStart={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
+                      setActiveInlineAddKey(`day:${todayIso}`);
                       ensureDayDraft(todayIso);
                       setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
                     }}
@@ -6098,7 +6102,10 @@ const { error } = await supabase
               <div className="flex gap-2">
                 <input
                   value={draftByDay[todayIso]?.[(draftTypeByDay[todayIso] ?? "task") as ItemType] ?? ""}
-                  onFocus={() => ensureDayDraft(todayIso)}
+                  onFocus={() => {
+                    setActiveInlineAddKey(`day:${todayIso}`);
+                    ensureDayDraft(todayIso);
+                  }}
                   onChange={(e) => {
                     ensureDayDraft(todayIso);
                     const type = (draftTypeByDay[todayIso] ?? "task") as ItemType;
@@ -6113,8 +6120,7 @@ const { error } = await supabase
                       addInline(todayIso);
                     }
                   }}
-                  placeholder="Add…"
-                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                 />
 
                 <button
@@ -6416,7 +6422,7 @@ const { error } = await supabase
 
                   {/* Inline add */}
                   <div className="mt-3 group">
-                    <div className="mb-2 hidden gap-2 group-focus-within:flex">
+                    <div className={clsx("mb-2 gap-2", activeInlineAddKey === `day:${tomorrowIso}` ? "flex" : "hidden group-focus-within:flex")}>
                       {([
                         ["task", "Task"],
                         ["plan", "Plan"],
@@ -6428,12 +6434,14 @@ const { error } = await supabase
                           onPointerDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            setActiveInlineAddKey(`day:${tomorrowIso}`);
                             ensureDayDraft(tomorrowIso);
                             setDraftTypeByDay((p) => ({ ...p, [tomorrowIso]: k as ItemType }));
                           }}
                           onTouchStart={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            setActiveInlineAddKey(`day:${tomorrowIso}`);
                             ensureDayDraft(tomorrowIso);
                             setDraftTypeByDay((p) => ({ ...p, [tomorrowIso]: k as ItemType }));
                           }}
@@ -6456,7 +6464,10 @@ const { error } = await supabase
                     <div className="flex gap-2">
                       <input
                         value={draftByDay[tomorrowIso]?.[(draftTypeByDay[tomorrowIso] ?? "task") as ItemType] ?? ""}
-                        onFocus={() => ensureDayDraft(tomorrowIso)}
+                        onFocus={() => {
+                          setActiveInlineAddKey(`day:${tomorrowIso}`);
+                          ensureDayDraft(tomorrowIso);
+                        }}
                         onChange={(e) => {
                           ensureDayDraft(tomorrowIso);
                           const type = (draftTypeByDay[tomorrowIso] ?? "task") as ItemType;
@@ -6471,7 +6482,6 @@ const { error } = await supabase
                             addInline(tomorrowIso);
                           }
                         }}
-                        placeholder="Add…"
                         className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                       />
 
@@ -6783,7 +6793,7 @@ const { error } = await supabase
                   {isOpen ? (
                     <>
                       <div className="mt-3 group">
-                        <div className="mb-2 hidden gap-2 group-focus-within:flex">
+                        <div className={clsx("mb-2 gap-2", activeInlineAddKey === `day:${iso}` ? "flex" : "hidden group-focus-within:flex")}>
                           {([
                             ["task", "Task"],
                             ["plan", "Plan"],
@@ -6795,12 +6805,14 @@ const { error } = await supabase
                               onPointerDown={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
+                                setActiveInlineAddKey(`day:${iso}`);
                                 ensureDayDraft(iso);
                                 setDraftTypeByDay((p) => ({ ...p, [iso]: k as ItemType }));
                               }}
                               onTouchStart={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
+                                setActiveInlineAddKey(`day:${iso}`);
                                 ensureDayDraft(iso);
                                 setDraftTypeByDay((p) => ({ ...p, [iso]: k as ItemType }));
                               }}
@@ -6823,7 +6835,10 @@ const { error } = await supabase
                         <div className="flex gap-2">
                           <input
                             value={draftByDay[iso]?.[(draftTypeByDay[iso] ?? "task") as ItemType] ?? ""}
-                            onFocus={() => ensureDayDraft(iso)}
+                            onFocus={() => {
+                              setActiveInlineAddKey(`day:${iso}`);
+                              ensureDayDraft(iso);
+                            }}
                             onChange={(e) => {
                               const type = (draftTypeByDay[iso] ?? "task") as ItemType;
                               setDraftByDay((prev) => ({
@@ -6837,7 +6852,6 @@ const { error } = await supabase
                                 addInline(iso);
                               }
                             }}
-                            placeholder="Add…"
                             className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                           />
 
