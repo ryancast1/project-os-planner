@@ -5865,6 +5865,7 @@ const { error } = await supabase
                               addNewContentItem();
                             }
                           }}
+                          placeholder="Add…"
                           className="h-10 w-full flex-1 rounded-xl border border-neutral-800 bg-neutral-950 px-3 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                         />
                         <button
