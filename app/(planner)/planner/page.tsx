@@ -4745,6 +4745,38 @@ const { data, error } = await supabase
     setDrawerDraft("");
   }
 
+  function blurActiveElement() {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  }
+
+  function chooseDrawerDraftType(type: ItemType) {
+    if (activeInlineAddKey === "drawer" && drawerType === type) {
+      setActiveInlineAddKey(null);
+      blurActiveElement();
+      return;
+    }
+
+    setActiveInlineAddKey("drawer");
+    setDrawerType(type);
+  }
+
+  function chooseDayDraftType(iso: string, type: ItemType) {
+    ensureDayDraft(iso);
+    const key = `day:${iso}`;
+    const currentType = draftTypeByDay[iso] ?? "task";
+
+    if (activeInlineAddKey === key && currentType === type) {
+      setActiveInlineAddKey(null);
+      blurActiveElement();
+      return;
+    }
+
+    setActiveInlineAddKey(key);
+    setDraftTypeByDay((p) => ({ ...p, [iso]: type }));
+  }
+
   function makeLocalId() {
     // Prefer UUID when available; fallback to a stable-ish string.
     const anyCrypto = globalThis.crypto as any;
@@ -5557,16 +5589,18 @@ const { error } = await supabase
                             onPointerDown={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              setActiveInlineAddKey("drawer");
-                              setDrawerType(k as ItemType);
+                              if (e.pointerType === "touch") return;
+                              chooseDrawerDraftType(k as ItemType);
                             }}
                             onTouchStart={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              setActiveInlineAddKey("drawer");
-                              setDrawerType(k as ItemType);
+                              chooseDrawerDraftType(k as ItemType);
                             }}
-                            onClick={() => setDrawerType(k as ItemType)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
                             className={clsx(
                               "rounded-xl border px-3 py-1.5 text-xs font-semibold",
                               drawerType === k
@@ -5590,6 +5624,7 @@ const { error } = await supabase
                               addDrawer();
                             }
                           }}
+                          placeholder="Add…"
                           className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                         />
 
@@ -6072,20 +6107,17 @@ const { error } = await supabase
                     onPointerDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setActiveInlineAddKey(`day:${todayIso}`);
-                      ensureDayDraft(todayIso);
-                      setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
+                      if (e.pointerType === "touch") return;
+                      chooseDayDraftType(todayIso, k as ItemType);
                     }}
                     onTouchStart={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setActiveInlineAddKey(`day:${todayIso}`);
-                      ensureDayDraft(todayIso);
-                      setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
+                      chooseDayDraftType(todayIso, k as ItemType);
                     }}
-                    onClick={() => {
-                      ensureDayDraft(todayIso);
-                      setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                     }}
                     className={clsx(
                       "rounded-xl border px-3 py-1.5 text-xs font-semibold",
@@ -6120,6 +6152,7 @@ const { error } = await supabase
                       addInline(todayIso);
                     }
                   }}
+                  placeholder="Add…"
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                 />
 
@@ -6434,20 +6467,17 @@ const { error } = await supabase
                           onPointerDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            setActiveInlineAddKey(`day:${tomorrowIso}`);
-                            ensureDayDraft(tomorrowIso);
-                            setDraftTypeByDay((p) => ({ ...p, [tomorrowIso]: k as ItemType }));
+                            if (e.pointerType === "touch") return;
+                            chooseDayDraftType(tomorrowIso, k as ItemType);
                           }}
                           onTouchStart={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            setActiveInlineAddKey(`day:${tomorrowIso}`);
-                            ensureDayDraft(tomorrowIso);
-                            setDraftTypeByDay((p) => ({ ...p, [tomorrowIso]: k as ItemType }));
+                            chooseDayDraftType(tomorrowIso, k as ItemType);
                           }}
-                          onClick={() => {
-                            ensureDayDraft(tomorrowIso);
-                            setDraftTypeByDay((p) => ({ ...p, [tomorrowIso]: k as ItemType }));
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
                           }}
                           className={clsx(
                             "rounded-xl border px-3 py-1.5 text-xs font-semibold",
@@ -6482,6 +6512,7 @@ const { error } = await supabase
                             addInline(tomorrowIso);
                           }
                         }}
+                        placeholder="Add…"
                         className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                       />
 
@@ -6805,20 +6836,17 @@ const { error } = await supabase
                               onPointerDown={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                setActiveInlineAddKey(`day:${iso}`);
-                                ensureDayDraft(iso);
-                                setDraftTypeByDay((p) => ({ ...p, [iso]: k as ItemType }));
+                                if (e.pointerType === "touch") return;
+                                chooseDayDraftType(iso, k as ItemType);
                               }}
                               onTouchStart={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                setActiveInlineAddKey(`day:${iso}`);
-                                ensureDayDraft(iso);
-                                setDraftTypeByDay((p) => ({ ...p, [iso]: k as ItemType }));
+                                chooseDayDraftType(iso, k as ItemType);
                               }}
-                              onClick={() => {
-                                ensureDayDraft(iso);
-                                setDraftTypeByDay((p) => ({ ...p, [iso]: k as ItemType }));
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
                               }}
                               className={clsx(
                                 "rounded-xl border px-3 py-1.5 text-xs font-semibold",
@@ -6852,6 +6880,7 @@ const { error } = await supabase
                                 addInline(iso);
                               }
                             }}
+                            placeholder="Add…"
                             className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
                           />
 
