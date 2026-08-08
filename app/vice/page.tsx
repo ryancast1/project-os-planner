@@ -6,6 +6,9 @@ import { supabase } from "@/lib/supabaseClient";
 
 const APP_TIME_ZONE = "America/New_York";
 const PAGE_SIZE = 1000;
+const ML_PER_OUNCE = 29.5735;
+
+type AmountUnit = "oz" | "mL";
 
 type WeedHit = { id: string; created_at: string };
 type AlcoholEntry = {
@@ -97,6 +100,7 @@ export default function VicePage() {
   const [weedHits, setWeedHits] = useState<WeedHit[]>([]);
   const [alcoholEntries, setAlcoholEntries] = useState<AlcoholEntry[]>([]);
   const [amountOz, setAmountOz] = useState("");
+  const [amountUnit, setAmountUnit] = useState<AmountUnit>("oz");
   const [abv, setAbv] = useState("");
   const [label, setLabel] = useState("");
   const [loading, setLoading] = useState(true);
@@ -208,18 +212,20 @@ export default function VicePage() {
   async function logAlcohol(event?: FormEvent) {
     event?.preventDefault();
     if (alcoholSaving) return;
-    const ounces = Number(amountOz);
+    const enteredAmount = Number(amountOz);
     const abvPercent = Number(abv);
-    if (!Number.isFinite(ounces) || ounces <= 0 || !Number.isFinite(abvPercent) || abvPercent <= 0 || abvPercent > 100) {
+    if (!Number.isFinite(enteredAmount) || enteredAmount <= 0 || !Number.isFinite(abvPercent) || abvPercent <= 0 || abvPercent > 100) {
       setError("Enter an amount greater than 0 and an ABV from 0 to 100.");
       return;
     }
-    const standardDrinks = ounces * (abvPercent / 100) / 0.6;
+    const ounces = amountUnit === "mL" ? enteredAmount / ML_PER_OUNCE : enteredAmount;
+    const storedOunces = Math.round(ounces * 100) / 100;
+    const standardDrinks = storedOunces * (abvPercent / 100) / 0.6;
     setAlcoholSaving(true);
     setError(null);
     const { data, error: saveError } = await supabase
       .from("alcohol_entries")
-      .insert({ amount_oz: ounces, abv: abvPercent, label: label.trim() || null, standard_drinks: standardDrinks })
+      .insert({ amount_oz: storedOunces, abv: abvPercent, label: label.trim() || null, standard_drinks: standardDrinks })
       .select("id,created_at,amount_oz,abv,label,standard_drinks")
       .single();
     setAlcoholSaving(false);
@@ -261,8 +267,14 @@ export default function VicePage() {
 
         <form id="alcohol-form" onSubmit={logAlcohol} className="mt-4 rounded-3xl border border-neutral-800 bg-neutral-950/40 p-4 sm:p-5">
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs font-semibold text-neutral-400">Amount (oz)
-              <input required type="number" inputMode="decimal" min="0.01" step="0.01" value={amountOz} onChange={(event) => setAmountOz(event.target.value)} className="mt-1.5 block w-full rounded-xl border border-neutral-700 bg-black/40 px-3 py-3 text-base text-neutral-100 outline-none focus:border-neutral-400" />
+            <label className="text-xs font-semibold text-neutral-400">Amount
+              <div className="mt-1.5 flex">
+                <input required type="number" inputMode="decimal" min="0.01" step="0.01" value={amountOz} onChange={(event) => setAmountOz(event.target.value)} className="block min-w-0 flex-1 rounded-l-xl border border-r-0 border-neutral-700 bg-black/40 px-3 py-3 text-base text-neutral-100 outline-none focus:border-neutral-400" />
+                <select value={amountUnit} onChange={(event) => setAmountUnit(event.target.value as AmountUnit)} aria-label="Amount unit" className="rounded-r-xl border border-neutral-700 bg-neutral-900 px-2 text-sm font-semibold text-neutral-100 outline-none focus:border-neutral-400">
+                  <option value="oz">oz</option>
+                  <option value="mL">mL</option>
+                </select>
+              </div>
             </label>
             <label className="text-xs font-semibold text-neutral-400">ABV (%)
               <input required type="number" inputMode="decimal" min="0.01" max="100" step="0.01" value={abv} onChange={(event) => setAbv(event.target.value)} className="mt-1.5 block w-full rounded-xl border border-neutral-700 bg-black/40 px-3 py-3 text-base text-neutral-100 outline-none focus:border-neutral-400" />
@@ -275,7 +287,7 @@ export default function VicePage() {
             <div className="mt-4">
               <div className="text-xs font-semibold text-neutral-500">Recent drinks</div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {recentDrinks.map((drink) => <button key={drink.label} type="button" onClick={() => { setLabel(drink.label ?? ""); setAmountOz(String(Number(drink.amount_oz))); setAbv(String(Number(drink.abv))); }} className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-neutral-300 active:scale-[0.98]">{drink.label}</button>)}
+                {recentDrinks.map((drink) => <button key={drink.label} type="button" onClick={() => { setLabel(drink.label ?? ""); setAmountOz(String(Number(drink.amount_oz))); setAmountUnit("oz"); setAbv(String(Number(drink.abv))); }} className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-neutral-300 active:scale-[0.98]">{drink.label}</button>)}
               </div>
             </div>
           ) : null}
