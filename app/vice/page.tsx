@@ -10,10 +10,12 @@ const ML_PER_OUNCE = 29.5735;
 
 type AmountUnit = "oz" | "mL";
 
-type WeedHit = { id: string; created_at: string };
+type WeedHit = { id: string; created_at: string; occurred_on: string; occurred_at: string };
 type AlcoholEntry = {
   id: string;
   created_at: string;
+  occurred_on: string;
+  occurred_at: string;
   amount_oz: number;
   abv: number;
   label: string | null;
@@ -30,10 +32,10 @@ function dateKey(date: Date) {
   }).format(date);
 }
 
-function chartDatesFor(timestamps: string[]) {
-  if (timestamps.length === 0) return [dateKey(new Date())];
+function chartDatesFor(datesWithData: string[]) {
+  if (datesWithData.length === 0) return [dateKey(new Date())];
 
-  const keys = timestamps.map((timestamp) => dateKey(new Date(timestamp))).sort();
+  const keys = [...datesWithData].sort();
   const first = keys[0];
   const last = keys[keys.length - 1];
   const dates: string[] = [];
@@ -117,7 +119,7 @@ export default function VicePage() {
         (async () => {
           const rows: WeedHit[] = [];
           for (let from = 0; ; from += PAGE_SIZE) {
-            const { data, error: queryError } = await supabase.from("weed_hits").select("id,created_at").order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
+            const { data, error: queryError } = await supabase.from("weed_hits").select("id,created_at,occurred_on,occurred_at").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
             if (queryError) throw queryError;
             const page = (data ?? []) as WeedHit[];
             rows.push(...page);
@@ -128,7 +130,7 @@ export default function VicePage() {
         (async () => {
           const rows: AlcoholEntry[] = [];
           for (let from = 0; ; from += PAGE_SIZE) {
-            const { data, error: queryError } = await supabase.from("alcohol_entries").select("id,created_at,amount_oz,abv,label,standard_drinks").order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
+            const { data, error: queryError } = await supabase.from("alcohol_entries").select("id,created_at,occurred_on,occurred_at,amount_oz,abv,label,standard_drinks").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
             if (queryError) throw queryError;
             const page = (data ?? []) as AlcoholEntry[];
             rows.push(...page);
@@ -169,12 +171,12 @@ export default function VicePage() {
     return result;
   }, [alcoholEntries]);
 
-  const weedDates = useMemo(() => chartDatesFor(weedHits.map((hit) => hit.created_at)), [weedHits]);
-  const alcoholDates = useMemo(() => chartDatesFor(alcoholEntries.map((entry) => entry.created_at)), [alcoholEntries]);
+  const weedDates = useMemo(() => chartDatesFor(weedHits.map((hit) => hit.occurred_on)), [weedHits]);
+  const alcoholDates = useMemo(() => chartDatesFor(alcoholEntries.map((entry) => entry.occurred_on)), [alcoholEntries]);
   const weedChart = useMemo(() => {
     const totals = new Map(weedDates.map((date) => [date, 0]));
     weedHits.forEach((hit) => {
-      const day = dateKey(new Date(hit.created_at));
+      const day = hit.occurred_on;
       if (totals.has(day)) totals.set(day, (totals.get(day) ?? 0) + 1);
     });
     return weedDates.map((date) => ({ date, value: totals.get(date) ?? 0 }));
@@ -182,16 +184,16 @@ export default function VicePage() {
   const alcoholChart = useMemo(() => {
     const totals = new Map(alcoholDates.map((date) => [date, 0]));
     alcoholEntries.forEach((entry) => {
-      const day = dateKey(new Date(entry.created_at));
+      const day = entry.occurred_on;
       if (totals.has(day)) totals.set(day, (totals.get(day) ?? 0) + Number(entry.standard_drinks));
     });
     return alcoholDates.map((date) => ({ date, value: totals.get(date) ?? 0 }));
   }, [alcoholDates, alcoholEntries]);
 
   const today = dateKey(new Date());
-  const todayWeedHits = weedHits.filter((hit) => dateKey(new Date(hit.created_at)) === today).length;
+  const todayWeedHits = weedHits.filter((hit) => hit.occurred_on === today).length;
   const todayStandardDrinks = alcoholEntries.reduce(
-    (total, entry) => dateKey(new Date(entry.created_at)) === today ? total + Number(entry.standard_drinks) : total,
+    (total, entry) => entry.occurred_on === today ? total + Number(entry.standard_drinks) : total,
     0
   );
 
@@ -199,7 +201,7 @@ export default function VicePage() {
     if (weedSaving) return;
     setWeedSaving(true);
     setError(null);
-    const { data, error: saveError } = await supabase.from("weed_hits").insert({}).select("id,created_at").single();
+    const { data, error: saveError } = await supabase.from("weed_hits").insert({}).select("id,created_at,occurred_on,occurred_at").single();
     setWeedSaving(false);
     if (saveError) {
       setError(saveError.message);
@@ -226,7 +228,7 @@ export default function VicePage() {
     const { data, error: saveError } = await supabase
       .from("alcohol_entries")
       .insert({ amount_oz: storedOunces, abv: abvPercent, label: label.trim() || null, standard_drinks: standardDrinks })
-      .select("id,created_at,amount_oz,abv,label,standard_drinks")
+      .select("id,created_at,occurred_on,occurred_at,amount_oz,abv,label,standard_drinks")
       .single();
     setAlcoholSaving(false);
     if (saveError) {
