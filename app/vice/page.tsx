@@ -32,6 +32,27 @@ function dateKey(date: Date) {
   }).format(date);
 }
 
+function previousISODate(iso: string) {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function trackingDate(occurredOn: string, occurredAt: string) {
+  return occurredAt < "03:00:00" ? previousISODate(occurredOn) : occurredOn;
+}
+
+function currentTrackingDate() {
+  const now = new Date();
+  const calendarDate = dateKey(now);
+  const hour = Number(new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).format(now));
+  return hour < 3 ? previousISODate(calendarDate) : calendarDate;
+}
+
 function chartDatesFor(datesWithData: string[]) {
   if (datesWithData.length === 0) return [dateKey(new Date())];
 
@@ -171,12 +192,12 @@ export default function VicePage() {
     return result;
   }, [alcoholEntries]);
 
-  const weedDates = useMemo(() => chartDatesFor(weedHits.map((hit) => hit.occurred_on)), [weedHits]);
-  const alcoholDates = useMemo(() => chartDatesFor(alcoholEntries.map((entry) => entry.occurred_on)), [alcoholEntries]);
+  const weedDates = useMemo(() => chartDatesFor(weedHits.map((hit) => trackingDate(hit.occurred_on, hit.occurred_at))), [weedHits]);
+  const alcoholDates = useMemo(() => chartDatesFor(alcoholEntries.map((entry) => trackingDate(entry.occurred_on, entry.occurred_at))), [alcoholEntries]);
   const weedChart = useMemo(() => {
     const totals = new Map(weedDates.map((date) => [date, 0]));
     weedHits.forEach((hit) => {
-      const day = hit.occurred_on;
+      const day = trackingDate(hit.occurred_on, hit.occurred_at);
       if (totals.has(day)) totals.set(day, (totals.get(day) ?? 0) + 1);
     });
     return weedDates.map((date) => ({ date, value: totals.get(date) ?? 0 }));
@@ -184,16 +205,16 @@ export default function VicePage() {
   const alcoholChart = useMemo(() => {
     const totals = new Map(alcoholDates.map((date) => [date, 0]));
     alcoholEntries.forEach((entry) => {
-      const day = entry.occurred_on;
+      const day = trackingDate(entry.occurred_on, entry.occurred_at);
       if (totals.has(day)) totals.set(day, (totals.get(day) ?? 0) + Number(entry.standard_drinks));
     });
     return alcoholDates.map((date) => ({ date, value: totals.get(date) ?? 0 }));
   }, [alcoholDates, alcoholEntries]);
 
-  const today = dateKey(new Date());
-  const todayWeedHits = weedHits.filter((hit) => hit.occurred_on === today).length;
+  const today = currentTrackingDate();
+  const todayWeedHits = weedHits.filter((hit) => trackingDate(hit.occurred_on, hit.occurred_at) === today).length;
   const todayStandardDrinks = alcoholEntries.reduce(
-    (total, entry) => entry.occurred_on === today ? total + Number(entry.standard_drinks) : total,
+    (total, entry) => trackingDate(entry.occurred_on, entry.occurred_at) === today ? total + Number(entry.standard_drinks) : total,
     0
   );
 

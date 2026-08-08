@@ -5558,6 +5558,11 @@ const { error } = await supabase
                               e.stopPropagation();
                               setDrawerType(k as ItemType);
                             }}
+                            onTouchStart={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDrawerType(k as ItemType);
+                            }}
                             onClick={() => setDrawerType(k as ItemType)}
                             className={clsx(
                               "rounded-xl border px-3 py-1.5 text-xs font-semibold",
@@ -6068,6 +6073,12 @@ const { error } = await supabase
                       ensureDayDraft(todayIso);
                       setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
                     }}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      ensureDayDraft(todayIso);
+                      setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
+                    }}
                     onClick={() => {
                       ensureDayDraft(todayIso);
                       setDraftTypeByDay((p) => ({ ...p, [todayIso]: k as ItemType }));
@@ -6415,6 +6426,12 @@ const { error } = await supabase
                           key={k}
                           type="button"
                           onPointerDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            ensureDayDraft(tomorrowIso);
+                            setDraftTypeByDay((p) => ({ ...p, [tomorrowIso]: k as ItemType }));
+                          }}
+                          onTouchStart={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             ensureDayDraft(tomorrowIso);
@@ -6776,6 +6793,12 @@ const { error } = await supabase
                               key={k}
                               type="button"
                               onPointerDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                ensureDayDraft(iso);
+                                setDraftTypeByDay((p) => ({ ...p, [iso]: k as ItemType }));
+                              }}
+                              onTouchStart={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 ensureDayDraft(iso);
