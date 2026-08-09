@@ -54,11 +54,11 @@ function currentTrackingDate() {
 }
 
 function chartDatesFor(datesWithData: string[]) {
-  if (datesWithData.length === 0) return [dateKey(new Date())];
+  if (datesWithData.length === 0) return [currentTrackingDate()];
 
   const keys = [...datesWithData].sort();
   const first = keys[0];
-  const last = keys[keys.length - 1];
+  const last = keys[keys.length - 1] > currentTrackingDate() ? keys[keys.length - 1] : currentTrackingDate();
   const dates: string[] = [];
   const cursor = new Date(`${first}T12:00:00Z`);
   while (cursor.toISOString().slice(0, 10) <= last) {
@@ -66,6 +66,43 @@ function chartDatesFor(datesWithData: string[]) {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return dates;
+}
+
+function nycLocalTimeToTimestamp(occurredOn: string, occurredAt: string) {
+  const [year, month, day] = occurredOn.split("-").map(Number);
+  const [hour, minute, second] = occurredAt.split(":").map(Number);
+  const targetAsUTC = Date.UTC(year, month - 1, day, hour, minute, second || 0);
+  let guess = targetAsUTC;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: APP_TIME_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(guess));
+    const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+    const renderedAsUTC = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"), value("second"));
+    guess += targetAsUTC - renderedAsUTC;
+  }
+
+  return guess;
+}
+
+function formatElapsed(milliseconds: number) {
+  const totalMinutes = Math.max(0, Math.floor(milliseconds / 60_000));
+  const days = Math.floor(totalMinutes / 1_440);
+  const hours = Math.floor((totalMinutes % 1_440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days} ${days === 1 ? "day" : "days"}`);
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
+  if (minutes > 0 || parts.length === 0) parts.push(`${minutes} ${minutes === 1 ? "minute" : "minutes"}`);
+  return parts.join(", ");
 }
 
 function shortDate(iso: string) {
@@ -131,6 +168,7 @@ export default function VicePage() {
   const [alcoholSaving, setAlcoholSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [pageNow, setPageNow] = useState(() => Date.now());
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -217,6 +255,12 @@ export default function VicePage() {
     (total, entry) => trackingDate(entry.occurred_on, entry.occurred_at) === today ? total + Number(entry.standard_drinks) : total,
     0
   );
+  const timeSinceLastHit = weedHits.length > 0
+    ? formatElapsed(pageNow - nycLocalTimeToTimestamp(weedHits[0].occurred_on, weedHits[0].occurred_at))
+    : null;
+  const timeSinceLastDrink = alcoholEntries.length > 0
+    ? formatElapsed(pageNow - nycLocalTimeToTimestamp(alcoholEntries[0].occurred_on, alcoholEntries[0].occurred_at))
+    : null;
 
   async function logWeedHit() {
     if (weedSaving) return;
@@ -229,6 +273,7 @@ export default function VicePage() {
       return;
     }
     setWeedHits((current) => [data as WeedHit, ...current]);
+    setPageNow(Date.now());
     setConfirmation("Weed hit logged");
   }
 
@@ -260,6 +305,7 @@ export default function VicePage() {
     setAmountOz("");
     setAbv("");
     setLabel("");
+    setPageNow(Date.now());
     setConfirmation(`${standardDrinks.toFixed(2)} standard drinks logged`);
   }
 
@@ -276,12 +322,14 @@ export default function VicePage() {
               {alcoholSaving ? "…" : "A"}
             </button>
             <div className="mt-2 text-center text-sm text-neutral-400"><span className="font-semibold tabular-nums text-neutral-100">{todayStandardDrinks.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> standard drinks today</div>
+            {timeSinceLastDrink ? <div className="mt-1 text-center text-xs tabular-nums text-neutral-500">{timeSinceLastDrink}</div> : null}
           </div>
           <div>
             <button type="button" onClick={logWeedHit} disabled={weedSaving} className="h-28 w-full rounded-3xl bg-white text-5xl font-bold text-neutral-950 shadow-sm transition active:scale-[0.98] disabled:opacity-60" aria-label="Log one weed hit">
               {weedSaving ? "…" : "W"}
             </button>
             <div className="mt-2 text-center text-sm text-neutral-400"><span className="font-semibold tabular-nums text-neutral-100">{todayWeedHits}</span> hits today</div>
+            {timeSinceLastHit ? <div className="mt-1 text-center text-xs tabular-nums text-neutral-500">{timeSinceLastHit}</div> : null}
           </div>
         </div>
 
