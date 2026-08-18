@@ -6048,6 +6048,7 @@ const { error } = await supabase
                 )}
                 {habits.map((h) => {
                   const label = (h.short_label && h.short_label.trim()) ? h.short_label.trim() : h.name.slice(0, 3).toUpperCase();
+                  if (label.toUpperCase() === "W") return null;
                   const isGym = label === "GYM";
                   const done = isGym ? gymDoneToday : habitDoneIds.has(h.id);
 

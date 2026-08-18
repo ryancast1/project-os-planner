@@ -156,6 +156,7 @@ export default function HabitsPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const START_ISO = "2026-01-01";
+  const WEED_AUTOMATION_START_ISO = "2026-08-07";
   const todayIso = useMemo(() => toISODate(new Date()), []);
 
   // Consistency grid
@@ -164,6 +165,8 @@ export default function HabitsPage() {
   const [doneByDate, setDoneByDate] = useState<Record<string, Record<string, true>>>({});
   const [gymDoneByDate, setGymDoneByDate] = useState<Record<string, true>>({});
   const [runDoneByDate, setRunDoneByDate] = useState<Record<string, true>>({});
+  const [weedHitByDate, setWeedHitByDate] = useState<Record<string, true>>({});
+  const [alcoholEntryByDate, setAlcoholEntryByDate] = useState<Record<string, true>>({});
   const [t2ZeroByDate, setT2ZeroByDate] = useState<Record<string, true>>({});
 
   // Add bar
@@ -188,6 +191,12 @@ export default function HabitsPage() {
     return h?.id ?? null;
   }, [activeHabits]);
 
+  const weedHabitId = useMemo(() => {
+    const h = activeHabits.find((x) => (x.short_label ?? "").toUpperCase() === "W") ??
+      activeHabits.find((x) => /\bweed\b/i.test(x.name));
+    return h?.id ?? null;
+  }, [activeHabits]);
+
   const dateRows = useMemo(() => {
     const out: string[] = [];
     const d = new Date();
@@ -209,6 +218,8 @@ export default function HabitsPage() {
         setDoneByDate({});
         setGymDoneByDate({});
         setRunDoneByDate({});
+        setWeedHitByDate({});
+        setAlcoholEntryByDate({});
         setT2ZeroByDate({});
         return;
       }
@@ -241,7 +252,21 @@ export default function HabitsPage() {
         .gte("run_date", START_ISO)
         .lte("run_date", todayIso);
 
-      // 4) trich_events for T2 column - paginate so older days do not disappear past the row cap
+      // 4) weed_hits for W column from 2026-08-07 onward (best-effort)
+      const weedHitsRes = await supabase
+        .from("weed_hits")
+        .select("occurred_on")
+        .gte("occurred_on", WEED_AUTOMATION_START_ISO)
+        .lte("occurred_on", todayIso);
+
+      // 5) alcohol_entries for A column from 2026-08-07 onward (best-effort)
+      const alcoholEntriesRes = await supabase
+        .from("alcohol_entries")
+        .select("occurred_on")
+        .gte("occurred_on", WEED_AUTOMATION_START_ISO)
+        .lte("occurred_on", todayIso);
+
+      // 6) trich_events for T2 column - paginate so older days do not disappear past the row cap
       const authRes = await supabase.auth.getUser();
       const trichRes = authRes.error || !authRes.data.user?.id
         ? { data: null, error: authRes.error ?? new Error("Not logged in") }
@@ -279,6 +304,16 @@ export default function HabitsPage() {
         // don't fail the whole grid for this
       }
 
+      if (weedHitsRes.error) {
+        console.warn(weedHitsRes.error);
+        // don't fail the whole grid for this
+      }
+
+      if (alcoholEntriesRes.error) {
+        console.warn(alcoholEntriesRes.error);
+        // don't fail the whole grid for this
+      }
+
       const nextDoneByDate: Record<string, Record<string, true>> = {};
       for (const r of (logsRes.data ?? []) as any[]) {
         const date = typeof r.done_on === "string" ? r.done_on : null;
@@ -305,6 +340,26 @@ export default function HabitsPage() {
           if (!iso) continue;
           if (iso < START_ISO || iso > todayIso) continue;
           nextRunDone[iso] = true;
+        }
+      }
+
+      const nextWeedHits: Record<string, true> = {};
+      if (!weedHitsRes.error) {
+        for (const r of (weedHitsRes.data ?? []) as any[]) {
+          const iso = typeof r.occurred_on === "string" ? r.occurred_on : null;
+          if (!iso) continue;
+          if (iso < WEED_AUTOMATION_START_ISO || iso > todayIso) continue;
+          nextWeedHits[iso] = true;
+        }
+      }
+
+      const nextAlcoholEntries: Record<string, true> = {};
+      if (!alcoholEntriesRes.error) {
+        for (const r of (alcoholEntriesRes.data ?? []) as any[]) {
+          const iso = typeof r.occurred_on === "string" ? r.occurred_on : null;
+          if (!iso) continue;
+          if (iso < WEED_AUTOMATION_START_ISO || iso > todayIso) continue;
+          nextAlcoholEntries[iso] = true;
         }
       }
 
@@ -337,6 +392,8 @@ export default function HabitsPage() {
       setDoneByDate(nextDoneByDate);
       setGymDoneByDate(nextGymDone);
       setRunDoneByDate(nextRunDone);
+      setWeedHitByDate(nextWeedHits);
+      setAlcoholEntryByDate(nextAlcoholEntries);
       setT2ZeroByDate(nextT2Zero);
       setGridLoading(false);
     })();
@@ -636,7 +693,7 @@ export default function HabitsPage() {
                 <div
                   className="grid gap-0"
                   style={{
-                    gridTemplateColumns: `56px 28px repeat(${activeHabits.length + (gymHabitId ? 1 : 0)}, 28px)`,
+                    gridTemplateColumns: `56px 28px repeat(${activeHabits.length + (gymHabitId ? 1 : 0) + (weedHabitId ? 1 : 0)}, 28px)`,
                   }}
                 >
                   {/* Header */}
@@ -644,7 +701,18 @@ export default function HabitsPage() {
                   <div className="text-center text-[11px] font-semibold text-neutral-400">T2</div>
                   {activeHabits.flatMap((h) => {
                     const isGym = gymHabitId && h.id === gymHabitId;
+                    const isWeed = weedHabitId && h.id === weedHabitId;
                     return [
+                      ...(isWeed
+                        ? [
+                            <div
+                              key="alcohol-header"
+                              className="text-center text-[11px] font-semibold text-neutral-400"
+                            >
+                              A
+                            </div>,
+                          ]
+                        : []),
                       <div
                         key={h.id}
                         className="text-center text-[11px] font-semibold text-neutral-400"
@@ -691,9 +759,29 @@ export default function HabitsPage() {
 
                         {activeHabits.flatMap((h) => {
                           const isGym = gymHabitId && h.id === gymHabitId;
-                          const done = isGym ? !!gymDoneByDate[iso] : !!doneByDate[iso]?.[h.id];
+                          const isWeed = weedHabitId && h.id === weedHabitId;
+                          const alcoholDone = iso >= WEED_AUTOMATION_START_ISO && !alcoholEntryByDate[iso];
+                          const done = isGym
+                            ? !!gymDoneByDate[iso]
+                            : isWeed && iso >= WEED_AUTOMATION_START_ISO
+                              ? !weedHitByDate[iso]
+                              : !!doneByDate[iso]?.[h.id];
 
                           return [
+                            ...(isWeed
+                              ? [
+                                  <div
+                                    key={`alcohol-${iso}`}
+                                    className={clsx(
+                                      "h-7 w-7 rounded-lg border",
+                                      "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
+                                      alcoholDone
+                                        ? "border-emerald-200/30 bg-emerald-400/75"
+                                        : "border-neutral-800 bg-neutral-950/60"
+                                    )}
+                                  />,
+                                ]
+                              : []),
                             <div
                               key={h.id + iso}
                               className={clsx(
@@ -729,7 +817,9 @@ export default function HabitsPage() {
                             <div className="h-2" /> {/* T2 column gap */}
                             {activeHabits.flatMap((h) => {
                               const isGym = gymHabitId && h.id === gymHabitId;
+                              const isWeed = weedHabitId && h.id === weedHabitId;
                               return [
+                                ...(isWeed ? [<div key={`gap-${iso}-alcohol`} className="h-2" />] : []),
                                 <div key={`gap-${iso}-${h.id}`} className="h-2" />,
                                 ...(isGym ? [<div key={`gap-${iso}-run`} className="h-2" />] : []),
                               ];

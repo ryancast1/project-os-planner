@@ -37,7 +37,7 @@ export default function AddMoviePage() {
 
   const [source, setSource] = useState("");
   const [lengthText, setLengthText] = useState(""); // optional, placeholder only
-  const [priorityText, setPriorityText] = useState(""); // optional now
+  const [onDeck, setOnDeck] = useState(false);
   const [rewatch, setRewatch] = useState(false);
   const [location, setLocation] = useState("");
   const [yearText, setYearText] = useState(""); // optional
@@ -63,14 +63,6 @@ export default function AddMoviePage() {
     return Math.floor(y);
   }, [yearText]);
 
-  const parsedPriority = useMemo(() => {
-    const t = priorityText.trim();
-    if (!t) return null;
-    const p = Number(t);
-    if (!Number.isFinite(p) || p < 0 || p > 9999) return null;
-    return Math.floor(p);
-  }, [priorityText]);
-
   const canSave = useMemo(() => {
     if (!title.trim()) return false;
 
@@ -80,14 +72,11 @@ export default function AddMoviePage() {
     // year optional, but if provided must parse
     if (yearText.trim() && parsedYear == null) return false;
 
-    // priority optional, but if provided must parse
-    if (priorityText.trim() && parsedPriority == null) return false;
-
     // watched requires date_watched
     if (status === "watched" && dateWatched.trim() === "") return false;
 
     return true;
-  }, [title, lengthText, lengthMinutes, yearText, parsedYear, priorityText, parsedPriority, status, dateWatched]);
+  }, [title, lengthText, lengthMinutes, yearText, parsedYear, status, dateWatched]);
 
   // Debounced TMDB search
   useEffect(() => {
@@ -167,8 +156,8 @@ export default function AddMoviePage() {
       // only for watched
       date_watched: status === "watched" ? (dateWatched || null) : null,
 
-      // IMPORTANT: send null when blank so DB default 99 doesn't kick in (if column allows null)
-      priority: parsedPriority,
+      // On Deck is represented by 99; all other new movies start unranked.
+      priority: onDeck ? 99 : null,
     };
 
     const { error } = await supabase.from("movie_tracker").insert(payload);
@@ -259,10 +248,6 @@ export default function AddMoviePage() {
               )}
             </div>
 
-            <div className="border-t border-white/10 pt-4">
-              <div className="text-xs text-white/40 text-center mb-4">Or enter manually</div>
-            </div>
-
             <label className="block">
               <span className="mb-1 block text-xs text-white/60 text-center">Title</span>
               <input
@@ -333,14 +318,14 @@ export default function AddMoviePage() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1 block text-xs text-white/60 text-center">Priority (optional)</span>
+              <label className="flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-black/30 px-4 py-3">
                 <input
-                  value={priorityText}
-                  onChange={(e) => setPriorityText(e.target.value)}
-                  inputMode="numeric"
-                  className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-white/20"
+                  type="checkbox"
+                  checked={onDeck}
+                  onChange={(e) => setOnDeck(e.target.checked)}
+                  className="h-5 w-5"
                 />
+                <span className="text-sm text-white/80">On Deck</span>
               </label>
 
               <label className="flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-black/30 px-4 py-3">

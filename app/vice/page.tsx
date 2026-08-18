@@ -38,6 +38,12 @@ function previousISODate(iso: string) {
   return date.toISOString().slice(0, 10);
 }
 
+function subtractISODays(iso: string, days: number) {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
 function trackingDate(occurredOn: string, occurredAt: string) {
   return occurredAt < "03:00:00" ? previousISODate(occurredOn) : occurredOn;
 }
@@ -111,6 +117,7 @@ function shortDate(iso: string) {
 }
 
 function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: string; unit: string }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const width = 640;
   const height = 230;
   const left = 34;
@@ -123,6 +130,29 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
   const barWidth = Math.max(1, Math.min(28, slotWidth * 0.62));
   const plotHeight = height - top - bottom;
   const ticks = [max, max / 2, 0];
+  const rollingAverages = data.slice(6).map((item, offset) => ({
+    date: item.date,
+    index: offset + 6,
+    value: data.slice(offset, offset + 7).reduce((sum, day) => sum + day.value, 0) / 7,
+  }));
+  const xCenter = (index: number) => left + index * slotWidth + slotWidth / 2;
+  const yValue = (value: number) => top + (1 - value / max) * plotHeight;
+  const averagePath = rollingAverages
+    .map((item, index) => `${index === 0 ? "M" : "L"} ${xCenter(item.index)} ${yValue(item.value)}`)
+    .join(" ");
+  const averageByIndex = new Map(rollingAverages.map((item) => [item.index, item.value]));
+  const activeItem = activeIndex === null ? null : data[activeIndex];
+  const activeAverage = activeIndex === null ? undefined : averageByIndex.get(activeIndex);
+  const tooltipWidth = 170;
+  const tooltipX = activeIndex === null ? 0 : Math.max(left, Math.min(width - right - tooltipWidth, xCenter(activeIndex) - tooltipWidth / 2));
+  const tooltipY = top + 8;
+
+  function selectNearestDay(event: React.PointerEvent<SVGRectElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const svgX = ((event.clientX - bounds.left) / bounds.width) * width;
+    const index = Math.max(0, Math.min(data.length - 1, Math.floor((svgX - left) / slotWidth)));
+    setActiveIndex(index);
+  }
 
   return (
     <div className="w-full overflow-hidden">
@@ -151,7 +181,38 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
             </g>
           );
         })}
+        {rollingAverages.length > 1 ? <path d={averagePath} fill="none" stroke="#f5f5f5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /> : null}
+        {rollingAverages.map((item) => (
+          <circle key={`average-${item.date}`} cx={xCenter(item.index)} cy={yValue(item.value)} r="2.5" fill="#f5f5f5">
+            <title>{`${shortDate(item.date)}: ${item.value.toFixed(2)} ${unit} 7-day average`}</title>
+          </circle>
+        ))}
+        {activeItem ? (
+          <g pointerEvents="none">
+            <line x1={xCenter(activeIndex!)} x2={xCenter(activeIndex!)} y1={top} y2={top + plotHeight} stroke="#d4d4d4" strokeWidth="1" strokeDasharray="3 3" />
+            <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={activeAverage === undefined ? 49 : 66} rx="8" fill="#171717" stroke="#525252" />
+            <text x={tooltipX + 10} y={tooltipY + 17} fill="#d4d4d4" fontSize="11" fontWeight="600">{shortDate(activeItem.date)}</text>
+            <text x={tooltipX + 10} y={tooltipY + 35} fill="#f5f5f5" fontSize="12">{activeItem.value.toFixed(unit === "hits" ? 0 : 2)} {unit}</text>
+            {activeAverage !== undefined ? <text x={tooltipX + 10} y={tooltipY + 53} fill="#a3a3a3" fontSize="11">7-day avg: {activeAverage.toFixed(2)}</text> : null}
+          </g>
+        ) : null}
+        <rect
+          x={left}
+          y={top}
+          width={plotWidth}
+          height={plotHeight}
+          fill="transparent"
+          style={{ touchAction: "pan-y" }}
+          onPointerDown={selectNearestDay}
+          onPointerMove={(event) => {
+            if (event.pointerType === "mouse" || event.buttons > 0) selectNearestDay(event);
+          }}
+          onPointerLeave={(event) => {
+            if (event.pointerType === "mouse") setActiveIndex(null);
+          }}
+        />
       </svg>
+      {rollingAverages.length > 0 ? <div className="flex items-center justify-end gap-1.5 pr-1 text-[11px] text-neutral-500"><span className="block h-0.5 w-5 bg-neutral-100" />7-day avg</div> : null}
     </div>
   );
 }
@@ -255,6 +316,15 @@ export default function VicePage() {
     (total, entry) => trackingDate(entry.occurred_on, entry.occurred_at) === today ? total + Number(entry.standard_drinks) : total,
     0
   );
+  const weekStart = subtractISODays(today, 6);
+  const weeklyWeedHits = weedHits.filter((hit) => {
+    const day = trackingDate(hit.occurred_on, hit.occurred_at);
+    return day >= weekStart && day <= today;
+  }).length;
+  const weeklyStandardDrinks = alcoholEntries.reduce((total, entry) => {
+    const day = trackingDate(entry.occurred_on, entry.occurred_at);
+    return day >= weekStart && day <= today ? total + Number(entry.standard_drinks) : total;
+  }, 0);
   const timeSinceLastHit = weedHits.length > 0
     ? formatElapsed(pageNow - nycLocalTimeToTimestamp(weedHits[0].occurred_on, weedHits[0].occurred_at))
     : null;
@@ -322,6 +392,7 @@ export default function VicePage() {
               {alcoholSaving ? "…" : "A"}
             </button>
             <div className="mt-2 text-center text-sm text-neutral-400"><span className="font-semibold tabular-nums text-neutral-100">{todayStandardDrinks.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> standard drinks today</div>
+            <div className="mt-1 text-center text-xs text-neutral-500"><span className="tabular-nums">{Number(weeklyStandardDrinks.toFixed(1))}</span> drinks in last week</div>
             {timeSinceLastDrink ? <div className="mt-1 text-center text-xs tabular-nums text-neutral-500">{timeSinceLastDrink}</div> : null}
           </div>
           <div>
@@ -329,6 +400,7 @@ export default function VicePage() {
               {weedSaving ? "…" : "W"}
             </button>
             <div className="mt-2 text-center text-sm text-neutral-400"><span className="font-semibold tabular-nums text-neutral-100">{todayWeedHits}</span> hits today</div>
+            <div className="mt-1 text-center text-xs text-neutral-500"><span className="tabular-nums">{weeklyWeedHits}</span> hits in last week</div>
             {timeSinceLastHit ? <div className="mt-1 text-center text-xs tabular-nums text-neutral-500">{timeSinceLastHit}</div> : null}
           </div>
         </div>

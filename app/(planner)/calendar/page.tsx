@@ -900,6 +900,8 @@ export default function CalendarPage() {
   const week0 = useMemo(() => startOfWeekMonday(today), [today]);
   const [yearView, setYearView] = useState(false);
   const [visibleYear, setVisibleYear] = useState(() => today.getFullYear());
+  const currentWeekRowRef = useRef<HTMLDivElement | null>(null);
+  const scrollToCurrentWeekRef = useRef(false);
 
   const weeks = useMemo(() => {
     if (yearView) return buildYearWeekRows(visibleYear);
@@ -915,6 +917,13 @@ export default function CalendarPage() {
   }, [weeks]);
 
   const todayIso = useMemo(() => toISODate(today), [today]);
+
+  useEffect(() => {
+    if (!yearView || !scrollToCurrentWeekRef.current) return;
+
+    currentWeekRowRef.current?.scrollIntoView({ block: "start", inline: "nearest" });
+    scrollToCurrentWeekRef.current = false;
+  }, [yearView, weeks]);
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -1423,7 +1432,10 @@ export default function CalendarPage() {
         )}
         <button
           onClick={() => {
-            if (!yearView) setVisibleYear(today.getFullYear());
+            if (!yearView) {
+              scrollToCurrentWeekRef.current = true;
+              setVisibleYear(today.getFullYear());
+            }
             setYearView((v) => !v);
           }}
           className={clsx(
@@ -1462,9 +1474,14 @@ export default function CalendarPage() {
           <div>
             {weeks.map((row, wIdx) => {
               const monthLabel = monthLabelForWeek(row, wIdx);
+              const isCurrentWeek = toISODate(row[0]) === toISODate(week0);
 
               return (
-                <div key={`week-${wIdx}`} className="flex">
+                <div
+                  key={`week-${wIdx}`}
+                  ref={yearView && isCurrentWeek ? currentWeekRowRef : undefined}
+                  className="flex"
+                >
                   <div className="relative flex-1 border-l border-neutral-700/50">
                   <div className="grid grid-cols-7">
                     {row.map((d, dIdx) => {
