@@ -10,9 +10,10 @@ const ML_PER_OUNCE = 29.5735;
 
 type AmountUnit = "oz" | "mL";
 
-type WeedHit = { id: string; created_at: string; occurred_on: string; occurred_at: string };
+type WeedHit = { id: string; user_id: string; created_at: string; occurred_on: string; occurred_at: string };
 type AlcoholEntry = {
   id: string;
+  user_id: string;
   created_at: string;
   occurred_on: string;
   occurred_at: string;
@@ -109,6 +110,19 @@ function formatElapsed(milliseconds: number) {
   if (hours > 0) parts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
   if (minutes > 0 || parts.length === 0) parts.push(`${minutes} ${minutes === 1 ? "minute" : "minutes"}`);
   return parts.join(", ");
+}
+
+function downloadCSV(filename: string, rows: Array<Array<string | number | null>>) {
+  const csv = rows.map((row) => row.map((value) => {
+    const text = value === null ? "" : String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  }).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function shortDate(iso: string) {
@@ -239,7 +253,7 @@ export default function VicePage() {
         (async () => {
           const rows: WeedHit[] = [];
           for (let from = 0; ; from += PAGE_SIZE) {
-            const { data, error: queryError } = await supabase.from("weed_hits").select("id,created_at,occurred_on,occurred_at").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
+            const { data, error: queryError } = await supabase.from("weed_hits").select("id,user_id,created_at,occurred_on,occurred_at").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
             if (queryError) throw queryError;
             const page = (data ?? []) as WeedHit[];
             rows.push(...page);
@@ -250,7 +264,7 @@ export default function VicePage() {
         (async () => {
           const rows: AlcoholEntry[] = [];
           for (let from = 0; ; from += PAGE_SIZE) {
-            const { data, error: queryError } = await supabase.from("alcohol_entries").select("id,created_at,occurred_on,occurred_at,amount_oz,abv,label,standard_drinks").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
+            const { data, error: queryError } = await supabase.from("alcohol_entries").select("id,user_id,created_at,occurred_on,occurred_at,amount_oz,abv,label,standard_drinks").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
             if (queryError) throw queryError;
             const page = (data ?? []) as AlcoholEntry[];
             rows.push(...page);
@@ -336,7 +350,7 @@ export default function VicePage() {
     if (weedSaving) return;
     setWeedSaving(true);
     setError(null);
-    const { data, error: saveError } = await supabase.from("weed_hits").insert({}).select("id,created_at,occurred_on,occurred_at").single();
+    const { data, error: saveError } = await supabase.from("weed_hits").insert({}).select("id,user_id,created_at,occurred_on,occurred_at").single();
     setWeedSaving(false);
     if (saveError) {
       setError(saveError.message);
@@ -364,7 +378,7 @@ export default function VicePage() {
     const { data, error: saveError } = await supabase
       .from("alcohol_entries")
       .insert({ amount_oz: storedOunces, abv: abvPercent, label: label.trim() || null, standard_drinks: standardDrinks })
-      .select("id,created_at,occurred_on,occurred_at,amount_oz,abv,label,standard_drinks")
+      .select("id,user_id,created_at,occurred_on,occurred_at,amount_oz,abv,label,standard_drinks")
       .single();
     setAlcoholSaving(false);
     if (saveError) {
@@ -445,6 +459,31 @@ export default function VicePage() {
             <h2 className="text-lg font-semibold">Weed hits per day</h2>
             <div className="mt-4">{loading ? <div className="py-20 text-center text-sm text-neutral-500">Loading…</div> : <DailyBarChart data={weedChart} color="#34d399" unit="hits" />}</div>
           </section>
+        </div>
+
+        <div className="mt-6 flex justify-center gap-2 pb-2">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => downloadCSV("alcohol_entries.csv", [
+              ["id", "user_id", "created_at", "amount_oz", "abv", "label", "standard_drinks", "occurred_on", "occurred_at"],
+              ...alcoholEntries.map((entry) => [entry.id, entry.user_id, entry.created_at, entry.amount_oz, entry.abv, entry.label, entry.standard_drinks, entry.occurred_on, entry.occurred_at]),
+            ])}
+            className="rounded-lg border border-neutral-800 bg-neutral-950/30 px-3 py-1.5 text-xs text-neutral-500 transition hover:text-neutral-300 active:scale-[0.98] disabled:opacity-50"
+          >
+            Alcohol CSV
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => downloadCSV("weed_hits.csv", [
+              ["id", "user_id", "created_at", "occurred_on", "occurred_at"],
+              ...weedHits.map((hit) => [hit.id, hit.user_id, hit.created_at, hit.occurred_on, hit.occurred_at]),
+            ])}
+            className="rounded-lg border border-neutral-800 bg-neutral-950/30 px-3 py-1.5 text-xs text-neutral-500 transition hover:text-neutral-300 active:scale-[0.98] disabled:opacity-50"
+          >
+            Weed CSV
+          </button>
         </div>
       </div>
     </main>

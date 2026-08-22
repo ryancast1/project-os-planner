@@ -23,6 +23,19 @@ function clampLabel(s: string) {
   return v.slice(0, 3);
 }
 
+function isBuiltInHabit(h: Habit) {
+  const label = (h.short_label ?? "").trim().toUpperCase();
+  const name = (h.name ?? "").trim();
+  return (
+    label === "W" ||
+    label === "GYM" ||
+    label === "RUN" ||
+    /\bweed\b/i.test(name) ||
+    /\bgym\b/i.test(name) ||
+    /\brun(?:ning)?\b/i.test(name)
+  );
+}
+
 function toISODate(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -167,6 +180,9 @@ export default function HabitsPage() {
   const [runDoneByDate, setRunDoneByDate] = useState<Record<string, true>>({});
   const [weedHitByDate, setWeedHitByDate] = useState<Record<string, true>>({});
   const [alcoholEntryByDate, setAlcoholEntryByDate] = useState<Record<string, true>>({});
+  const [weedLookupReady, setWeedLookupReady] = useState(false);
+  const [alcoholLookupReady, setAlcoholLookupReady] = useState(false);
+  const [t1ZeroByDate, setT1ZeroByDate] = useState<Record<string, true>>({});
   const [t2ZeroByDate, setT2ZeroByDate] = useState<Record<string, true>>({});
 
   // Add bar
@@ -185,17 +201,15 @@ export default function HabitsPage() {
 
   const activeHabits = useMemo(() => habits.filter((h) => h.is_active), [habits]);
 
-  const gymHabitId = useMemo(() => {
-    const h = activeHabits.find((x) => (x.short_label ?? "").toUpperCase() === "GYM") ??
-      activeHabits.find((x) => /\bgym\b/i.test(x.name));
-    return h?.id ?? null;
-  }, [activeHabits]);
-
   const weedHabitId = useMemo(() => {
-    const h = activeHabits.find((x) => (x.short_label ?? "").toUpperCase() === "W") ??
-      activeHabits.find((x) => /\bweed\b/i.test(x.name));
+    const h = habits.find((x) => (x.short_label ?? "").toUpperCase() === "W") ??
+      habits.find((x) => /\bweed\b/i.test(x.name));
     return h?.id ?? null;
-  }, [activeHabits]);
+  }, [habits]);
+
+  const manualHabits = useMemo(() => (
+    activeHabits.filter((h) => !isBuiltInHabit(h))
+  ), [activeHabits]);
 
   const dateRows = useMemo(() => {
     const out: string[] = [];
@@ -214,28 +228,25 @@ export default function HabitsPage() {
     let alive = true;
 
     (async () => {
-      if (activeHabits.length === 0) {
-        setDoneByDate({});
-        setGymDoneByDate({});
-        setRunDoneByDate({});
-        setWeedHitByDate({});
-        setAlcoholEntryByDate({});
-        setT2ZeroByDate({});
-        return;
-      }
-
       setGridLoading(true);
       setGridErr(null);
+      setWeedLookupReady(false);
+      setAlcoholLookupReady(false);
 
-      const habitIds = activeHabits.map((h) => h.id);
+      const habitIds = Array.from(new Set([
+        ...activeHabits.map((h) => h.id),
+        ...(weedHabitId ? [weedHabitId] : []),
+      ]));
 
       // 1) habit_logs for all active habits
-      const logsRes = await supabase
-        .from("habit_logs")
-        .select("habit_id,done_on")
-        .in("habit_id", habitIds)
-        .gte("done_on", START_ISO)
-        .lte("done_on", todayIso);
+      const logsRes = habitIds.length > 0
+        ? await supabase
+            .from("habit_logs")
+            .select("habit_id,done_on")
+            .in("habit_id", habitIds)
+            .gte("done_on", START_ISO)
+            .lte("done_on", todayIso)
+        : { data: [], error: null };
 
       // 2) workout_sessions for GYM column (best-effort)
       // Now select only performed_on and filter by performed_on date.
@@ -266,7 +277,7 @@ export default function HabitsPage() {
         .gte("occurred_on", WEED_AUTOMATION_START_ISO)
         .lte("occurred_on", todayIso);
 
-      // 6) trich_events for T2 column - paginate so older days do not disappear past the row cap
+      // 6) trich_events for T1/T2 columns - paginate so older days do not disappear past the row cap
       const authRes = await supabase.auth.getUser();
       const trichRes = authRes.error || !authRes.data.user?.id
         ? { data: null, error: authRes.error ?? new Error("Not logged in") }
@@ -363,28 +374,34 @@ export default function HabitsPage() {
         }
       }
 
-      // Count T2 events per day
+      // Count T1/T2 events per day
+      const t1CountByDate: Record<string, number> = {};
       const t2CountByDate: Record<string, number> = {};
       if (!trichRes.error) {
         for (const r of (trichRes.data ?? []) as any[]) {
           const iso = typeof r.occurred_on === "string" ? r.occurred_on : null;
           const trich = Number(r.trich);
           if (!iso || iso < START_ISO || iso > todayIso) continue;
-          if (trich === 2) {
+          if (trich === 1) {
+            t1CountByDate[iso] = (t1CountByDate[iso] ?? 0) + 1;
+          } else if (trich === 2) {
             t2CountByDate[iso] = (t2CountByDate[iso] ?? 0) + 1;
           }
         }
       }
 
-      // Mark days with 0 T2 as "done" (green)
+      // Mark days with 0 T1/T2 as "done" (green)
+      const nextT1Zero: Record<string, true> = {};
       const nextT2Zero: Record<string, true> = {};
-      // For each date in dateRows, check if T2 count is 0
       const d = new Date();
       while (true) {
         const iso = toISODate(d);
         if (iso < START_ISO) break;
         if (iso >= "2026-01-04" && iso <= todayIso && (t2CountByDate[iso] ?? 0) === 0) {
           nextT2Zero[iso] = true;
+        }
+        if (iso >= "2026-01-04" && iso <= todayIso && (t1CountByDate[iso] ?? 0) === 0) {
+          nextT1Zero[iso] = true;
         }
         d.setDate(d.getDate() - 1);
       }
@@ -394,6 +411,9 @@ export default function HabitsPage() {
       setRunDoneByDate(nextRunDone);
       setWeedHitByDate(nextWeedHits);
       setAlcoholEntryByDate(nextAlcoholEntries);
+      setWeedLookupReady(!weedHitsRes.error);
+      setAlcoholLookupReady(!alcoholEntriesRes.error);
+      setT1ZeroByDate(nextT1Zero);
       setT2ZeroByDate(nextT2Zero);
       setGridLoading(false);
     })();
@@ -401,7 +421,7 @@ export default function HabitsPage() {
     return () => {
       alive = false;
     };
-  }, [activeHabits, START_ISO, todayIso]);
+  }, [activeHabits, START_ISO, todayIso, weedHabitId]);
 
   useEffect(() => {
     let alive = true;
@@ -693,44 +713,25 @@ export default function HabitsPage() {
                 <div
                   className="grid gap-0"
                   style={{
-                    gridTemplateColumns: `56px 28px repeat(${activeHabits.length + (gymHabitId ? 1 : 0) + (weedHabitId ? 1 : 0)}, 28px)`,
+                    gridTemplateColumns: `56px repeat(${6 + manualHabits.length}, 28px)`,
                   }}
                 >
                   {/* Header */}
                   <div className="text-[11px] font-semibold text-neutral-400">Date</div>
+                  <div className="text-center text-[11px] font-semibold text-neutral-400">T1</div>
                   <div className="text-center text-[11px] font-semibold text-neutral-400">T2</div>
-                  {activeHabits.flatMap((h) => {
-                    const isGym = gymHabitId && h.id === gymHabitId;
-                    const isWeed = weedHabitId && h.id === weedHabitId;
-                    return [
-                      ...(isWeed
-                        ? [
-                            <div
-                              key="alcohol-header"
-                              className="text-center text-[11px] font-semibold text-neutral-400"
-                            >
-                              A
-                            </div>,
-                          ]
-                        : []),
-                      <div
-                        key={h.id}
-                        className="text-center text-[11px] font-semibold text-neutral-400"
-                      >
-                        {(h.short_label ?? "").toUpperCase() || clampLabel(h.name)}
-                      </div>,
-                      ...(isGym
-                        ? [
-                            <div
-                              key="run-header"
-                              className="text-center text-[11px] font-semibold text-neutral-400"
-                            >
-                              RUN
-                            </div>,
-                          ]
-                        : []),
-                    ];
-                  })}
+                  <div className="text-center text-[11px] font-semibold text-neutral-400">A</div>
+                  <div className="text-center text-[11px] font-semibold text-neutral-400">W</div>
+                  <div className="text-center text-[11px] font-semibold text-neutral-400">GYM</div>
+                  <div className="text-center text-[11px] font-semibold text-neutral-400">RUN</div>
+                  {manualHabits.map((h) => (
+                    <div
+                      key={h.id}
+                      className="text-center text-[11px] font-semibold text-neutral-400"
+                    >
+                      {(h.short_label ?? "").toUpperCase() || clampLabel(h.name)}
+                    </div>
+                  ))}
 
                   {/* Rows */}
                   {dateRows.map((iso) => {
@@ -738,13 +739,29 @@ export default function HabitsPage() {
                     // dateRows are rendered from today downward (descending). Week breaks should appear
                     // between Sunday and Monday, which in descending order means inserting a gap after Monday.
                     const isMonday = dt.getDay() === 1;
+                    const t1Zero = !!t1ZeroByDate[iso];
                     const t2Zero = !!t2ZeroByDate[iso];
+                    const alcoholDone = alcoholLookupReady && iso >= WEED_AUTOMATION_START_ISO && !alcoholEntryByDate[iso];
+                    const weedDone = weedLookupReady && iso >= WEED_AUTOMATION_START_ISO
+                      ? !weedHitByDate[iso]
+                      : !!(weedHabitId && doneByDate[iso]?.[weedHabitId]);
 
                     return (
                       <div key={iso} className="contents">
                         <div className="pt-[2px] text-[11px] font-semibold text-neutral-400">
                           {fmtMD(iso)}
                         </div>
+
+                        {/* T1 column */}
+                        <div
+                          className={clsx(
+                            "h-7 w-7 rounded-lg border",
+                            "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
+                            t1Zero
+                              ? "border-emerald-200/30 bg-emerald-400/75"
+                              : "border-neutral-800 bg-neutral-950/60"
+                          )}
+                        />
 
                         {/* T2 column */}
                         <div
@@ -757,31 +774,47 @@ export default function HabitsPage() {
                           )}
                         />
 
-                        {activeHabits.flatMap((h) => {
-                          const isGym = gymHabitId && h.id === gymHabitId;
-                          const isWeed = weedHabitId && h.id === weedHabitId;
-                          const alcoholDone = iso >= WEED_AUTOMATION_START_ISO && !alcoholEntryByDate[iso];
-                          const done = isGym
-                            ? !!gymDoneByDate[iso]
-                            : isWeed && iso >= WEED_AUTOMATION_START_ISO
-                              ? !weedHitByDate[iso]
-                              : !!doneByDate[iso]?.[h.id];
+                        <div
+                          className={clsx(
+                            "h-7 w-7 rounded-lg border",
+                            "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
+                            alcoholDone
+                              ? "border-emerald-200/30 bg-emerald-400/75"
+                              : "border-neutral-800 bg-neutral-950/60"
+                          )}
+                        />
+                        <div
+                          className={clsx(
+                            "h-7 w-7 rounded-lg border",
+                            "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
+                            weedDone
+                              ? "border-emerald-200/30 bg-emerald-400/75"
+                              : "border-neutral-800 bg-neutral-950/60"
+                          )}
+                        />
+                        <div
+                          className={clsx(
+                            "h-7 w-7 rounded-lg border",
+                            "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
+                            gymDoneByDate[iso]
+                              ? "border-emerald-200/30 bg-emerald-400/75"
+                              : "border-neutral-800 bg-neutral-950/60"
+                          )}
+                        />
+                        <div
+                          className={clsx(
+                            "h-7 w-7 rounded-lg border",
+                            "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
+                            runDoneByDate[iso]
+                              ? "border-emerald-200/30 bg-emerald-400/75"
+                              : "border-neutral-800 bg-neutral-950/60"
+                          )}
+                        />
 
-                          return [
-                            ...(isWeed
-                              ? [
-                                  <div
-                                    key={`alcohol-${iso}`}
-                                    className={clsx(
-                                      "h-7 w-7 rounded-lg border",
-                                      "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
-                                      alcoholDone
-                                        ? "border-emerald-200/30 bg-emerald-400/75"
-                                        : "border-neutral-800 bg-neutral-950/60"
-                                    )}
-                                  />,
-                                ]
-                              : []),
+                        {manualHabits.map((h) => {
+                          const done = !!doneByDate[iso]?.[h.id];
+
+                          return (
                             <div
                               key={h.id + iso}
                               className={clsx(
@@ -791,22 +824,8 @@ export default function HabitsPage() {
                                   ? "border-emerald-200/30 bg-emerald-400/75"
                                   : "border-neutral-800 bg-neutral-950/60"
                               )}
-                            />,
-                            ...(isGym
-                              ? [
-                                  <div
-                                    key={`run-${iso}`}
-                                    className={clsx(
-                                      "h-7 w-7 rounded-lg border",
-                                      "shadow-[0_0_0_1px_rgba(0,0,0,0.25)]",
-                                      runDoneByDate[iso]
-                                        ? "border-emerald-200/30 bg-emerald-400/75"
-                                        : "border-neutral-800 bg-neutral-950/60"
-                                    )}
-                                  />,
-                                ]
-                              : []),
-                          ];
+                            />
+                          );
                         })}
 
                         {/* Gap between weeks (between Sunday and Monday). Since we're rendering descending,
@@ -814,16 +833,15 @@ export default function HabitsPage() {
                         {isMonday && iso !== dateRows[dateRows.length - 1] ? (
                           <>
                             <div className="h-2" />
+                            <div className="h-2" /> {/* T1 column gap */}
                             <div className="h-2" /> {/* T2 column gap */}
-                            {activeHabits.flatMap((h) => {
-                              const isGym = gymHabitId && h.id === gymHabitId;
-                              const isWeed = weedHabitId && h.id === weedHabitId;
-                              return [
-                                ...(isWeed ? [<div key={`gap-${iso}-alcohol`} className="h-2" />] : []),
-                                <div key={`gap-${iso}-${h.id}`} className="h-2" />,
-                                ...(isGym ? [<div key={`gap-${iso}-run`} className="h-2" />] : []),
-                              ];
-                            })}
+                            <div className="h-2" />
+                            <div className="h-2" />
+                            <div className="h-2" />
+                            <div className="h-2" />
+                            {manualHabits.map((h) => (
+                              <div key={`gap-${iso}-${h.id}`} className="h-2" />
+                            ))}
                           </>
                         ) : null}
                       </div>
