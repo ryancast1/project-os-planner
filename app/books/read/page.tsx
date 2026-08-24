@@ -3,33 +3,45 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import BookEditor, { type BookRecord } from "../BookEditor";
 
-type ReadBook = {
-  id: string;
-  title: string;
-  author: string | null;
-  pages: number | null;
-  date_read: string | null;
-  re_read: boolean;
-};
+function sortReadBooks(books: BookRecord[]) {
+  return [...books].sort((a, b) => {
+    const dateReadDifference = (b.date_read ?? "").localeCompare(a.date_read ?? "");
+    if (dateReadDifference !== 0) return dateReadDifference;
+
+    if (a.date_added === null || b.date_added === null) {
+      if (a.date_added !== b.date_added) return a.date_added === null ? 1 : -1;
+    }
+
+    return (b.date_added ?? "").localeCompare(a.date_added ?? "");
+  });
+}
+
+function formatDate(date: string | null) {
+  if (!date) return "Date unknown";
+  const [year, month, day] = date.split("-");
+  return year && month && day ? `${month}/${day}/${year}` : date;
+}
 
 export default function ReadBooksPage() {
-  const [books, setBooks] = useState<ReadBook[]>([]);
+  const [books, setBooks] = useState<BookRecord[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     supabase
       .from("books")
-      .select("id,title,author,pages,date_read,re_read")
+      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes")
       .eq("reading_status", "read")
       .order("date_read", { ascending: false, nullsFirst: false })
       .then(({ data, error: loadError }) => {
         if (!active) return;
         if (loadError) setError(loadError.message);
-        else setBooks((data ?? []) as ReadBook[]);
+        else setBooks(sortReadBooks((data ?? []) as BookRecord[]));
         setLoading(false);
       });
     return () => { active = false; };
@@ -64,12 +76,38 @@ export default function ReadBooksPage() {
           ) : (
             <div className="divide-y divide-white/10">
               {filteredBooks.map((book) => (
-                <div key={book.id} className="flex items-center justify-between gap-4 py-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-lg font-semibold">{book.title}</div>
-                    <div className="truncate text-sm text-white/50">{book.author ?? "Unknown author"}{book.re_read ? " · Re-read" : ""}</div>
+                <div
+                  key={book.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setExpandedId((current) => current === book.id ? null : book.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setExpandedId((current) => current === book.id ? null : book.id);
+                    }
+                  }}
+                  className="rounded-xl px-1 py-3 transition hover:bg-white/5"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="truncate text-lg font-semibold">{book.title}</div>
+                      <div className="truncate text-sm text-white/50">{book.author ?? "Unknown author"}{book.re_read ? " · Re-read" : ""}</div>
+                    </div>
+                    <div className="shrink-0 text-right text-sm tabular-nums text-white/55">{formatDate(book.date_read)}</div>
                   </div>
-                  <div className="shrink-0 text-right text-sm text-white/55">{book.date_read ?? "Date unknown"}</div>
+
+                  {expandedId === book.id ? (
+                    <BookEditor
+                      book={book}
+                      onSaved={(updated) => {
+                        setBooks((current) => updated.reading_status === "read"
+                          ? sortReadBooks(current.map((item) => item.id === updated.id ? updated : item))
+                          : current.filter((item) => item.id !== updated.id));
+                        if (updated.reading_status !== "read") setExpandedId(null);
+                      }}
+                    />
+                  ) : null}
                 </div>
               ))}
             </div>

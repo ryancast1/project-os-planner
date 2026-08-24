@@ -322,6 +322,7 @@ export default function WatchlistPage() {
     if (!watchedModalId) return;
 
     const row = rows.find((r) => r.id === watchedModalId);
+    const watchedPriority = row?.priority ?? null;
     setBusyId(watchedModalId);
     setErr(null);
 
@@ -350,6 +351,38 @@ export default function WatchlistPage() {
     setEditingId(null);
     setDraft(null);
     closeWatchedModal();
+
+    // Close the numbered-rank gap left by the watched movie. On Deck (99) stays unchanged.
+    if (watchedPriority !== null && watchedPriority !== 99) {
+      const affected = rows.filter(
+        (candidate) =>
+          candidate.id !== watchedModalId &&
+          candidate.priority !== null &&
+          candidate.priority !== 99 &&
+          candidate.priority > watchedPriority
+      );
+
+      setRows((current) =>
+        sortWatchlistRows(
+          current.map((candidate) =>
+            affected.some((item) => item.id === candidate.id) && candidate.priority !== null
+              ? { ...candidate, priority: candidate.priority - 1 }
+              : candidate
+          )
+        )
+      );
+
+      const results = await Promise.all(
+        affected.map((candidate) =>
+          supabase
+            .from("movie_tracker")
+            .update({ priority: (candidate.priority ?? 1) - 1 })
+            .eq("id", candidate.id)
+        )
+      );
+      const rebalanceError = results.find((result) => result.error)?.error;
+      if (rebalanceError) setErr(`Priority update failed: ${rebalanceError.message}`);
+    }
   }
 
   return (

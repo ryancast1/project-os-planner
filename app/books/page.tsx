@@ -3,31 +3,20 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import BookEditor, { type BookRecord } from "./BookEditor";
 
 const actions = [
   { label: "Add a Book", href: "/books/add", variant: "primary" as const },
-  { label: "View Book List", href: "/books/list", variant: "secondary" as const },
+  { label: "To Read List", href: "/books/list", variant: "secondary" as const },
   { label: "Read Books", href: "/books/read", variant: "secondary" as const },
 ];
 
-type Book = {
-  id: string;
-  title: string;
-  author: string | null;
-  pages: number | null;
-  original_pub_year: number | null;
-  rank: number | null;
-  source: string | null;
-  notes: string | null;
-  reading_status: "unread" | "reading" | "read";
-};
-
-function sortByRank(books: Book[]) {
+function sortByRank(books: BookRecord[]) {
   return [...books].sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999) || a.title.localeCompare(b.title));
 }
 
 export default function BooksPage() {
-  const [rows, setRows] = useState<Book[]>([]);
+  const [rows, setRows] = useState<BookRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -36,12 +25,12 @@ export default function BooksPage() {
     let active = true;
     supabase
       .from("books")
-      .select("id,title,author,pages,original_pub_year,rank,source,notes,reading_status")
+      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes")
       .order("rank", { ascending: true, nullsFirst: false })
       .then(({ data, error: loadError }) => {
         if (!active) return;
         if (loadError) setError(loadError.message);
-        else setRows((data ?? []) as Book[]);
+        else setRows((data ?? []) as BookRecord[]);
         setLoading(false);
       });
     return () => {
@@ -110,13 +99,38 @@ export default function BooksPage() {
   async function startReading(id: string) {
     const book = onDeck.find((item) => item.id === id);
     if (!book) return;
-    setRows((current) => current.map((item) => item.id === id ? { ...item, reading_status: "reading", rank: null } : item));
+    const removedRank = book.rank;
+    const affected = removedRank !== null && removedRank !== 99
+      ? onDeck.filter((item) => item.rank !== null && item.rank !== 99 && item.rank > removedRank)
+      : [];
+
+    setRows((current) => current.map((item) => {
+      if (item.id === id) return { ...item, reading_status: "reading", rank: null };
+      if (affected.some((affectedBook) => affectedBook.id === item.id) && item.rank !== null) {
+        return { ...item, rank: item.rank - 1 };
+      }
+      return item;
+    }));
     setExpandedId(null);
     const { error: updateError } = await supabase
       .from("books")
       .update({ reading_status: "reading", rank: null })
       .eq("id", id);
-    if (updateError) setError(updateError.message);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    const results = await Promise.all(
+      affected.map((affectedBook) =>
+        supabase
+          .from("books")
+          .update({ rank: (affectedBook.rank ?? 1) - 1 })
+          .eq("id", affectedBook.id)
+      )
+    );
+    const rebalanceError = results.find((result) => result.error)?.error;
+    if (rebalanceError) setError(`Rank update failed: ${rebalanceError.message}`);
   }
 
   return (
@@ -171,9 +185,31 @@ export default function BooksPage() {
               ) : (
                 <div className="divide-y divide-white/10">
                   {currentlyReading.map((book) => (
-                    <div key={book.id} className="px-3 py-3">
+                    <div
+                      key={book.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setExpandedId((current) => current === book.id ? null : book.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setExpandedId((current) => current === book.id ? null : book.id);
+                        }
+                      }}
+                      className="px-3 py-3 transition hover:bg-white/5"
+                    >
                       <div className="font-semibold">{book.title}</div>
                       <div className="mt-0.5 text-sm text-white/50">{book.author ?? "Unknown author"}</div>
+
+                      {expandedId === book.id ? (
+                        <BookEditor
+                          book={book}
+                          onSaved={(updated) => {
+                            setRows((current) => current.map((item) => item.id === updated.id ? updated : item));
+                            if (updated.reading_status !== "reading") setExpandedId(null);
+                          }}
+                        />
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -267,11 +303,13 @@ export default function BooksPage() {
                           </div>
 
                           {isOpen ? (
-                            <div className="mt-2 rounded-xl border border-white/10 bg-black/20 p-3 text-[13px] text-white/70">
-                              <div><span className="text-white/45">Published: </span>{book.original_pub_year ?? "—"}</div>
-                              <div className="mt-1"><span className="text-white/45">Source: </span>{book.source ?? "—"}</div>
-                              <div className="mt-1 whitespace-pre-wrap"><span className="text-white/45">Notes: </span>{book.notes ?? "—"}</div>
-                            </div>
+                            <BookEditor
+                              book={book}
+                              onSaved={(updated) => {
+                                setRows((current) => current.map((item) => item.id === updated.id ? updated : item));
+                                if (updated.reading_status !== "unread" || updated.rank === null) setExpandedId(null);
+                              }}
+                            />
                           ) : null}
                         </div>
                       </div>
