@@ -72,8 +72,9 @@ export default function BookEditor({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const inputClass = "w-full rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-sm text-white outline-none focus:border-white/25";
-  const labelClass = "mb-1 block text-[11px] text-white/45";
+  // iPhone Safari zooms focused form controls when their font size is below 16px.
+  const inputClass = "min-w-0 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-base text-white outline-none focus:border-white/30";
+  const labelClass = "mb-1.5 block text-xs font-medium text-white/50";
 
   async function save() {
     const title = draft.title.trim();
@@ -120,17 +121,17 @@ export default function BookEditor({
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3" onClick={(event) => event.stopPropagation()}>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <label className="col-span-2 sm:col-span-2">
+    <div className="mt-3 min-w-0 rounded-2xl border border-white/10 bg-black/25 p-4" onClick={(event) => event.stopPropagation()}>
+      <div className="grid min-w-0 grid-cols-1 gap-x-3 gap-y-4 sm:grid-cols-2">
+        <label className="min-w-0 sm:col-span-2">
           <span className={labelClass}>Title</span>
           <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} className={inputClass} />
         </label>
-        <label>
+        <label className="min-w-0">
           <span className={labelClass}>Author</span>
           <input value={draft.author} onChange={(event) => setDraft({ ...draft, author: event.target.value })} className={inputClass} />
         </label>
-        <label>
+        <label className="min-w-0">
           <span className={labelClass}>Status</span>
           <select value={draft.readingStatus} onChange={(event) => setDraft({ ...draft, readingStatus: event.target.value as Draft["readingStatus"] })} className={inputClass}>
             <option value="unread">Unread</option>
@@ -138,56 +139,66 @@ export default function BookEditor({
             <option value="read">Read</option>
           </select>
         </label>
-        <label>
+        <label className="min-w-0">
           <span className={labelClass}>Pages</span>
           <input type="number" min="1" value={draft.pages} onChange={(event) => setDraft({ ...draft, pages: event.target.value })} className={inputClass} />
         </label>
-        <label>
+        <label className="min-w-0">
           <span className={labelClass}>Original Pub Year</span>
           <input type="number" min="-5000" max="2100" value={draft.originalPubYear} onChange={(event) => setDraft({ ...draft, originalPubYear: event.target.value })} className={inputClass} />
         </label>
-        <label>
+        <label className="min-w-0">
           <span className={labelClass}>Date Added</span>
-          <input type="date" value={draft.dateAdded} onChange={(event) => setDraft({ ...draft, dateAdded: event.target.value })} className={inputClass} />
+          <div className="flex min-w-0 gap-2">
+            <input type="date" value={draft.dateAdded} onChange={(event) => setDraft({ ...draft, dateAdded: event.target.value })} className={inputClass} />
+            <button type="button" disabled={!draft.dateAdded} onClick={() => setDraft({ ...draft, dateAdded: "" })} className="shrink-0 rounded-xl border border-white/10 px-3 text-sm text-white/65 disabled:opacity-30">
+              Clear
+            </button>
+          </div>
         </label>
-        <label>
+        <label className="min-w-0">
           <span className={labelClass}>Date Read</span>
-          <input type="date" value={draft.dateRead} onChange={(event) => setDraft({ ...draft, dateRead: event.target.value })} className={inputClass} />
+          <div className="flex min-w-0 gap-2">
+            <input type="date" value={draft.dateRead} onChange={(event) => setDraft({ ...draft, dateRead: event.target.value })} className={inputClass} />
+            <button type="button" disabled={!draft.dateRead} onClick={() => setDraft({ ...draft, dateRead: "" })} className="shrink-0 rounded-xl border border-white/10 px-3 text-sm text-white/65 disabled:opacity-30">
+              Clear
+            </button>
+          </div>
         </label>
-        <label>
+        <label className="min-w-0">
           <span className={labelClass}>Rank</span>
           <input type="number" min="1" value={draft.rank} onChange={(event) => setDraft({ ...draft, rank: event.target.value })} className={inputClass} />
         </label>
-        <label>
+        <label className="min-w-0">
           <span className={labelClass}>Source</span>
           <input value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })} className={inputClass} />
         </label>
-        <label>
+        <label className="min-w-0">
           <span className={labelClass}>Pages of Text</span>
           <input type="number" min="0" value={draft.pagesOfText} onChange={(event) => setDraft({ ...draft, pagesOfText: event.target.value })} className={inputClass} />
         </label>
-        <label>
+        <label className="min-w-0">
           <span className={labelClass}>Current Page</span>
           <input type="number" min="0" value={draft.currentPage} onChange={(event) => setDraft({ ...draft, currentPage: event.target.value })} className={inputClass} />
         </label>
-        <div className="flex items-end gap-5 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-          <label className="flex items-center gap-2 text-sm text-white/70">
-            <input type="checkbox" checked={draft.owned} onChange={(event) => setDraft({ ...draft, owned: event.target.checked })} /> Owned
+        <div className="grid grid-cols-2 gap-3 sm:col-span-2">
+          <label className="flex min-h-11 items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 text-base text-white/75">
+            <input type="checkbox" checked={draft.owned} onChange={(event) => setDraft({ ...draft, owned: event.target.checked })} className="h-5 w-5 shrink-0" /> Owned
           </label>
-          <label className="flex items-center gap-2 text-sm text-white/70">
-            <input type="checkbox" checked={draft.reRead} onChange={(event) => setDraft({ ...draft, reRead: event.target.checked })} /> Re-read
+          <label className="flex min-h-11 items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 text-base text-white/75">
+            <input type="checkbox" checked={draft.reRead} onChange={(event) => setDraft({ ...draft, reRead: event.target.checked })} className="h-5 w-5 shrink-0" /> Re-read
           </label>
         </div>
       </div>
 
-      <label className="mt-2 block">
+      <label className="mt-4 block min-w-0">
         <span className={labelClass}>Notes</span>
         <textarea rows={4} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} className={inputClass} />
       </label>
 
-      <div className="mt-3 flex items-center justify-end gap-3">
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
         {message ? <div className={message.startsWith("Save failed") ? "text-xs text-red-300" : "text-xs text-white/55"}>{message}</div> : null}
-        <button type="button" disabled={saving} onClick={save} className="h-10 rounded-xl bg-white px-5 text-sm font-semibold text-black disabled:opacity-60">
+        <button type="button" disabled={saving} onClick={save} className="h-11 w-full rounded-xl bg-white px-6 text-base font-semibold text-black disabled:opacity-60 sm:w-auto">
           {saving ? "Saving…" : "Save"}
         </button>
       </div>
