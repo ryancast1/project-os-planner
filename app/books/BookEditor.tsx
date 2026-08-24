@@ -64,12 +64,15 @@ function nullableNumber(value: string) {
 export default function BookEditor({
   book,
   onSaved,
+  onDeleted,
 }: {
   book: BookRecord;
   onSaved: (book: BookRecord) => void;
+  onDeleted: (id: string) => void;
 }) {
   const [draft, setDraft] = useState(() => createDraft(book));
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   // iPhone Safari zooms focused form controls when their font size is below 16px.
@@ -118,6 +121,43 @@ export default function BookEditor({
     onSaved(data as BookRecord);
     setMessage("Saved ✓");
     setSaving(false);
+  }
+
+  async function deleteBook() {
+    if (!window.confirm(`Delete “${book.title}”? This cannot be undone.`)) return;
+
+    setDeleting(true);
+    setMessage(null);
+    let affected: Array<{ id: string; rank: number | null }> = [];
+
+    if (book.reading_status === "unread" && book.rank !== null && book.rank !== 99) {
+      const { data, error } = await supabase
+        .from("books")
+        .select("id,rank")
+        .eq("reading_status", "unread")
+        .gt("rank", book.rank)
+        .neq("rank", 99);
+      if (error) {
+        setMessage(`Delete failed: ${error.message}`);
+        setDeleting(false);
+        return;
+      }
+      affected = data ?? [];
+    }
+
+    const { error: deleteError } = await supabase.from("books").delete().eq("id", book.id);
+    if (deleteError) {
+      setMessage(`Delete failed: ${deleteError.message}`);
+      setDeleting(false);
+      return;
+    }
+
+    const results = await Promise.all(affected.map((item) =>
+      supabase.from("books").update({ rank: (item.rank ?? 1) - 1 }).eq("id", item.id)
+    ));
+    const rankError = results.find((result) => result.error)?.error;
+    if (rankError) setMessage(`Book deleted, but rank update failed: ${rankError.message}`);
+    onDeleted(book.id);
   }
 
   return (
@@ -196,9 +236,14 @@ export default function BookEditor({
         <textarea rows={4} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} className={inputClass} />
       </label>
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        {message ? <div className={message.startsWith("Save failed") ? "text-xs text-red-300" : "text-xs text-white/55"}>{message}</div> : null}
-        <button type="button" disabled={saving} onClick={save} className="h-11 w-full rounded-xl bg-white px-6 text-base font-semibold text-black disabled:opacity-60 sm:w-auto">
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <button type="button" disabled={saving || deleting} onClick={deleteBook} className="h-11 w-full rounded-xl border border-red-400/25 bg-red-500/10 px-5 text-base font-semibold text-red-300 disabled:opacity-50 sm:w-auto">
+          {deleting ? "Deleting…" : "Delete"}
+        </button>
+        <div className="flex-1">
+          {message ? <div className={message.includes("failed") ? "text-xs text-red-300" : "text-xs text-white/55"}>{message}</div> : null}
+        </div>
+        <button type="button" disabled={saving || deleting} onClick={save} className="h-11 w-full rounded-xl bg-white px-6 text-base font-semibold text-black disabled:opacity-60 sm:w-auto">
           {saving ? "Saving…" : "Save"}
         </button>
       </div>

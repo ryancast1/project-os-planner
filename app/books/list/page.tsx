@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import BookEditor, { type BookRecord } from "../BookEditor";
+import LongPressTitle from "../LongPressTitle";
 
 function sortToRead(books: BookRecord[]) {
   return [...books].sort((a, b) => {
@@ -104,15 +105,13 @@ export default function BookListPage() {
                     }}
                     className="rounded-xl px-1 py-2 transition hover:bg-white/5"
                   >
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="truncate text-lg font-semibold">{book.title}</div>
-                        <div className="truncate text-sm text-white/50">{book.author ?? "Unknown author"}</div>
-                      </div>
-
-                      <div className="shrink-0">
+                    <div className="min-w-0">
+                      <LongPressTitle title={book.title} className="line-clamp-2 text-[14px] font-semibold leading-[18px]" />
+                      <div className="mt-1 flex min-w-0 items-center justify-between gap-3">
+                        <div className="truncate text-[12px] text-white/50">{book.author ?? "Unknown author"}</div>
+                        <div className="shrink-0">
                         {book.rank !== null ? (
-                          <div className="min-w-9 text-center text-sm font-semibold tabular-nums text-white/65">
+                          <div className="min-w-8 text-center text-xs font-semibold tabular-nums text-white/65">
                             {book.rank === 99 ? "OD" : book.rank}
                           </div>
                         ) : (
@@ -124,11 +123,12 @@ export default function BookListPage() {
                               event.stopPropagation();
                               addToOnDeck(book.id);
                             }}
-                            className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/5 text-xl font-semibold text-white/85 transition active:scale-[0.98] disabled:opacity-50"
+                            className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 bg-white/5 text-lg font-semibold text-white/85 transition active:scale-[0.98] disabled:opacity-50"
                           >
                             +
                           </button>
                         )}
+                        </div>
                       </div>
                     </div>
 
@@ -140,6 +140,14 @@ export default function BookListPage() {
                             ? sortToRead(current.map((item) => item.id === updated.id ? updated : item))
                             : current.filter((item) => item.id !== updated.id));
                           if (updated.reading_status !== "unread") setExpandedId(null);
+                        }}
+                        onDeleted={(id) => {
+                          setBooks((current) => sortToRead(current
+                            .filter((item) => item.id !== id)
+                            .map((item) => book.rank !== null && book.rank !== 99 && item.rank !== null && item.rank !== 99 && item.rank > book.rank
+                              ? { ...item, rank: item.rank - 1 }
+                              : item)));
+                          setExpandedId(null);
                         }}
                       />
                     ) : null}

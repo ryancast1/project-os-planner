@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import BookEditor, { type BookRecord } from "./BookEditor";
+import LongPressTitle from "./LongPressTitle";
 
 const actions = [
   { label: "Add a Book", href: "/books/add", variant: "primary" as const },
@@ -20,6 +21,7 @@ export default function BooksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -70,7 +72,10 @@ export default function BooksPage() {
         return;
       }
 
-      if (book.rank === 1 && direction === "up") return;
+      if (book.rank === 1 && direction === "up") {
+        startReading(id);
+        return;
+      }
 
       const targetRank = direction === "up" ? book.rank - 1 : book.rank + 1;
       const target = onDeck.find((item) => item.rank === targetRank);
@@ -131,6 +136,59 @@ export default function BooksPage() {
     );
     const rebalanceError = results.find((result) => result.error)?.error;
     if (rebalanceError) setError(`Rank update failed: ${rebalanceError.message}`);
+  }
+
+  async function returnToOnDeck(id: string) {
+    const book = currentlyReading.find((item) => item.id === id);
+    if (!book) return;
+
+    const affected = onDeck.filter((item) => item.rank !== null && item.rank !== 99);
+    setUpdatingId(id);
+    setError(null);
+    setRows((current) => current.map((item) => {
+      if (item.id === id) return { ...item, reading_status: "unread", rank: 1 };
+      if (affected.some((affectedBook) => affectedBook.id === item.id) && item.rank !== null) {
+        return { ...item, rank: item.rank + 1 };
+      }
+      return item;
+    }));
+    setExpandedId(null);
+
+    const results = await Promise.all([
+      supabase.from("books").update({ reading_status: "unread", rank: 1 }).eq("id", id),
+      ...affected.map((affectedBook) =>
+        supabase
+          .from("books")
+          .update({ rank: (affectedBook.rank ?? 0) + 1 })
+          .eq("id", affectedBook.id)
+      ),
+    ]);
+    const updateError = results.find((result) => result.error)?.error;
+    if (updateError) setError(`On Deck update failed: ${updateError.message}`);
+    setUpdatingId(null);
+  }
+
+  async function markAsRead(id: string) {
+    const book = currentlyReading.find((item) => item.id === id);
+    if (!book) return;
+
+    const now = new Date();
+    const dateRead = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    setUpdatingId(id);
+    setError(null);
+    setRows((current) => current.map((item) =>
+      item.id === id
+        ? { ...item, reading_status: "read", rank: null, date_read: dateRead }
+        : item
+    ));
+    setExpandedId(null);
+
+    const { error: updateError } = await supabase
+      .from("books")
+      .update({ reading_status: "read", rank: null, date_read: dateRead })
+      .eq("id", id);
+    if (updateError) setError(`Mark read failed: ${updateError.message}`);
+    setUpdatingId(null);
   }
 
   return (
@@ -198,8 +256,36 @@ export default function BooksPage() {
                       }}
                       className="px-3 py-3 transition hover:bg-white/5"
                     >
-                      <div className="font-semibold">{book.title}</div>
-                      <div className="mt-0.5 text-sm text-white/50">{book.author ?? "Unknown author"}</div>
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <LongPressTitle title={book.title} className="line-clamp-2 text-[14px] font-semibold leading-[18px]" />
+                          <div className="mt-0.5 truncate text-sm text-white/50">{book.author ?? "Unknown author"}</div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={updatingId === book.id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              returnToOnDeck(book.id);
+                            }}
+                            className="h-9 rounded-xl border border-white/10 bg-white/5 px-2.5 text-xs font-semibold text-white/85 transition active:scale-[0.98] disabled:opacity-50"
+                          >
+                            On Deck
+                          </button>
+                          <button
+                            type="button"
+                            disabled={updatingId === book.id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              markAsRead(book.id);
+                            }}
+                            className="h-9 rounded-xl bg-white px-2.5 text-xs font-semibold text-black transition active:scale-[0.98] disabled:opacity-50"
+                          >
+                            Mark Read
+                          </button>
+                        </div>
+                      </div>
 
                       {expandedId === book.id ? (
                         <BookEditor
@@ -207,6 +293,10 @@ export default function BooksPage() {
                           onSaved={(updated) => {
                             setRows((current) => current.map((item) => item.id === updated.id ? updated : item));
                             if (updated.reading_status !== "reading") setExpandedId(null);
+                          }}
+                          onDeleted={(id) => {
+                            setRows((current) => current.filter((item) => item.id !== id));
+                            setExpandedId(null);
                           }}
                         />
                       ) : null}
@@ -252,17 +342,15 @@ export default function BooksPage() {
                           }}
                           className="rounded-lg px-1.5 py-2 transition hover:bg-white/5 sm:px-2"
                         >
-                          <div className="flex items-center gap-2">
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-[15px] font-semibold sm:text-[16px]">{book.title}</div>
-                              <div className="truncate text-[12px] text-white/45 sm:text-[13px]">
-                                {book.author ?? "Unknown author"}
+                          <div className="min-w-0">
+                            <LongPressTitle title={book.title} className="line-clamp-2 text-[14px] font-semibold leading-[18px] sm:text-[15px]" />
+                            <div className="mt-1 flex min-w-0 items-center gap-2">
+                              <div className="min-w-0 flex-1 truncate text-[11px] text-white/45 sm:text-[12px]">
+                                {book.author ?? "Unknown author"}{book.pages ? ` · ${book.pages}p` : ""}
                               </div>
-                            </div>
-
-                            <div className="flex shrink-0 items-center gap-1">
-                              <div className="w-12 text-right text-[12px] tabular-nums text-white/60">
-                                {book.pages ? `${book.pages}p` : ""}
+                              <div className="flex shrink-0 items-center gap-1">
+                              <div className="w-6 text-right text-[11px] tabular-nums text-white/65">
+                                {book.rank === 99 ? "OD" : book.rank}
                               </div>
                               <button
                                 type="button"
@@ -286,19 +374,7 @@ export default function BooksPage() {
                               >
                                 ▼
                               </button>
-                              <div className="w-7 text-right text-[12px] tabular-nums text-white/65">
-                                {book.rank === 99 ? "OD" : book.rank}
                               </div>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  startReading(book.id);
-                                }}
-                                className="h-9 rounded-xl border border-white/10 bg-white/5 px-2.5 text-xs font-semibold text-white/90 transition active:scale-[0.98]"
-                              >
-                                Start
-                              </button>
                             </div>
                           </div>
 
@@ -308,6 +384,14 @@ export default function BooksPage() {
                               onSaved={(updated) => {
                                 setRows((current) => current.map((item) => item.id === updated.id ? updated : item));
                                 if (updated.reading_status !== "unread" || updated.rank === null) setExpandedId(null);
+                              }}
+                              onDeleted={(id) => {
+                                setRows((current) => current
+                                  .filter((item) => item.id !== id)
+                                  .map((item) => book.rank !== null && book.rank !== 99 && item.rank !== null && item.rank !== 99 && item.rank > book.rank
+                                    ? { ...item, rank: item.rank - 1 }
+                                    : item));
+                                setExpandedId(null);
                               }}
                             />
                           ) : null}

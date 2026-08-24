@@ -46,7 +46,7 @@ function subtractISODays(iso: string, days: number) {
 }
 
 function trackingDate(occurredOn: string, occurredAt: string) {
-  return occurredAt < "03:00:00" ? previousISODate(occurredOn) : occurredOn;
+  return occurredAt < "04:00:00" ? previousISODate(occurredOn) : occurredOn;
 }
 
 function currentTrackingDate() {
@@ -57,7 +57,7 @@ function currentTrackingDate() {
     hour: "2-digit",
     hourCycle: "h23",
   }).format(now));
-  return hour < 3 ? previousISODate(calendarDate) : calendarDate;
+  return hour < 4 ? previousISODate(calendarDate) : calendarDate;
 }
 
 function chartDatesFor(datesWithData: string[]) {

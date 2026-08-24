@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import BookEditor, { type BookRecord } from "../BookEditor";
+import LongPressTitle from "../LongPressTitle";
 
 function sortReadBooks(books: BookRecord[]) {
   return [...books].sort((a, b) => {
@@ -30,6 +31,8 @@ export default function ReadBooksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [creatingRereadId, setCreatingRereadId] = useState<string | null>(null);
+  const [rereadMessage, setRereadMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -55,6 +58,37 @@ export default function ReadBooksPage() {
 
   const readThisYear = books.filter((book) => book.date_read?.startsWith(String(new Date().getFullYear()))).length;
 
+  async function createReread(book: BookRecord) {
+    if (creatingRereadId) return;
+
+    const now = new Date();
+    const dateAdded = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    setCreatingRereadId(book.id);
+    setRereadMessage(null);
+    setError(null);
+
+    const { error: insertError } = await supabase.from("books").insert({
+      owned: book.owned,
+      reading_status: "unread",
+      title: book.title,
+      author: book.author,
+      pages: book.pages,
+      original_pub_year: book.original_pub_year,
+      date_added: dateAdded,
+      date_read: null,
+      rank: null,
+      re_read: true,
+      source: book.source,
+      pages_of_text: book.pages_of_text,
+      current_page: null,
+      notes: book.notes,
+    });
+
+    if (insertError) setError(`Reread creation failed: ${insertError.message}`);
+    else setRereadMessage(`${book.title} was added to To Read as a reread.`);
+    setCreatingRereadId(null);
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-5 py-8 text-white">
       <div className="mx-auto w-full max-w-5xl">
@@ -69,6 +103,7 @@ export default function ReadBooksPage() {
         </div>
 
         <section className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_10px_60px_rgba(0,0,0,0.65)]">
+          {rereadMessage ? <div className="mb-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-center text-sm text-white/70">{rereadMessage}</div> : null}
           {error ? <div className="py-10 text-center text-red-300">{error}</div> : loading ? (
             <div className="py-10 text-center text-white/60">Loading…</div>
           ) : filteredBooks.length === 0 ? (
@@ -89,12 +124,27 @@ export default function ReadBooksPage() {
                   }}
                   className="rounded-xl px-1 py-3 transition hover:bg-white/5"
                 >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="truncate text-lg font-semibold">{book.title}</div>
-                      <div className="truncate text-sm text-white/50">{book.author ?? "Unknown author"}{book.re_read ? " · Re-read" : ""}</div>
+                  <div className="min-w-0">
+                    <LongPressTitle title={book.title} className="line-clamp-2 text-[14px] font-semibold leading-[18px]" />
+                    <div className="mt-1 flex min-w-0 items-center justify-between gap-3">
+                      <div className="truncate text-[12px] text-white/50">{book.author ?? "Unknown author"}{book.re_read ? " · Re-read" : ""}</div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                      <div className="text-right text-[11px] tabular-nums text-white/55">{formatDate(book.date_read)}</div>
+                      <button
+                        type="button"
+                        aria-label={`Create a reread of ${book.title}`}
+                        title="Reread"
+                        disabled={creatingRereadId !== null}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          createReread(book);
+                        }}
+                        className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-white/15 bg-white/5 text-base leading-none text-white/85 transition hover:bg-white/10 active:scale-[0.97] disabled:opacity-40"
+                      >
+                        {creatingRereadId === book.id ? "…" : "+"}
+                      </button>
+                      </div>
                     </div>
-                    <div className="shrink-0 text-right text-sm tabular-nums text-white/55">{formatDate(book.date_read)}</div>
                   </div>
 
                   {expandedId === book.id ? (
@@ -105,6 +155,10 @@ export default function ReadBooksPage() {
                           ? sortReadBooks(current.map((item) => item.id === updated.id ? updated : item))
                           : current.filter((item) => item.id !== updated.id));
                         if (updated.reading_status !== "read") setExpandedId(null);
+                      }}
+                      onDeleted={(id) => {
+                        setBooks((current) => current.filter((item) => item.id !== id));
+                        setExpandedId(null);
                       }}
                     />
                   ) : null}

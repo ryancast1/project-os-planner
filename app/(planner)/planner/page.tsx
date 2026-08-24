@@ -4,6 +4,16 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
+const PACIFIC_TZ = "America/Los_Angeles";
+
+function pacificISODate(d = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: PACIFIC_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
 
 type WindowKind = "workweek" | "weekend";
 
@@ -3107,7 +3117,7 @@ export default function PlannerPage() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [habitDoneIds, setHabitDoneIds] = useState<Set<string>>(new Set());
   const [gymDoneToday, setGymDoneToday] = useState(false);
-  const [trichLoggedToday, setTrichLoggedToday] = useState<boolean | null>(null);
+  const [trichTodayCounts, setTrichTodayCounts] = useState<{ t1: number; t2: number }>({ t1: 0, t2: 0 });
   const [projectGoals, setProjectGoals] = useState<ProjectGoal[]>([]);
   const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
   const [notesModalDate, setNotesModalDate] = useState<string | null>(null);
@@ -3504,6 +3514,7 @@ function getWindowValue(which: DrawerWindow) {
     }
 
     const todayIso = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
+    const trichTodayIso = pacificISODate();
     const start = toISODate(days[0]);
 
     // We normally show 7 days (today + next 6). But we ALSO want future-dated items that fall into
@@ -3642,9 +3653,8 @@ function getWindowValue(which: DrawerWindow) {
         .limit(1),
       supabase
         .from("trich_events")
-        .select("id")
-        .eq("occurred_on", todayIso)
-        .limit(1),
+        .select("trich")
+        .eq("occurred_on", trichTodayIso),
         supabase
   .from("movie_tracker")
   .select("id,title,priority")
@@ -3773,10 +3783,15 @@ function getWindowValue(which: DrawerWindow) {
     const gymDone = !workoutSessionsTodayRes.error && ((workoutSessionsTodayRes.data ?? []) as any[]).length > 0;
     setGymDoneToday(gymDone);
     if (trichEventsTodayRes.error) {
-      setTrichLoggedToday(null);
+      setTrichTodayCounts({ t1: 0, t2: 0 });
     } else {
-      const trichLogged = ((trichEventsTodayRes.data ?? []) as any[]).length > 0;
-      setTrichLoggedToday(trichLogged);
+      const counts = { t1: 0, t2: 0 };
+      for (const row of (trichEventsTodayRes.data ?? []) as Array<{ trich: number | string | null }>) {
+        const trich = Number(row.trich);
+        if (trich === 1) counts.t1 += 1;
+        if (trich === 2) counts.t2 += 1;
+      }
+      setTrichTodayCounts(counts);
     }
     const movies = (movieTrackerRes.error ? [] : (movieTrackerRes.data ?? [])) as any[];
 setMovieItems(
@@ -3885,6 +3900,39 @@ setMovieItems(
           return next;
         });
       }
+    }
+  }
+
+  async function logTrichPull(n: 1 | 2) {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      if (userError) console.warn("trich planner log auth", userError);
+      return;
+    }
+
+    const occurredOn = pacificISODate();
+
+    setTrichTodayCounts((prev) => ({
+      t1: n === 1 ? prev.t1 + 1 : prev.t1,
+      t2: n === 2 ? prev.t2 + 1 : prev.t2,
+    }));
+
+    const { error } = await supabase.from("trich_events").insert({
+      user_id: user.id,
+      trich: n,
+      occurred_on: occurredOn,
+    });
+
+    if (error) {
+      console.warn("trich planner log", error);
+      setTrichTodayCounts((prev) => ({
+        t1: n === 1 ? Math.max(0, prev.t1 - 1) : prev.t1,
+        t2: n === 2 ? Math.max(0, prev.t2 - 1) : prev.t2,
+      }));
     }
   }
 
@@ -6037,15 +6085,26 @@ const { error } = await supabase
 
     {/* Habit chips (Today only) */}
               <div className="flex flex-1 flex-wrap justify-end gap-1">
-                {trichLoggedToday === false && (
-                  <div
-                    aria-label="Trich check"
-                    title="Trich check"
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-emerald-400/70 bg-emerald-300 text-sm font-semibold text-neutral-900"
+                {([
+                  ["T1", 1, trichTodayCounts.t1],
+                  ["T2", 2, trichTodayCounts.t2],
+                ] as const).map(([label, trichType, count]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => logTrichPull(trichType)}
+                    aria-label={`Log ${label} pull`}
+                    title={`Log ${label} pull`}
+                    className={clsx(
+                      "grid h-9 min-w-[34px] shrink-0 place-items-center rounded-xl border px-2 text-xs font-semibold tracking-wide sm:px-3",
+                      count === 0
+                        ? "border-emerald-400/70 bg-emerald-300 text-neutral-900"
+                        : "border-neutral-800 bg-neutral-950 text-neutral-200"
+                    )}
                   >
-                    T
-                  </div>
-                )}
+                    {label}
+                  </button>
+                ))}
                 {habits.map((h) => {
                   const label = (h.short_label && h.short_label.trim()) ? h.short_label.trim() : h.name.slice(0, 3).toUpperCase();
                   if (label.toUpperCase() === "W") return null;

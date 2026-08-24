@@ -43,6 +43,27 @@ function toISODate(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
+function addDaysISO(iso: string, days: number) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return toISODate(d);
+}
+
+function toFourAmDayISO(occurredOn: unknown, occurredAt?: unknown) {
+  if (typeof occurredOn !== "string") return null;
+  if (typeof occurredAt === "string") {
+    return occurredAt < "04:00:00" ? addDaysISO(occurredOn, -1) : occurredOn;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(occurredOn)) return occurredOn;
+
+  const dt = new Date(occurredOn);
+  if (Number.isNaN(dt.getTime())) return null;
+
+  dt.setHours(dt.getHours() - 4);
+  return toISODate(dt);
+}
+
 function fmtMD(iso: string) {
   // iso: YYYY-MM-DD
   const m = Number(iso.slice(5, 7));
@@ -233,6 +254,7 @@ export default function HabitsPage() {
       setWeedLookupReady(false);
       setAlcoholLookupReady(false);
 
+      const viceQueryEndIso = addDaysISO(todayIso, 1);
       const habitIds = Array.from(new Set([
         ...activeHabits.map((h) => h.id),
         ...(weedHabitId ? [weedHabitId] : []),
@@ -266,16 +288,16 @@ export default function HabitsPage() {
       // 4) weed_hits for W column from 2026-08-07 onward (best-effort)
       const weedHitsRes = await supabase
         .from("weed_hits")
-        .select("occurred_on")
+        .select("occurred_on,occurred_at")
         .gte("occurred_on", WEED_AUTOMATION_START_ISO)
-        .lte("occurred_on", todayIso);
+        .lt("occurred_on", viceQueryEndIso);
 
       // 5) alcohol_entries for A column from 2026-08-07 onward (best-effort)
       const alcoholEntriesRes = await supabase
         .from("alcohol_entries")
-        .select("occurred_on")
+        .select("occurred_on,occurred_at")
         .gte("occurred_on", WEED_AUTOMATION_START_ISO)
-        .lte("occurred_on", todayIso);
+        .lt("occurred_on", viceQueryEndIso);
 
       // 6) trich_events for T1/T2 columns - paginate so older days do not disappear past the row cap
       const authRes = await supabase.auth.getUser();
@@ -357,7 +379,7 @@ export default function HabitsPage() {
       const nextWeedHits: Record<string, true> = {};
       if (!weedHitsRes.error) {
         for (const r of (weedHitsRes.data ?? []) as any[]) {
-          const iso = typeof r.occurred_on === "string" ? r.occurred_on : null;
+          const iso = toFourAmDayISO(r.occurred_on, r.occurred_at);
           if (!iso) continue;
           if (iso < WEED_AUTOMATION_START_ISO || iso > todayIso) continue;
           nextWeedHits[iso] = true;
@@ -367,7 +389,7 @@ export default function HabitsPage() {
       const nextAlcoholEntries: Record<string, true> = {};
       if (!alcoholEntriesRes.error) {
         for (const r of (alcoholEntriesRes.data ?? []) as any[]) {
-          const iso = typeof r.occurred_on === "string" ? r.occurred_on : null;
+          const iso = toFourAmDayISO(r.occurred_on, r.occurred_at);
           if (!iso) continue;
           if (iso < WEED_AUTOMATION_START_ISO || iso > todayIso) continue;
           nextAlcoholEntries[iso] = true;
