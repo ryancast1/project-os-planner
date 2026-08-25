@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import BookEditor, { type BookRecord } from "../BookEditor";
-import LongPressTitle from "../LongPressTitle";
 
 function sortReadBooks(books: BookRecord[]) {
   return [...books].sort((a, b) => {
@@ -38,7 +37,7 @@ export default function ReadBooksPage() {
     let active = true;
     supabase
       .from("books")
-      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes")
+      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes,rating")
       .eq("reading_status", "read")
       .order("date_read", { ascending: false, nullsFirst: false })
       .then(({ data, error: loadError }) => {
@@ -82,6 +81,7 @@ export default function ReadBooksPage() {
       pages_of_text: book.pages_of_text,
       current_page: null,
       notes: book.notes,
+      rating: null,
     });
 
     if (insertError) setError(`Reread creation failed: ${insertError.message}`);
@@ -125,7 +125,7 @@ export default function ReadBooksPage() {
                   className="rounded-xl px-1 py-3 transition hover:bg-white/5"
                 >
                   <div className="min-w-0">
-                    <LongPressTitle title={book.title} className="line-clamp-2 text-[14px] font-semibold leading-[18px]" />
+                    <div className="line-clamp-2 text-[14px] font-semibold leading-[18px]">{book.title}</div>
                     <div className="mt-1 flex min-w-0 items-center justify-between gap-3">
                       <div className="truncate text-[12px] text-white/50">{book.author ?? "Unknown author"}{book.re_read ? " · Re-read" : ""}</div>
                       <div className="flex shrink-0 items-center gap-1.5">

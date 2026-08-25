@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import BookEditor, { type BookRecord } from "../BookEditor";
-import LongPressTitle from "../LongPressTitle";
 
 function sortToRead(books: BookRecord[]) {
   return [...books].sort((a, b) => {
@@ -23,6 +22,7 @@ function sortToRead(books: BookRecord[]) {
 export default function BookListPage() {
   const [books, setBooks] = useState<BookRecord[]>([]);
   const [search, setSearch] = useState("");
+  const [ownedOnly, setOwnedOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export default function BookListPage() {
     let active = true;
     supabase
       .from("books")
-      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes")
+      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes,rating")
       .eq("reading_status", "unread")
       .order("rank", { ascending: true, nullsFirst: false })
       .order("date_added", { ascending: false })
@@ -47,11 +47,11 @@ export default function BookListPage() {
 
   const filteredBooks = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return books;
     return books.filter((book) =>
-      `${book.title} ${book.author ?? ""}`.toLowerCase().includes(query)
+      (!ownedOnly || book.owned) &&
+      (!query || `${book.title} ${book.author ?? ""}`.toLowerCase().includes(query))
     );
-  }, [books, search]);
+  }, [books, ownedOnly, search]);
 
   async function addToOnDeck(id: string) {
     setBusyId(id);
@@ -76,19 +76,35 @@ export default function BookListPage() {
       <div className="mx-auto w-full max-w-2xl">
         <header className="mb-6 text-center">
           <h1 className="text-4xl font-semibold tracking-tight">To Read List</h1>
-          <div className="mt-2 text-sm text-white/60">{loading ? "…" : `${books.length} unread ${books.length === 1 ? "book" : "books"}`}</div>
+          <div className="mt-2 text-sm text-white/60">
+            {loading
+              ? "…"
+              : ownedOnly
+                ? `${filteredBooks.length} unread owned ${filteredBooks.length === 1 ? "book" : "books"}`
+                : `${books.length} unread ${books.length === 1 ? "book" : "books"}`}
+          </div>
           <Link href="/books" className="mt-2 inline-block text-sm text-white/60 underline underline-offset-4 hover:text-white">Back</Link>
         </header>
 
-        <div className="mb-4 flex justify-center">
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search..." className="h-10 w-full max-w-xs rounded-xl border border-white/10 bg-white/5 px-3 text-[16px] text-white placeholder:text-white/40 outline-none focus:border-white/20" />
+        <div className="mx-auto mb-4 flex w-full max-w-md items-center gap-2">
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search..." className="h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 text-[16px] text-white placeholder:text-white/40 outline-none focus:border-white/20" />
+          <button
+            type="button"
+            aria-pressed={ownedOnly}
+            onClick={() => setOwnedOnly((current) => !current)}
+            className={ownedOnly
+              ? "h-10 shrink-0 rounded-xl bg-white px-4 text-sm font-semibold text-black transition active:scale-[0.98]"
+              : "h-10 shrink-0 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white/75 transition active:scale-[0.98]"}
+          >
+            Owned
+          </button>
         </div>
 
         <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_10px_60px_rgba(0,0,0,0.65)]">
           {error ? <div className="py-10 text-center text-red-300">{error}</div> : loading ? (
             <div className="py-10 text-center text-white/60">Loading…</div>
           ) : filteredBooks.length === 0 ? (
-            <div className="py-10 text-center text-white/60">{search ? "No matches." : "No unread books yet."}</div>
+            <div className="py-10 text-center text-white/60">{search || ownedOnly ? "No matches." : "No unread books yet."}</div>
           ) : (
             <div className="divide-y divide-white/10">
               {filteredBooks.map((book) => (
@@ -106,7 +122,7 @@ export default function BookListPage() {
                     className="rounded-xl px-1 py-2 transition hover:bg-white/5"
                   >
                     <div className="min-w-0">
-                      <LongPressTitle title={book.title} className="line-clamp-2 text-[14px] font-semibold leading-[18px]" />
+                      <div className="line-clamp-2 text-[14px] font-semibold leading-[18px]">{book.title}</div>
                       <div className="mt-1 flex min-w-0 items-center justify-between gap-3">
                         <div className="truncate text-[12px] text-white/50">{book.author ?? "Unknown author"}</div>
                         <div className="shrink-0">

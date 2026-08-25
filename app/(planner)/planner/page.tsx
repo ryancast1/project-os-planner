@@ -3118,6 +3118,9 @@ export default function PlannerPage() {
   const [habitDoneIds, setHabitDoneIds] = useState<Set<string>>(new Set());
   const [gymDoneToday, setGymDoneToday] = useState(false);
   const [trichTodayCounts, setTrichTodayCounts] = useState<{ t1: number; t2: number }>({ t1: 0, t2: 0 });
+  const [trichFeedback, setTrichFeedback] = useState<{ label: string; count: number; token: number } | null>(null);
+  const trichCountsRef = useRef(trichTodayCounts);
+  const trichFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [projectGoals, setProjectGoals] = useState<ProjectGoal[]>([]);
   const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
   const [notesModalDate, setNotesModalDate] = useState<string | null>(null);
@@ -3128,6 +3131,16 @@ export default function PlannerPage() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    trichCountsRef.current = trichTodayCounts;
+  }, [trichTodayCounts]);
+
+  useEffect(() => {
+    return () => {
+      if (trichFeedbackTimeoutRef.current) clearTimeout(trichFeedbackTimeoutRef.current);
+    };
+  }, []);
   const [authChecked, setAuthChecked] = useState(false);
 
   // Drag and drop state
@@ -3903,6 +3916,15 @@ setMovieItems(
     }
   }
 
+  function showTrichFeedback(label: string, count: number) {
+    if (trichFeedbackTimeoutRef.current) clearTimeout(trichFeedbackTimeoutRef.current);
+    setTrichFeedback({ label, count, token: Date.now() });
+    trichFeedbackTimeoutRef.current = setTimeout(() => {
+      setTrichFeedback(null);
+      trichFeedbackTimeoutRef.current = null;
+    }, 1400);
+  }
+
   async function logTrichPull(n: 1 | 2) {
     const {
       data: { user },
@@ -3915,11 +3937,16 @@ setMovieItems(
     }
 
     const occurredOn = pacificISODate();
+    const label = n === 1 ? "T1" : "T2";
+    const previousCounts = trichCountsRef.current;
+    const nextCounts = {
+      t1: n === 1 ? previousCounts.t1 + 1 : previousCounts.t1,
+      t2: n === 2 ? previousCounts.t2 + 1 : previousCounts.t2,
+    };
 
-    setTrichTodayCounts((prev) => ({
-      t1: n === 1 ? prev.t1 + 1 : prev.t1,
-      t2: n === 2 ? prev.t2 + 1 : prev.t2,
-    }));
+    trichCountsRef.current = nextCounts;
+    setTrichTodayCounts(nextCounts);
+    showTrichFeedback(label, n === 1 ? nextCounts.t1 : nextCounts.t2);
 
     const { error } = await supabase.from("trich_events").insert({
       user_id: user.id,
@@ -3929,10 +3956,8 @@ setMovieItems(
 
     if (error) {
       console.warn("trich planner log", error);
-      setTrichTodayCounts((prev) => ({
-        t1: n === 1 ? Math.max(0, prev.t1 - 1) : prev.t1,
-        t2: n === 2 ? Math.max(0, prev.t2 - 1) : prev.t2,
-      }));
+      trichCountsRef.current = previousCounts;
+      setTrichTodayCounts(previousCounts);
     }
   }
 
@@ -6084,7 +6109,16 @@ const { error } = await supabase
               </div>
 
     {/* Habit chips (Today only) */}
-              <div className="flex flex-1 flex-wrap justify-end gap-1">
+              <div className="relative flex flex-1 flex-wrap justify-end gap-1">
+                {trichFeedback && (
+                  <div
+                    key={trichFeedback.token}
+                    aria-live="polite"
+                    className="pointer-events-none absolute right-0 top-12 z-20 rounded-2xl border-2 border-red-400/80 bg-red-950/95 px-5 py-3 text-lg font-black text-red-100 shadow-xl shadow-red-950/40 sm:px-4 sm:py-2 sm:text-base"
+                  >
+                    {trichFeedback.label}: {trichFeedback.count}
+                  </div>
+                )}
                 {([
                   ["T1", 1, trichTodayCounts.t1],
                   ["T2", 2, trichTodayCounts.t2],

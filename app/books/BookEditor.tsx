@@ -19,6 +19,7 @@ export type BookRecord = {
   pages_of_text: number | null;
   current_page: number | null;
   notes: string | null;
+  rating: number | null;
 };
 
 type Draft = {
@@ -36,6 +37,7 @@ type Draft = {
   pagesOfText: string;
   currentPage: string;
   notes: string;
+  rating: string;
 };
 
 function createDraft(book: BookRecord): Draft {
@@ -54,6 +56,7 @@ function createDraft(book: BookRecord): Draft {
     pagesOfText: book.pages_of_text === null ? "" : String(book.pages_of_text),
     currentPage: book.current_page === null ? "" : String(book.current_page),
     notes: book.notes ?? "",
+    rating: book.rating === null ? "" : String(book.rating),
   };
 }
 
@@ -85,6 +88,11 @@ export default function BookEditor({
       setMessage("Title is required.");
       return;
     }
+    const rating = nullableNumber(draft.rating);
+    if (rating !== null && (rating < 0.5 || rating > 5 || !Number.isInteger(rating * 2))) {
+      setMessage("Rating must be between 0.5 and 5 in half-star steps.");
+      return;
+    }
 
     const payload = {
       owned: draft.owned,
@@ -101,6 +109,7 @@ export default function BookEditor({
       pages_of_text: nullableNumber(draft.pagesOfText),
       current_page: nullableNumber(draft.currentPage),
       notes: draft.notes.trim() || null,
+      rating: draft.readingStatus === "read" ? rating : null,
     };
 
     setSaving(true);
@@ -109,7 +118,7 @@ export default function BookEditor({
       .from("books")
       .update(payload)
       .eq("id", book.id)
-      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes")
+      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes,rating")
       .single();
 
     if (error) {
@@ -229,6 +238,12 @@ export default function BookEditor({
             <input type="checkbox" checked={draft.reRead} onChange={(event) => setDraft({ ...draft, reRead: event.target.checked })} className="h-5 w-5 shrink-0" /> Re-read
           </label>
         </div>
+        {draft.readingStatus === "read" ? (
+          <label className="min-w-0 sm:col-span-2">
+            <span className={labelClass}>Rating</span>
+            <input type="number" inputMode="decimal" min="0.5" max="5" step="0.5" value={draft.rating} onChange={(event) => setDraft({ ...draft, rating: event.target.value })} placeholder="0.5–5" className={inputClass} />
+          </label>
+        ) : null}
       </div>
 
       <label className="mt-4 block min-w-0">
