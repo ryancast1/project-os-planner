@@ -5,13 +5,21 @@ import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 // Column type definitions
-type ColumnType = "text" | "number" | "boolean" | "date" | "datetime" | "select";
+type ColumnType = "text" | "number" | "boolean" | "date" | "datetime" | "time" | "select" | "relation";
+
+type RelationConfig = {
+  table: string;
+  valueColumn: string;
+  labelColumn: string;
+  orderColumn?: string;
+};
 
 type ColumnConfig = {
   name: string;
   type: ColumnType;
   options?: string[];
   readonly?: boolean;
+  relation?: RelationConfig;
 };
 
 type TableConfig = {
@@ -19,17 +27,245 @@ type TableConfig = {
   columns: ColumnConfig[];
   primaryKey: string;
   defaultSort: { column: string; desc: boolean };
+  userScoped?: boolean;
 };
 
-// Table configurations
+type RelationOption = { value: string; label: string };
+type RelationOptions = Record<string, RelationOption[]>;
+
+const GOAL_RELATION: RelationConfig = {
+  table: "projects_goals",
+  valueColumn: "id",
+  labelColumn: "goal",
+  orderColumn: "goal",
+};
+
+// Only user-facing fields belong here. Primary keys are fetched and used
+// internally, but IDs and user IDs are deliberately absent from every column
+// list so they never appear in the grid, search, or edit forms.
 const TABLE_CONFIG: Record<string, TableConfig> = {
-  // Workout System
+  alcohol_entries: {
+    label: "Alcohol Entries",
+    primaryKey: "id",
+    userScoped: true,
+    defaultSort: { column: "occurred_on", desc: true },
+    columns: [
+      { name: "occurred_on", type: "date" },
+      { name: "occurred_at", type: "time" },
+      { name: "label", type: "text" },
+      { name: "amount_oz", type: "number" },
+      { name: "abv", type: "number" },
+      { name: "standard_drinks", type: "number" },
+      { name: "created_at", type: "datetime", readonly: true },
+    ],
+  },
+  books: {
+    label: "Books",
+    primaryKey: "id",
+    userScoped: true,
+    defaultSort: { column: "date_added", desc: true },
+    columns: [
+      { name: "title", type: "text" },
+      { name: "author", type: "text" },
+      { name: "reading_status", type: "select", options: ["unread", "reading", "read"] },
+      { name: "owned", type: "boolean" },
+      { name: "re_read", type: "boolean" },
+      { name: "pages", type: "number" },
+      { name: "original_pub_year", type: "number" },
+      { name: "date_added", type: "date" },
+      { name: "date_read", type: "date" },
+      { name: "rank", type: "number" },
+      { name: "source", type: "text" },
+      { name: "first_page", type: "number" },
+      { name: "pages_of_text", type: "number" },
+      { name: "current_page", type: "number" },
+      { name: "rating", type: "number" },
+      { name: "notes", type: "text" },
+    ],
+  },
+  content_items: {
+    label: "Content Items",
+    primaryKey: "id",
+    userScoped: true,
+    defaultSort: { column: "created_at", desc: true },
+    columns: [
+      { name: "title", type: "text" },
+      { name: "notes", type: "text" },
+      { name: "category", type: "select", options: ["cook", "watch", "listen", "read", "city"] },
+      { name: "is_ongoing", type: "boolean" },
+      { name: "status", type: "select", options: ["active", "done"] },
+      { name: "scheduled_for", type: "date" },
+      { name: "window_kind", type: "select", options: ["workweek", "weekend"] },
+      { name: "window_start", type: "date" },
+      { name: "sort_order", type: "number" },
+      { name: "day_sort_order", type: "number" },
+      { name: "created_at", type: "datetime", readonly: true },
+      { name: "completed_at", type: "datetime" },
+    ],
+  },
+  focuses: {
+    label: "Focuses",
+    primaryKey: "id",
+    defaultSort: { column: "created_at", desc: true },
+    columns: [
+      { name: "title", type: "text" },
+      { name: "notes", type: "text" },
+      { name: "status", type: "select", options: ["active", "archived"] },
+      { name: "scheduled_for", type: "date" },
+      { name: "window_kind", type: "select", options: ["workweek", "weekend"] },
+      { name: "window_start", type: "date" },
+      { name: "content_category", type: "select", options: ["cook", "watch", "listen", "read", "city"] },
+      { name: "project_goal_id", type: "relation", relation: GOAL_RELATION },
+      { name: "sort_order", type: "number" },
+      { name: "created_at", type: "datetime", readonly: true },
+    ],
+  },
+  habit_logs: {
+    label: "Habit Logs",
+    primaryKey: "id",
+    defaultSort: { column: "done_on", desc: true },
+    columns: [
+      { name: "habit_id", type: "relation", relation: { table: "habits", valueColumn: "id", labelColumn: "name", orderColumn: "name" } },
+      { name: "done_on", type: "date" },
+    ],
+  },
+  movie_tracker: {
+    label: "Movies",
+    primaryKey: "id",
+    defaultSort: { column: "created_at", desc: true },
+    columns: [
+      { name: "title", type: "text" },
+      { name: "category", type: "select", options: ["movie", "documentary"] },
+      { name: "year", type: "number" },
+      { name: "length_minutes", type: "number" },
+      { name: "status", type: "select", options: ["to_watch", "watched"] },
+      { name: "date_watched", type: "date" },
+      { name: "priority", type: "number" },
+      { name: "rewatch", type: "boolean" },
+      { name: "source", type: "text" },
+      { name: "location", type: "text" },
+      { name: "note", type: "text" },
+      { name: "created_at", type: "datetime", readonly: true },
+    ],
+  },
+  packing_trips: {
+    label: "Packing Trips",
+    primaryKey: "id",
+    defaultSort: { column: "created_at", desc: true },
+    columns: [
+      { name: "trip_name", type: "text" },
+      { name: "is_archived", type: "boolean" },
+      { name: "archived_at", type: "datetime" },
+      { name: "created_at", type: "datetime", readonly: true },
+    ],
+  },
+  plans: {
+    label: "Plans",
+    primaryKey: "id",
+    defaultSort: { column: "created_at", desc: true },
+    columns: [
+      { name: "title", type: "text" },
+      { name: "notes", type: "text" },
+      { name: "starts_at", type: "datetime" },
+      { name: "ends_at", type: "datetime" },
+      { name: "end_date", type: "date" },
+      { name: "day_off", type: "boolean" },
+      { name: "status", type: "select", options: ["open", "done", "canceled"] },
+      { name: "scheduled_for", type: "date" },
+      { name: "window_kind", type: "select", options: ["workweek", "weekend"] },
+      { name: "window_start", type: "date" },
+      { name: "project_goal_id", type: "relation", relation: GOAL_RELATION },
+      { name: "created_at", type: "datetime", readonly: true },
+      { name: "completed_at", type: "datetime" },
+    ],
+  },
+  projects_goals: {
+    label: "Goals",
+    primaryKey: "id",
+    defaultSort: { column: "created_at", desc: true },
+    columns: [
+      { name: "goal", type: "text" },
+      { name: "bucket", type: "text" },
+      { name: "rating", type: "number" },
+      { name: "actions", type: "text" },
+      { name: "notes", type: "text" },
+      { name: "archived", type: "boolean" },
+      { name: "sort_order", type: "number" },
+      { name: "created_at", type: "datetime", readonly: true },
+    ],
+  },
+  reading_log: {
+    label: "Reading Log",
+    primaryKey: "id",
+    userScoped: true,
+    defaultSort: { column: "logged_on", desc: true },
+    columns: [
+      { name: "book_id", type: "relation", relation: { table: "books", valueColumn: "id", labelColumn: "title", orderColumn: "title" } },
+      { name: "page_number", type: "number" },
+      { name: "logged_on", type: "date" },
+      { name: "created_at", type: "datetime", readonly: true },
+    ],
+  },
+  running_runs: {
+    label: "Runs",
+    primaryKey: "id",
+    userScoped: true,
+    defaultSort: { column: "run_date", desc: true },
+    columns: [
+      { name: "run_date", type: "date" },
+      { name: "duration_seconds", type: "number" },
+      { name: "distance", type: "number" },
+      { name: "distance_unit", type: "select", options: ["km", "mi"] },
+      { name: "temperature_f", type: "number" },
+      { name: "notes", type: "text" },
+      { name: "is_east_river_3k", type: "boolean" },
+      { name: "created_at", type: "datetime", readonly: true },
+      { name: "updated_at", type: "datetime", readonly: true },
+    ],
+  },
+  tasks: {
+    label: "Tasks",
+    primaryKey: "id",
+    defaultSort: { column: "created_at", desc: true },
+    columns: [
+      { name: "title", type: "text" },
+      { name: "notes", type: "text" },
+      { name: "status", type: "select", options: ["open", "done", "canceled"] },
+      { name: "scheduled_for", type: "date" },
+      { name: "window_kind", type: "select", options: ["workweek", "weekend"] },
+      { name: "window_start", type: "date" },
+      { name: "project_goal_id", type: "relation", relation: GOAL_RELATION },
+      { name: "sort_order", type: "number" },
+      { name: "created_at", type: "datetime", readonly: true },
+      { name: "completed_at", type: "datetime" },
+    ],
+  },
+  trich_events: {
+    label: "Trich Events",
+    primaryKey: "id",
+    userScoped: true,
+    defaultSort: { column: "occurred_on", desc: true },
+    columns: [
+      { name: "occurred_on", type: "date" },
+      { name: "trich", type: "number" },
+    ],
+  },
+  weed_hits: {
+    label: "Weed Hits",
+    primaryKey: "id",
+    userScoped: true,
+    defaultSort: { column: "occurred_on", desc: true },
+    columns: [
+      { name: "occurred_on", type: "date" },
+      { name: "occurred_at", type: "time" },
+      { name: "created_at", type: "datetime", readonly: true },
+    ],
+  },
   workout_sessions: {
     label: "Workout Sessions",
     primaryKey: "id",
     defaultSort: { column: "performed_on", desc: true },
     columns: [
-      { name: "id", type: "text", readonly: true },
       { name: "workout_slug", type: "text" },
       { name: "workout_name", type: "text" },
       { name: "performed_on", type: "date" },
@@ -45,294 +281,15 @@ const TABLE_CONFIG: Record<string, TableConfig> = {
       { name: "submitted_at", type: "datetime", readonly: true },
     ],
   },
-  workout_plans: {
-    label: "Workout Plans",
-    primaryKey: "id",
-    defaultSort: { column: "planned_on", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "user_id", type: "text" },
-      { name: "planned_on", type: "date" },
-      { name: "workout_slug", type: "text" },
-    ],
-  },
-
-  // Running System
-  running_runs: {
-    label: "Runs",
-    primaryKey: "id",
-    defaultSort: { column: "run_date", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "user_id", type: "text" },
-      { name: "run_date", type: "date" },
-      { name: "duration_seconds", type: "number" },
-      { name: "distance", type: "number" },
-      { name: "distance_unit", type: "select", options: ["km", "mi"] },
-      { name: "temperature_f", type: "number" },
-      { name: "notes", type: "text" },
-      { name: "is_east_river_3k", type: "boolean" },
-      { name: "created_at", type: "datetime", readonly: true },
-      { name: "updated_at", type: "datetime", readonly: true },
-    ],
-  },
-
-  // Movie System
-  movie_tracker: {
-    label: "Movies",
-    primaryKey: "id",
-    defaultSort: { column: "created_at", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "title", type: "text" },
-      { name: "year", type: "number" },
-      { name: "length_minutes", type: "number" },
-      { name: "priority", type: "number" },
-      { name: "status", type: "select", options: ["to_watch", "watched"] },
-      { name: "category", type: "select", options: ["movie", "documentary", ""] },
-      { name: "source", type: "text" },
-      { name: "location", type: "text" },
-      { name: "note", type: "text" },
-      { name: "date_watched", type: "date" },
-      { name: "created_at", type: "datetime", readonly: true },
-    ],
-  },
-
-  // Planner System
-  tasks: {
-    label: "Tasks",
-    primaryKey: "id",
-    defaultSort: { column: "created_at", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "title", type: "text" },
-      { name: "notes", type: "text" },
-      { name: "status", type: "select", options: ["open", "done", "canceled"] },
-      { name: "scheduled_for", type: "date" },
-      { name: "window_kind", type: "select", options: ["workweek", "weekend", ""] },
-      { name: "window_start", type: "date" },
-      { name: "project_goal_id", type: "text" },
-      { name: "sort_order", type: "number" },
-      { name: "created_at", type: "datetime", readonly: true },
-      { name: "completed_at", type: "datetime" },
-    ],
-  },
-  plans: {
-    label: "Plans",
-    primaryKey: "id",
-    defaultSort: { column: "created_at", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "title", type: "text" },
-      { name: "notes", type: "text" },
-      { name: "starts_at", type: "datetime" },
-      { name: "ends_at", type: "datetime" },
-      { name: "end_date", type: "date" },
-      { name: "day_off", type: "boolean" },
-      { name: "status", type: "select", options: ["open", "done", "canceled"] },
-      { name: "scheduled_for", type: "date" },
-      { name: "window_kind", type: "select", options: ["workweek", "weekend", ""] },
-      { name: "window_start", type: "date" },
-      { name: "project_goal_id", type: "text" },
-      { name: "created_at", type: "datetime", readonly: true },
-      { name: "completed_at", type: "datetime" },
-    ],
-  },
-  focuses: {
-    label: "Focuses",
-    primaryKey: "id",
-    defaultSort: { column: "created_at", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "title", type: "text" },
-      { name: "notes", type: "text" },
-      { name: "status", type: "select", options: ["active", "archived"] },
-      { name: "scheduled_for", type: "date" },
-      { name: "window_kind", type: "select", options: ["workweek", "weekend", ""] },
-      { name: "window_start", type: "date" },
-      { name: "content_category", type: "text" },
-      { name: "project_goal_id", type: "text" },
-      { name: "sort_order", type: "number" },
-      { name: "created_at", type: "datetime", readonly: true },
-    ],
-  },
-  projects_goals: {
-    label: "Goals",
-    primaryKey: "id",
-    defaultSort: { column: "created_at", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "goal", type: "text" },
-      { name: "bucket", type: "text" },
-      { name: "rating", type: "number" },
-      { name: "actions", type: "text" },
-      { name: "notes", type: "text" },
-      { name: "archived", type: "boolean" },
-      { name: "sort_order", type: "number" },
-      { name: "created_at", type: "datetime", readonly: true },
-    ],
-  },
-  day_notes: {
-    label: "Day Notes",
-    primaryKey: "note_date",
-    defaultSort: { column: "note_date", desc: true },
-    columns: [
-      { name: "note_date", type: "date" },
-      { name: "notes", type: "text" },
-    ],
-  },
-
-  // Content System
-  content_items: {
-    label: "Content Items",
-    primaryKey: "id",
-    defaultSort: { column: "created_at", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "user_id", type: "text" },
-      { name: "title", type: "text" },
-      { name: "notes", type: "text" },
-      { name: "category", type: "select", options: ["cook", "watch", "listen", "read", "city"] },
-      { name: "is_ongoing", type: "boolean" },
-      { name: "status", type: "select", options: ["active", "done"] },
-      { name: "scheduled_for", type: "date" },
-      { name: "window_kind", type: "select", options: ["workweek", "weekend", ""] },
-      { name: "window_start", type: "date" },
-      { name: "sort_order", type: "number" },
-      { name: "day_sort_order", type: "number" },
-      { name: "created_at", type: "datetime", readonly: true },
-      { name: "completed_at", type: "datetime" },
-    ],
-  },
-  content_sessions: {
-    label: "Content Sessions",
-    primaryKey: "id",
-    defaultSort: { column: "created_at", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "user_id", type: "text" },
-      { name: "content_item_id", type: "text" },
-      { name: "movie_tracker_id", type: "text" },
-      { name: "scheduled_for", type: "date" },
-      { name: "window_kind", type: "select", options: ["workweek", "weekend", ""] },
-      { name: "window_start", type: "date" },
-      { name: "status", type: "select", options: ["open", "done"] },
-      { name: "day_sort_order", type: "number" },
-      { name: "created_at", type: "datetime", readonly: true },
-      { name: "completed_at", type: "datetime" },
-    ],
-  },
-
-  // Habits System
-  habits: {
-    label: "Habits",
-    primaryKey: "id",
-    defaultSort: { column: "created_at", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "name", type: "text" },
-      { name: "short_label", type: "text" },
-      { name: "notes", type: "text" },
-      { name: "target_per_week", type: "number" },
-      { name: "is_active", type: "boolean" },
-      { name: "created_at", type: "datetime", readonly: true },
-    ],
-  },
-  habit_logs: {
-    label: "Habit Logs",
-    primaryKey: "id",
-    defaultSort: { column: "done_on", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "habit_id", type: "text" },
-      { name: "done_on", type: "date" },
-    ],
-  },
-
-  // Misc Tracking
-  trich_events: {
-    label: "Trich Events",
-    primaryKey: "id",
-    defaultSort: { column: "occurred_on", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "user_id", type: "text" },
-      { name: "occurred_on", type: "date" },
-      { name: "trich", type: "number" },
-    ],
-  },
-  sick_events: {
-    label: "Sick Events",
-    primaryKey: "id",
-    defaultSort: { column: "first_sign_date", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "user_id", type: "text" },
-      { name: "first_sign_date", type: "date" },
-      { name: "event_type", type: "text" },
-      { name: "note", type: "text" },
-      { name: "created_at", type: "datetime", readonly: true },
-      { name: "updated_at", type: "datetime" },
-    ],
-  },
-  cc_entries: {
-    label: "Cocktail Chatter",
-    primaryKey: "id",
-    defaultSort: { column: "created_at", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "user_id", type: "text" },
-      { name: "person_name", type: "text" },
-      { name: "note", type: "text" },
-      { name: "is_archived", type: "boolean" },
-      { name: "archived_at", type: "datetime" },
-      { name: "created_at", type: "datetime", readonly: true },
-    ],
-  },
-
-  // Packing System
-  packing_trips: {
-    label: "Packing Trips",
-    primaryKey: "id",
-    defaultSort: { column: "created_at", desc: true },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "trip_name", type: "text" },
-      { name: "is_archived", type: "boolean" },
-      { name: "archived_at", type: "datetime" },
-      { name: "created_at", type: "datetime", readonly: true },
-    ],
-  },
-  packing_template_items: {
-    label: "Packing Templates",
-    primaryKey: "id",
-    defaultSort: { column: "sort_order", desc: false },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "category", type: "select", options: ["Toiletries", "Clothes", "Electronics", "Other"] },
-      { name: "item_name", type: "text" },
-      { name: "sort_order", type: "number" },
-    ],
-  },
-  packing_trip_items: {
-    label: "Packing Trip Items",
-    primaryKey: "id",
-    defaultSort: { column: "sort_order", desc: false },
-    columns: [
-      { name: "id", type: "text", readonly: true },
-      { name: "trip_id", type: "text" },
-      { name: "category", type: "select", options: ["Toiletries", "Clothes", "Electronics", "Other"] },
-      { name: "item_name", type: "text" },
-      { name: "is_packed", type: "boolean" },
-      { name: "is_hidden", type: "boolean" },
-      { name: "is_one_off", type: "boolean" },
-      { name: "sort_order", type: "number" },
-    ],
-  },
 };
 
 const TABLE_NAMES = Object.keys(TABLE_CONFIG);
 const PAGE_SIZE = 50;
+
+function noRowsChangedMessage(action: "update" | "delete", table: string) {
+  const verb = action === "update" ? "updated" : "deleted";
+  return `No rows were ${verb} in ${table}. The record may no longer exist, or this table's row-level security policy may not allow ${action}s.`;
+}
 
 function formatDatetime(val: string | null): string {
   if (!val) return "";
@@ -356,6 +313,10 @@ function truncate(val: string | null, max: number): string {
   return val.length > max ? val.slice(0, max) + "..." : val;
 }
 
+function columnLabel(col: ColumnConfig) {
+  return col.type === "relation" ? col.name.replace(/_id$/, "") : col.name;
+}
+
 export default function DatabasePage() {
   const [selectedTable, setSelectedTable] = useState<string>("tasks");
   const [rows, setRows] = useState<any[]>([]);
@@ -371,6 +332,7 @@ export default function DatabasePage() {
   const [page, setPage] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [relationOptions, setRelationOptions] = useState<RelationOptions>({});
 
   const config = TABLE_CONFIG[selectedTable];
 
@@ -407,6 +369,47 @@ export default function DatabasePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTable, sortColumn, sortDesc, page]);
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadRelationOptions() {
+      const relationColumns = config.columns.filter((col) => col.type === "relation" && col.relation);
+      if (relationColumns.length === 0) {
+        setRelationOptions({});
+        return;
+      }
+
+      const entries = await Promise.all(relationColumns.map(async (col) => {
+        const relation = col.relation!;
+        let query = supabase
+          .from(relation.table)
+          .select(`${relation.valueColumn},${relation.labelColumn}`);
+        if (relation.orderColumn) query = query.order(relation.orderColumn, { ascending: true });
+        const { data, error: relationError } = await query;
+        if (relationError) throw relationError;
+        const options = (data ?? []).map((item) => {
+          const record = item as unknown as Record<string, unknown>;
+          return {
+            value: String(record[relation.valueColumn]),
+            label: String(record[relation.labelColumn] ?? "Unnamed"),
+          };
+        });
+        return [col.name, options] as const;
+      }));
+
+      if (active) setRelationOptions(Object.fromEntries(entries));
+    }
+
+    loadRelationOptions().catch((relationError: unknown) => {
+      if (!active) return;
+      const message = relationError instanceof Error ? relationError.message : "Could not load related names";
+      setError(message);
+      setRelationOptions({});
+    });
+
+    return () => { active = false; };
+  }, [config]);
+
   // Reset page when changing table
   function handleTableChange(newTable: string) {
     setSelectedTable(newTable);
@@ -425,10 +428,13 @@ export default function DatabasePage() {
       config.columns.some((col) => {
         const val = row[col.name];
         if (val == null) return false;
-        return String(val).toLowerCase().includes(q);
+        const displayVal = col.type === "relation"
+          ? relationOptions[col.name]?.find((option) => option.value === String(val))?.label ?? val
+          : val;
+        return String(displayVal).toLowerCase().includes(q);
       })
     );
-  }, [rows, searchQuery, config.columns]);
+  }, [rows, searchQuery, config.columns, relationOptions]);
 
   // Toggle row selection
   function toggleSelect(id: string) {
@@ -452,41 +458,91 @@ export default function DatabasePage() {
   // Update a row
   async function updateRow(id: string, patch: any) {
     setSaving(true);
-    const { error: updateError } = await supabase.from(selectedTable).update(patch).eq(config.primaryKey, id);
-    setSaving(false);
-    if (updateError) {
-      alert(`Update failed: ${updateError.message}`);
-      return false;
+    try {
+      // Mutations can return no error while changing zero rows (most commonly
+      // because an RLS policy filtered the row out). Requesting the affected
+      // primary key lets the editor distinguish that from a real save.
+      const { data, error: updateError } = await supabase
+        .from(selectedTable)
+        .update(patch)
+        .eq(config.primaryKey, id)
+        .select(config.primaryKey);
+
+      if (updateError) {
+        alert(`Update failed: ${updateError.message}`);
+        return false;
+      }
+      if (!data || data.length !== 1) {
+        alert(`Update failed: ${noRowsChangedMessage("update", selectedTable)}`);
+        return false;
+      }
+
+      await loadTable();
+      return true;
+    } finally {
+      setSaving(false);
     }
-    await loadTable();
-    return true;
   }
 
   // Insert a row
   async function insertRow(row: any) {
     setSaving(true);
-    const { error: insertError } = await supabase.from(selectedTable).insert(row);
-    setSaving(false);
-    if (insertError) {
-      alert(`Insert failed: ${insertError.message}`);
-      return false;
+    try {
+      let payload = row;
+      if (config.userScoped) {
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError || !authData.user) {
+          alert(`Insert failed: ${authError?.message ?? "You must be signed in."}`);
+          return false;
+        }
+        payload = { ...row, user_id: authData.user.id };
+      }
+      const { data, error: insertError } = await supabase
+        .from(selectedTable)
+        .insert(payload)
+        .select(config.primaryKey);
+
+      if (insertError) {
+        alert(`Insert failed: ${insertError.message}`);
+        return false;
+      }
+      if (!data || data.length !== 1) {
+        alert(`Insert failed: Supabase did not return the inserted row from ${selectedTable}. Check its insert and select policies.`);
+        return false;
+      }
+
+      await loadTable();
+      return true;
+    } finally {
+      setSaving(false);
     }
-    await loadTable();
-    return true;
   }
 
   // Delete rows
   async function deleteRows(ids: string[]) {
     setSaving(true);
-    const { error: deleteError } = await supabase.from(selectedTable).delete().in(config.primaryKey, ids);
-    setSaving(false);
-    if (deleteError) {
-      alert(`Delete failed: ${deleteError.message}`);
-      return false;
+    try {
+      const { data, error: deleteError } = await supabase
+        .from(selectedTable)
+        .delete()
+        .in(config.primaryKey, ids)
+        .select(config.primaryKey);
+
+      if (deleteError) {
+        alert(`Delete failed: ${deleteError.message}`);
+        return false;
+      }
+      if (!data || data.length !== ids.length) {
+        alert(`Delete failed: ${noRowsChangedMessage("delete", selectedTable)} Expected ${ids.length} row${ids.length === 1 ? "" : "s"}, but deleted ${data?.length ?? 0}.`);
+        return false;
+      }
+
+      setSelectedIds(new Set());
+      await loadTable();
+      return true;
+    } finally {
+      setSaving(false);
     }
-    setSelectedIds(new Set());
-    await loadTable();
-    return true;
   }
 
   // Handle sort click
@@ -506,6 +562,9 @@ export default function DatabasePage() {
     if (col.type === "boolean") return val ? "Yes" : "No";
     if (col.type === "datetime") return formatDatetime(val);
     if (col.type === "date") return formatDate(val);
+    if (col.type === "relation") {
+      return relationOptions[col.name]?.find((option) => option.value === String(val))?.label ?? "Unknown";
+    }
     return truncate(String(val), 30);
   }
 
@@ -572,7 +631,8 @@ export default function DatabasePage() {
             placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-[16px] placeholder:text-white/40 outline-none"
+            style={{ fontSize: "16px" }}
+            className="min-w-0 flex-1 h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white placeholder:text-white/40 outline-none"
           />
           <button
             onClick={() => setAddingRow(true)}
@@ -609,7 +669,7 @@ export default function DatabasePage() {
                       className="px-2 py-2 text-left text-white/70 font-medium cursor-pointer hover:text-white"
                     >
                       <div className="flex items-center gap-1">
-                        {col.name}
+                        {columnLabel(col)}
                         {sortColumn === col.name && <span className="text-xs">{sortDesc ? "▼" : "▲"}</span>}
                       </div>
                     </th>
@@ -727,6 +787,7 @@ export default function DatabasePage() {
           <EditModal
             config={config}
             row={editingRow}
+            relationOptions={relationOptions}
             onClose={() => setEditingRow(null)}
             onSave={async (patch) => {
               const success = await updateRow(editingRow[config.primaryKey], patch);
@@ -744,6 +805,7 @@ export default function DatabasePage() {
         {addingRow && (
           <AddModal
             config={config}
+            relationOptions={relationOptions}
             onClose={() => setAddingRow(false)}
             onSave={async (row) => {
               const success = await insertRow(row);
@@ -761,6 +823,7 @@ export default function DatabasePage() {
 function EditModal({
   config,
   row,
+  relationOptions,
   onClose,
   onSave,
   onDelete,
@@ -768,6 +831,7 @@ function EditModal({
 }: {
   config: TableConfig;
   row: any;
+  relationOptions: RelationOptions;
   onClose: () => void;
   onSave: (patch: any) => Promise<void>;
   onDelete: () => Promise<void>;
@@ -813,6 +877,7 @@ function EditModal({
               key={col.name}
               col={col}
               value={form[col.name]}
+              relationOptions={relationOptions[col.name] ?? []}
               onChange={(val) => updateField(col.name, val)}
             />
           ))}
@@ -860,11 +925,13 @@ function EditModal({
 // Add Modal Component
 function AddModal({
   config,
+  relationOptions,
   onClose,
   onSave,
   saving,
 }: {
   config: TableConfig;
+  relationOptions: RelationOptions;
   onClose: () => void;
   onSave: (row: any) => Promise<void>;
   saving: boolean;
@@ -910,7 +977,13 @@ function AddModal({
           {config.columns
             .filter((col) => !col.readonly)
             .map((col) => (
-              <FieldInput key={col.name} col={col} value={form[col.name]} onChange={(val) => updateField(col.name, val)} />
+              <FieldInput
+                key={col.name}
+                col={col}
+                value={form[col.name]}
+                relationOptions={relationOptions[col.name] ?? []}
+                onChange={(val) => updateField(col.name, val)}
+              />
             ))}
         </div>
 
@@ -932,10 +1005,12 @@ function AddModal({
 function FieldInput({
   col,
   value,
+  relationOptions,
   onChange,
 }: {
   col: ColumnConfig;
   value: any;
+  relationOptions: RelationOption[];
   onChange: (val: any) => void;
 }) {
   const inputClass =
@@ -982,6 +1057,25 @@ function FieldInput({
     );
   }
 
+  if (col.type === "relation") {
+    return (
+      <div>
+        <label className="block text-xs text-white/60 mb-1">{columnLabel(col)}</label>
+        <select
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value || null)}
+          disabled={col.readonly}
+          className={inputClass}
+        >
+          <option value="">—</option>
+          {relationOptions.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
   if (col.type === "date") {
     return (
       <div>
@@ -997,9 +1091,23 @@ function FieldInput({
     );
   }
 
+  if (col.type === "time") {
+    return (
+      <div>
+        <label className="block text-xs text-white/60 mb-1">{col.name}</label>
+        <input
+          type="time"
+          step="1"
+          value={value ? String(value).slice(0, 8) : ""}
+          onChange={(e) => onChange(e.target.value || null)}
+          disabled={col.readonly}
+          className={inputClass}
+        />
+      </div>
+    );
+  }
+
   if (col.type === "datetime") {
-    // For datetime, show formatted readonly or allow date input
-    const dateVal = value ? value.split("T")[0] : "";
     return (
       <div>
         <label className="block text-xs text-white/60 mb-1">
