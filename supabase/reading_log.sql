@@ -1,6 +1,9 @@
 drop view if exists public.reading_daily_totals;
 drop view if exists public.reading_daily_book_totals;
 
+alter table public.books
+  add column if not exists first_page integer check (first_page >= 0);
+
 create table if not exists public.reading_log (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -54,9 +57,12 @@ create policy "Users can delete their own reading log"
   to authenticated
   using (auth.uid() = user_id);
 
+drop function if exists public.save_reading_progress(uuid, integer, integer, text, date, boolean, numeric);
+
 create or replace function public.save_reading_progress(
   p_book_id uuid,
   p_page_number integer,
+  p_first_page integer,
   p_pages_of_text integer,
   p_notes text,
   p_logged_on date,
@@ -77,6 +83,7 @@ begin
 
   update public.books
   set current_page = p_page_number,
+      first_page = p_first_page,
       pages_of_text = p_pages_of_text,
       notes = nullif(trim(p_notes), ''),
       reading_status = case when p_mark_read then 'read' else reading_status end,
@@ -96,6 +103,6 @@ begin
 end;
 $$;
 
-revoke all on function public.save_reading_progress(uuid, integer, integer, text, date, boolean, numeric) from public;
-revoke all on function public.save_reading_progress(uuid, integer, integer, text, date, boolean, numeric) from anon;
-grant execute on function public.save_reading_progress(uuid, integer, integer, text, date, boolean, numeric) to authenticated;
+revoke all on function public.save_reading_progress(uuid, integer, integer, integer, text, date, boolean, numeric) from public;
+revoke all on function public.save_reading_progress(uuid, integer, integer, integer, text, date, boolean, numeric) from anon;
+grant execute on function public.save_reading_progress(uuid, integer, integer, integer, text, date, boolean, numeric) to authenticated;

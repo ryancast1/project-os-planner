@@ -16,6 +16,7 @@ export type BookRecord = {
   rank: number | null;
   re_read: boolean;
   source: string | null;
+  first_page: number | null;
   pages_of_text: number | null;
   current_page: number | null;
   notes: string | null;
@@ -34,6 +35,7 @@ type Draft = {
   rank: string;
   reRead: boolean;
   source: string;
+  firstPage: string;
   pagesOfText: string;
   currentPage: string;
   notes: string;
@@ -53,6 +55,7 @@ function createDraft(book: BookRecord): Draft {
     rank: book.rank === null ? "" : String(book.rank),
     reRead: book.re_read,
     source: book.source ?? "",
+    firstPage: book.first_page === null ? "" : String(book.first_page),
     pagesOfText: book.pages_of_text === null ? "" : String(book.pages_of_text),
     currentPage: book.current_page === null ? "" : String(book.current_page),
     notes: book.notes ?? "",
@@ -106,6 +109,7 @@ export default function BookEditor({
       rank: nullableNumber(draft.rank),
       re_read: draft.reRead,
       source: draft.source.trim() || null,
+      first_page: nullableNumber(draft.firstPage),
       pages_of_text: nullableNumber(draft.pagesOfText),
       current_page: nullableNumber(draft.currentPage),
       notes: draft.notes.trim() || null,
@@ -118,7 +122,7 @@ export default function BookEditor({
       .from("books")
       .update(payload)
       .eq("id", book.id)
-      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes,rating")
+      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,first_page,pages_of_text,current_page,notes,rating")
       .single();
 
     if (error) {
@@ -221,6 +225,10 @@ export default function BookEditor({
         <label className="min-w-0">
           <span className={labelClass}>Source</span>
           <input value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })} className={inputClass} />
+        </label>
+        <label className="min-w-0">
+          <span className={labelClass}>First Page</span>
+          <input type="number" min="0" value={draft.firstPage} onChange={(event) => setDraft({ ...draft, firstPage: event.target.value })} className={inputClass} />
         </label>
         <label className="min-w-0">
           <span className={labelClass}>Pages of Text</span>

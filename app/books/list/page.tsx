@@ -32,7 +32,7 @@ export default function BookListPage() {
     let active = true;
     supabase
       .from("books")
-      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes,rating")
+      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,first_page,pages_of_text,current_page,notes,rating")
       .eq("reading_status", "unread")
       .order("rank", { ascending: true, nullsFirst: false })
       .order("date_added", { ascending: false })

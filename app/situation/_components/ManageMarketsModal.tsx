@@ -90,14 +90,14 @@ export default function ManageMarketsModal({
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             placeholder="Polymarket event URL..."
-            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-white/20"
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-base md:text-sm text-white placeholder-white/30 outline-none focus:border-white/20"
           />
           <input
             type="text"
             value={labelInput}
             onChange={(e) => setLabelInput(e.target.value)}
             placeholder="Label (optional — auto-fetched if blank)"
-            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-white/20"
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-base md:text-sm text-white placeholder-white/30 outline-none focus:border-white/20"
           />
           <button
             type="submit"

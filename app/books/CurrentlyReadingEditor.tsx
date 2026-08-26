@@ -16,6 +16,7 @@ export default function CurrentlyReadingEditor({
   onSaved: (book: BookRecord) => void;
 }) {
   const [currentPage, setCurrentPage] = useState(book.current_page === null ? "" : String(book.current_page));
+  const [firstPage, setFirstPage] = useState(book.first_page === null ? "" : String(book.first_page));
   const [pagesOfText, setPagesOfText] = useState(book.pages_of_text === null ? "" : String(book.pages_of_text));
   const [notes, setNotes] = useState(book.notes ?? "");
   const [rating, setRating] = useState(book.rating === null ? "" : String(book.rating));
@@ -40,11 +41,13 @@ export default function CurrentlyReadingEditor({
 
   async function saveCheckpoint(pageNumber: number, markRead: boolean, numericRating: number | null) {
     const totalPages = nullableNumber(pagesOfText);
+    const startingPage = nullableNumber(firstPage);
     const cleanNotes = notes.trim() || null;
     const loggedOn = readingDate();
     const { error } = await supabase.rpc("save_reading_progress", {
       p_book_id: book.id,
       p_page_number: pageNumber,
+      p_first_page: startingPage,
       p_pages_of_text: totalPages,
       p_notes: cleanNotes,
       p_logged_on: loggedOn,
@@ -56,6 +59,7 @@ export default function CurrentlyReadingEditor({
     onSaved({
       ...book,
       current_page: pageNumber,
+      first_page: startingPage,
       pages_of_text: totalPages,
       notes: cleanNotes,
       reading_status: markRead ? "read" : book.reading_status,
@@ -67,6 +71,7 @@ export default function CurrentlyReadingEditor({
 
   async function saveProgress() {
     const pageNumber = nullableNumber(currentPage);
+    const startingPage = nullableNumber(firstPage);
     const totalPages = nullableNumber(pagesOfText);
     if (pageNumber === null || pageNumber < 1 || !Number.isInteger(pageNumber)) {
       setMessage("Enter the page you are currently up to.");
@@ -74,6 +79,14 @@ export default function CurrentlyReadingEditor({
     }
     if (totalPages !== null && pageNumber > totalPages) {
       setMessage("Current page cannot be greater than Pages of Text.");
+      return;
+    }
+    if (startingPage !== null && pageNumber < startingPage) {
+      setMessage("Current page cannot be before First Page.");
+      return;
+    }
+    if (startingPage !== null && totalPages !== null && totalPages <= startingPage) {
+      setMessage("Pages of Text must be after First Page.");
       return;
     }
     setSaving(true);
@@ -90,6 +103,7 @@ export default function CurrentlyReadingEditor({
 
   async function markRead() {
     const numericRating = nullableNumber(rating);
+    const startingPage = nullableNumber(firstPage);
     if (numericRating !== null && (numericRating < 0.5 || numericRating > 5 || !Number.isInteger(numericRating * 2))) {
       setMessage("Rating must be between 0.5 and 5 in half-star steps.");
       setShowFinish(false);
@@ -98,6 +112,11 @@ export default function CurrentlyReadingEditor({
     const finalPage = nullableNumber(pagesOfText);
     if (finalPage === null || finalPage < 1 || !Number.isInteger(finalPage)) {
       setMessage("Enter Pages of Text before marking the book read.");
+      setShowFinish(false);
+      return;
+    }
+    if (startingPage !== null && finalPage <= startingPage) {
+      setMessage("Pages of Text must be after First Page.");
       setShowFinish(false);
       return;
     }
@@ -116,14 +135,19 @@ export default function CurrentlyReadingEditor({
 
   return (
     <div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-4" onClick={(event) => event.stopPropagation()}>
-      <div className="grid grid-cols-2 gap-3">
+      <label className="mx-auto block w-full max-w-44 text-center">
+        <span className="mb-2 block text-sm font-semibold text-white/70">Current Page</span>
+        <input type="number" min="0" inputMode="numeric" value={currentPage} onChange={(event) => setCurrentPage(event.target.value)} className={`${inputClass} py-3 text-center text-2xl font-semibold tabular-nums`} />
+      </label>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
         <label className="min-w-0">
-          <span className={labelClass}>Current Page</span>
-          <input type="number" min="0" inputMode="numeric" value={currentPage} onChange={(event) => setCurrentPage(event.target.value)} className={inputClass} />
+          <span className={labelClass}>First Page</span>
+          <input type="number" min="0" inputMode="numeric" value={firstPage} onChange={(event) => setFirstPage(event.target.value)} className={`${inputClass} py-2 text-center`} />
         </label>
         <label className="min-w-0">
           <span className={labelClass}>Pages of Text</span>
-          <input type="number" min="0" inputMode="numeric" value={pagesOfText} onChange={(event) => setPagesOfText(event.target.value)} className={inputClass} />
+          <input type="number" min="0" inputMode="numeric" value={pagesOfText} onChange={(event) => setPagesOfText(event.target.value)} className={`${inputClass} py-2 text-center`} />
         </label>
       </div>
 

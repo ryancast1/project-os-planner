@@ -12,7 +12,9 @@ type ReadingLog = {
 };
 
 type ReadBook = {
+  id: string;
   date_read: string | null;
+  first_page: number | null;
 };
 
 type BarDatum = {
@@ -49,7 +51,8 @@ function fillDateRange(values: Map<string, number>) {
   return result;
 }
 
-function dailyPages(logs: ReadingLog[]) {
+function dailyPages(logs: ReadingLog[], books: ReadBook[]) {
+  const firstPages = new Map(books.map((book) => [book.id, book.first_page ?? 1]));
   const byBook = new Map<string, ReadingLog[]>();
   for (const log of logs) {
     const entries = byBook.get(log.book_id) ?? [];
@@ -63,7 +66,7 @@ function dailyPages(logs: ReadingLog[]) {
     const finalPageByDay = new Map<string, number>();
     for (const entry of entries) finalPageByDay.set(entry.logged_on, entry.page_number);
 
-    let previousPage = 1;
+    let previousPage = firstPages.get(entries[0]?.book_id ?? "") ?? 1;
     for (const [day, finalPage] of [...finalPageByDay.entries()].sort(([a], [b]) => a.localeCompare(b))) {
       totals.set(day, (totals.get(day) ?? 0) + Math.max(0, finalPage - previousPage));
       previousPage = finalPage;
@@ -124,7 +127,7 @@ export default function BooksDataPage() {
     let active = true;
     Promise.all([
       supabase.from("reading_log").select("book_id,page_number,logged_on,created_at").order("logged_on").order("created_at"),
-      supabase.from("books").select("date_read").eq("reading_status", "read").not("date_read", "is", null),
+      supabase.from("books").select("id,date_read,first_page"),
     ]).then(([logResult, bookResult]) => {
       if (!active) return;
       const loadError = logResult.error ?? bookResult.error;
@@ -140,7 +143,7 @@ export default function BooksDataPage() {
     };
   }, []);
 
-  const pages = useMemo(() => dailyPages(logs), [logs]);
+  const pages = useMemo(() => dailyPages(logs, readBooks), [logs, readBooks]);
   const years = useMemo(() => booksByYear(readBooks), [readBooks]);
 
   return (

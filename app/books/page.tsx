@@ -18,8 +18,11 @@ function sortByRank(books: BookRecord[]) {
 }
 
 function percentRead(book: BookRecord) {
-  if (book.current_page === null || book.pages_of_text === null || book.pages_of_text < 1) return null;
-  return Math.round(Math.min(100, Math.max(0, ((book.current_page - 1) / book.pages_of_text) * 100)));
+  if (book.current_page === null || book.pages_of_text === null) return null;
+  const firstPage = book.first_page ?? 1;
+  const textLength = book.pages_of_text - firstPage;
+  if (textLength <= 0) return null;
+  return Math.round(Math.min(100, Math.max(0, ((book.current_page - firstPage) / textLength) * 100)));
 }
 
 export default function BooksPage() {
@@ -33,7 +36,7 @@ export default function BooksPage() {
     let active = true;
     supabase
       .from("books")
-      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes,rating")
+      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,first_page,pages_of_text,current_page,notes,rating")
       .order("rank", { ascending: true, nullsFirst: false })
       .then(({ data, error: loadError }) => {
         if (!active) return;
@@ -51,7 +54,9 @@ export default function BooksPage() {
     [rows]
   );
   const currentlyReading = useMemo(
-    () => rows.filter((book) => book.reading_status === "reading"),
+    () => rows
+      .filter((book) => book.reading_status === "reading")
+      .sort((a, b) => (percentRead(b) ?? -1) - (percentRead(a) ?? -1) || a.title.localeCompare(b.title)),
     [rows]
   );
 

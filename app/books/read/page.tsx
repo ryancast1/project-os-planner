@@ -37,7 +37,7 @@ export default function ReadBooksPage() {
     let active = true;
     supabase
       .from("books")
-      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,pages_of_text,current_page,notes,rating")
+      .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,first_page,pages_of_text,current_page,notes,rating")
       .eq("reading_status", "read")
       .order("date_read", { ascending: false, nullsFirst: false })
       .then(({ data, error: loadError }) => {
@@ -78,6 +78,7 @@ export default function ReadBooksPage() {
       rank: null,
       re_read: true,
       source: book.source,
+      first_page: book.first_page,
       pages_of_text: book.pages_of_text,
       current_page: null,
       notes: book.notes,
