@@ -320,8 +320,10 @@ function columnLabel(col: ColumnConfig) {
 export default function DatabasePage() {
   const [selectedTable, setSelectedTable] = useState<string>("tasks");
   const [rows, setRows] = useState<any[]>([]);
+  const [allSearchRows, setAllSearchRows] = useState<any[] | null>(null);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loading, setLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortColumn, setSortColumn] = useState<string | null>(null);
@@ -368,6 +370,55 @@ export default function DatabasePage() {
     setSelectedIds(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTable, sortColumn, sortDesc, page]);
+
+  useEffect(() => {
+    let active = true;
+    const queryText = searchQuery.trim();
+
+    if (!queryText) {
+      setAllSearchRows(null);
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    setAllSearchRows(null);
+    const timer = window.setTimeout(async () => {
+      const batchSize = 1000;
+      const allRows: any[] = [];
+      const sortCol = sortColumn ?? config.defaultSort.column;
+      const sortAsc = sortColumn ? !sortDesc : !config.defaultSort.desc;
+
+      try {
+        for (let from = 0; ; from += batchSize) {
+          const { data, error: fetchError } = await supabase
+            .from(selectedTable)
+            .select("*")
+            .order(sortCol, { ascending: sortAsc })
+            .range(from, from + batchSize - 1);
+          if (fetchError) throw fetchError;
+          const batch = data ?? [];
+          allRows.push(...batch);
+          if (batch.length < batchSize) break;
+        }
+
+        if (active) setAllSearchRows(allRows);
+      } catch (searchError: unknown) {
+        if (active) {
+          const message = searchError instanceof Error ? searchError.message : "Search failed";
+          setError(message);
+          setAllSearchRows([]);
+        }
+      } finally {
+        if (active) setSearchLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery, selectedTable, sortColumn, sortDesc, config]);
 
   useEffect(() => {
     let active = true;
@@ -421,10 +472,10 @@ export default function DatabasePage() {
   }
 
   // Filter rows by search (client-side)
-  const filteredRows = useMemo(() => {
-    if (!searchQuery.trim()) return rows;
-    const q = searchQuery.toLowerCase();
-    return rows.filter((row) =>
+  const matchingSearchRows = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.trim().toLowerCase();
+    return (allSearchRows ?? []).filter((row) =>
       config.columns.some((col) => {
         const val = row[col.name];
         if (val == null) return false;
@@ -434,7 +485,11 @@ export default function DatabasePage() {
         return String(displayVal).toLowerCase().includes(q);
       })
     );
-  }, [rows, searchQuery, config.columns, relationOptions]);
+  }, [allSearchRows, searchQuery, config.columns, relationOptions]);
+
+  const filteredRows = searchQuery.trim()
+    ? matchingSearchRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+    : rows;
 
   // Toggle row selection
   function toggleSelect(id: string) {
@@ -571,8 +626,9 @@ export default function DatabasePage() {
   // Get display columns (first few that fit)
   const displayColumns = config.columns.slice(0, 5);
 
+  const displayedTotalCount = searchQuery.trim() ? matchingSearchRows.length : totalCount;
   const startRow = page * PAGE_SIZE + 1;
-  const endRow = Math.min((page + 1) * PAGE_SIZE, totalCount);
+  const endRow = Math.min((page + 1) * PAGE_SIZE, displayedTotalCount);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-4 py-6 text-white">
@@ -630,7 +686,10 @@ export default function DatabasePage() {
             type="text"
             placeholder="Search..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(0);
+            }}
             style={{ fontSize: "16px" }}
             className="min-w-0 flex-1 h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white placeholder:text-white/40 outline-none"
           />
@@ -646,7 +705,7 @@ export default function DatabasePage() {
         {error && <div className="mb-4 text-sm text-red-300">{error}</div>}
 
         {/* Loading */}
-        {loading && <div className="mb-4 text-sm text-white/60">Loading...</div>}
+        {(loading || searchLoading) && <div className="mb-4 text-sm text-white/60">{searchLoading ? "Searching all rows..." : "Loading..."}</div>}
 
         {/* Data Grid */}
         <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
@@ -681,7 +740,7 @@ export default function DatabasePage() {
                 {filteredRows.length === 0 ? (
                   <tr>
                     <td colSpan={displayColumns.length + 2} className="px-4 py-8 text-center text-white/50">
-                      {loading ? "Loading..." : "No data"}
+                      {loading || searchLoading ? "Loading..." : "No data"}
                     </td>
                   </tr>
                 ) : (
@@ -719,7 +778,7 @@ export default function DatabasePage() {
         {/* Pagination */}
         <div className="mt-3 flex items-center justify-between text-sm text-white/60">
           <div>
-            {totalCount > 0 ? `${startRow}–${endRow} of ${totalCount}` : "0 rows"}
+            {displayedTotalCount > 0 ? `${startRow}–${endRow} of ${displayedTotalCount}` : "0 rows"}
           </div>
           <div className="flex gap-2">
             <button
@@ -731,7 +790,7 @@ export default function DatabasePage() {
             </button>
             <button
               onClick={() => setPage((p) => p + 1)}
-              disabled={endRow >= totalCount}
+              disabled={endRow >= displayedTotalCount}
               className="px-3 py-1 rounded-lg border border-white/10 bg-white/5 disabled:opacity-30"
             >
               Next

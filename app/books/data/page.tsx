@@ -5,10 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type ReadingLog = {
-  book_id: string;
-  page_number: number;
+  pages_read: number;
   logged_on: string;
-  created_at: string;
 };
 
 type ReadBook = {
@@ -51,26 +49,10 @@ function fillDateRange(values: Map<string, number>) {
   return result;
 }
 
-function dailyPages(logs: ReadingLog[], books: ReadBook[]) {
-  const firstPages = new Map(books.map((book) => [book.id, book.first_page ?? 1]));
-  const byBook = new Map<string, ReadingLog[]>();
-  for (const log of logs) {
-    const entries = byBook.get(log.book_id) ?? [];
-    entries.push(log);
-    byBook.set(log.book_id, entries);
-  }
-
+function dailyPages(logs: ReadingLog[]) {
   const totals = new Map<string, number>();
-  for (const entries of byBook.values()) {
-    entries.sort((a, b) => a.logged_on.localeCompare(b.logged_on) || a.created_at.localeCompare(b.created_at));
-    const finalPageByDay = new Map<string, number>();
-    for (const entry of entries) finalPageByDay.set(entry.logged_on, entry.page_number);
-
-    let previousPage = firstPages.get(entries[0]?.book_id ?? "") ?? 1;
-    for (const [day, finalPage] of [...finalPageByDay.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-      totals.set(day, (totals.get(day) ?? 0) + Math.max(0, finalPage - previousPage));
-      previousPage = finalPage;
-    }
+  for (const log of logs) {
+    totals.set(log.logged_on, (totals.get(log.logged_on) ?? 0) + log.pages_read);
   }
   return fillDateRange(totals);
 }
@@ -126,7 +108,7 @@ export default function BooksDataPage() {
   useEffect(() => {
     let active = true;
     Promise.all([
-      supabase.from("reading_log").select("book_id,page_number,logged_on,created_at").order("logged_on").order("created_at"),
+      supabase.from("reading_log").select("pages_read,logged_on").order("logged_on"),
       supabase.from("books").select("id,date_read,first_page"),
     ]).then(([logResult, bookResult]) => {
       if (!active) return;
@@ -143,7 +125,7 @@ export default function BooksDataPage() {
     };
   }, []);
 
-  const pages = useMemo(() => dailyPages(logs, readBooks), [logs, readBooks]);
+  const pages = useMemo(() => dailyPages(logs), [logs]);
   const years = useMemo(() => booksByYear(readBooks), [readBooks]);
 
   return (
@@ -159,13 +141,11 @@ export default function BooksDataPage() {
         <div className="space-y-5">
           <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-1 text-lg font-semibold">Pages Read Per Day</div>
-            <div className="mb-3 text-xs text-white/45">From the first reading entry through the latest</div>
             {loading ? <div className="py-10 text-center text-sm text-white/45">Loading…</div> : <BarChart data={pages} unit="pages" />}
           </section>
 
           <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-1 text-lg font-semibold">Books Read Per Year</div>
-            <div className="mb-3 text-xs text-white/45">Based on Date Read</div>
             {loading ? <div className="py-10 text-center text-sm text-white/45">Loading…</div> : <BarChart data={years} unit="books" />}
           </section>
         </div>

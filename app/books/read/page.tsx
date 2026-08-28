@@ -155,7 +155,7 @@ export default function ReadBooksPage() {
                         setBooks((current) => updated.reading_status === "read"
                           ? sortReadBooks(current.map((item) => item.id === updated.id ? updated : item))
                           : current.filter((item) => item.id !== updated.id));
-                        if (updated.reading_status !== "read") setExpandedId(null);
+                        setExpandedId(null);
                       }}
                       onDeleted={(id) => {
                         setBooks((current) => current.filter((item) => item.id !== id));

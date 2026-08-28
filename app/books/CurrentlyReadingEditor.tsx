@@ -16,7 +16,7 @@ export default function CurrentlyReadingEditor({
   onSaved: (book: BookRecord) => void;
 }) {
   const [currentPage, setCurrentPage] = useState(book.current_page === null ? "" : String(book.current_page));
-  const [firstPage, setFirstPage] = useState(book.first_page === null ? "" : String(book.first_page));
+  const [firstPage, setFirstPage] = useState(book.first_page === null ? "1" : String(book.first_page));
   const [pagesOfText, setPagesOfText] = useState(book.pages_of_text === null ? "" : String(book.pages_of_text));
   const [notes, setNotes] = useState(book.notes ?? "");
   const [rating, setRating] = useState(book.rating === null ? "" : String(book.rating));
@@ -78,7 +78,7 @@ export default function CurrentlyReadingEditor({
       return;
     }
     if (totalPages !== null && pageNumber > totalPages) {
-      setMessage("Current page cannot be greater than Pages of Text.");
+      setMessage("Current page cannot be greater than Last Page.");
       return;
     }
     if (startingPage !== null && pageNumber < startingPage) {
@@ -86,7 +86,7 @@ export default function CurrentlyReadingEditor({
       return;
     }
     if (startingPage !== null && totalPages !== null && totalPages <= startingPage) {
-      setMessage("Pages of Text must be after First Page.");
+      setMessage("Last Page must be after First Page.");
       return;
     }
     setSaving(true);
@@ -111,12 +111,12 @@ export default function CurrentlyReadingEditor({
     }
     const finalPage = nullableNumber(pagesOfText);
     if (finalPage === null || finalPage < 1 || !Number.isInteger(finalPage)) {
-      setMessage("Enter Pages of Text before marking the book read.");
+      setMessage("Enter Last Page before marking the book read.");
       setShowFinish(false);
       return;
     }
     if (startingPage !== null && finalPage <= startingPage) {
-      setMessage("Pages of Text must be after First Page.");
+      setMessage("Last Page must be after First Page.");
       setShowFinish(false);
       return;
     }
@@ -146,7 +146,7 @@ export default function CurrentlyReadingEditor({
           <input type="number" min="0" inputMode="numeric" value={firstPage} onChange={(event) => setFirstPage(event.target.value)} className={`${inputClass} py-2 text-center`} />
         </label>
         <label className="min-w-0">
-          <span className={labelClass}>Pages of Text</span>
+          <span className={labelClass}>Last Page</span>
           <input type="number" min="0" inputMode="numeric" value={pagesOfText} onChange={(event) => setPagesOfText(event.target.value)} className={`${inputClass} py-2 text-center`} />
         </label>
       </div>

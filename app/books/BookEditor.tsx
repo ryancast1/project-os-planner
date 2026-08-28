@@ -55,7 +55,7 @@ function createDraft(book: BookRecord): Draft {
     rank: book.rank === null ? "" : String(book.rank),
     reRead: book.re_read,
     source: book.source ?? "",
-    firstPage: book.first_page === null ? "" : String(book.first_page),
+    firstPage: book.first_page === null ? "1" : String(book.first_page),
     pagesOfText: book.pages_of_text === null ? "" : String(book.pages_of_text),
     currentPage: book.current_page === null ? "" : String(book.current_page),
     notes: book.notes ?? "",
@@ -231,7 +231,7 @@ export default function BookEditor({
           <input type="number" min="0" value={draft.firstPage} onChange={(event) => setDraft({ ...draft, firstPage: event.target.value })} className={inputClass} />
         </label>
         <label className="min-w-0">
-          <span className={labelClass}>Pages of Text</span>
+          <span className={labelClass}>Last Page</span>
           <input type="number" min="0" value={draft.pagesOfText} onChange={(event) => setDraft({ ...draft, pagesOfText: event.target.value })} className={inputClass} />
         </label>
         <label className="min-w-0">

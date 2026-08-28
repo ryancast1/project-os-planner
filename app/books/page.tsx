@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import BookEditor, { type BookRecord } from "./BookEditor";
 import CurrentlyReadingEditor from "./CurrentlyReadingEditor";
@@ -25,15 +25,40 @@ function percentRead(book: BookRecord) {
   return Math.round(Math.min(100, Math.max(0, ((book.current_page - firstPage) / textLength) * 100)));
 }
 
+function readingDate() {
+  const adjusted = new Date();
+  adjusted.setHours(adjusted.getHours() - 4);
+  return `${adjusted.getFullYear()}-${String(adjusted.getMonth() + 1).padStart(2, "0")}-${String(adjusted.getDate()).padStart(2, "0")}`;
+}
+
 export default function BooksPage() {
   const [rows, setRows] = useState<BookRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [todayPages, setTodayPages] = useState<number | null>(null);
+
+  const refreshTodayPages = useCallback(async () => {
+    const { data, error: pagesError } = await supabase
+      .from("reading_log")
+      .select("pages_read")
+      .eq("logged_on", readingDate());
+    if (!pagesError) {
+      setTodayPages((data ?? []).reduce((total, row) => total + (row.pages_read ?? 0), 0));
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
+    supabase
+      .from("reading_log")
+      .select("pages_read")
+      .eq("logged_on", readingDate())
+      .then(({ data, error: pagesError }) => {
+        if (!active || pagesError) return;
+        setTodayPages((data ?? []).reduce((total, row) => total + (row.pages_read ?? 0), 0));
+      });
     supabase
       .from("books")
       .select("id,owned,reading_status,title,author,pages,original_pub_year,date_added,date_read,rank,re_read,source,first_page,pages_of_text,current_page,notes,rating")
@@ -47,7 +72,7 @@ export default function BooksPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshTodayPages]);
 
   const onDeck = useMemo(
     () => sortByRank(rows.filter((book) => book.reading_status === "unread" && book.rank !== null)),
@@ -217,7 +242,7 @@ export default function BooksPage() {
           <div className="flex items-baseline justify-between px-4 pb-3 pt-4">
             <div className="text-lg font-semibold">Currently Reading</div>
             <div className="text-sm text-white/55">
-              {loading ? "…" : `${currentlyReading.length} ${currentlyReading.length === 1 ? "book" : "books"}`}
+              {todayPages === null ? "…" : `${todayPages} ${todayPages === 1 ? "page" : "pages"} today`}
             </div>
           </div>
           <div className="px-2 pb-2">
@@ -274,7 +299,8 @@ export default function BooksPage() {
                           book={book}
                           onSaved={(updated) => {
                             setRows((current) => current.map((item) => item.id === updated.id ? updated : item));
-                            if (updated.reading_status !== "reading") setExpandedId(null);
+                            setExpandedId(null);
+                            void refreshTodayPages();
                           }}
                         />
                       ) : null}
@@ -361,7 +387,7 @@ export default function BooksPage() {
                               book={book}
                               onSaved={(updated) => {
                                 setRows((current) => current.map((item) => item.id === updated.id ? updated : item));
-                                if (updated.reading_status !== "unread" || updated.rank === null) setExpandedId(null);
+                                setExpandedId(null);
                               }}
                               onDeleted={(id) => {
                                 setRows((current) => current
