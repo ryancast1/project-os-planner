@@ -71,10 +71,12 @@ export default function BookEditor({
   book,
   onSaved,
   onDeleted,
+  onMoveToTop,
 }: {
   book: BookRecord;
   onSaved: (book: BookRecord) => void;
   onDeleted: (id: string) => void;
+  onMoveToTop?: (id: string) => void;
 }) {
   const [draft, setDraft] = useState(() => createDraft(book));
   const [saving, setSaving] = useState(false);
@@ -220,7 +222,19 @@ export default function BookEditor({
         </label>
         <label className="min-w-0">
           <span className={labelClass}>Rank</span>
-          <input type="number" min="1" value={draft.rank} onChange={(event) => setDraft({ ...draft, rank: event.target.value })} className={inputClass} />
+          <div className="flex min-w-0 gap-2">
+            <input type="number" min="1" value={draft.rank} onChange={(event) => setDraft({ ...draft, rank: event.target.value })} className={inputClass} />
+            {onMoveToTop && book.rank !== 1 ? (
+              <button
+                type="button"
+                disabled={saving || deleting}
+                onClick={() => onMoveToTop(book.id)}
+                className="shrink-0 rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+              >
+                To #1
+              </button>
+            ) : null}
+          </div>
         </label>
         <label className="min-w-0">
           <span className={labelClass}>Source</span>

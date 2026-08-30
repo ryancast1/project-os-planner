@@ -174,6 +174,41 @@ export default function BooksPage() {
     if (rebalanceError) setError(`Rank update failed: ${rebalanceError.message}`);
   }
 
+  async function moveToTop(id: string) {
+    const book = onDeck.find((item) => item.id === id);
+    if (!book || book.rank === null || book.rank === 1) return;
+    const currentRank = book.rank;
+
+    const affected = onDeck.filter((item) =>
+      item.id !== id
+      && item.rank !== null
+      && item.rank !== 99
+      && (currentRank === 99 || item.rank < currentRank)
+    );
+
+    setError(null);
+    setRows((current) => current.map((item) => {
+      if (item.id === id) return { ...item, rank: 1 };
+      if (affected.some((affectedBook) => affectedBook.id === item.id) && item.rank !== null) {
+        return { ...item, rank: item.rank + 1 };
+      }
+      return item;
+    }));
+
+    const results = await Promise.all([
+      supabase.from("books").update({ rank: 1 }).eq("id", id),
+      ...affected.map((affectedBook) =>
+        supabase.from("books").update({ rank: (affectedBook.rank ?? 0) + 1 }).eq("id", affectedBook.id)
+      ),
+    ]);
+    const updateError = results.find((result) => result.error)?.error;
+    if (updateError) {
+      setError(`Move to #1 failed: ${updateError.message}`);
+      return;
+    }
+    setExpandedId(null);
+  }
+
   async function returnToOnDeck(id: string) {
     const book = currentlyReading.find((item) => item.id === id);
     if (!book) return;
@@ -385,6 +420,7 @@ export default function BooksPage() {
                           {isOpen ? (
                             <BookEditor
                               book={book}
+                              onMoveToTop={moveToTop}
                               onSaved={(updated) => {
                                 setRows((current) => current.map((item) => item.id === updated.id ? updated : item));
                                 setExpandedId(null);

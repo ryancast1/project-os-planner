@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -31,8 +31,10 @@ export default function AddBookPage() {
   const [pages, setPages] = useState("");
   const [year, setYear] = useState("");
   const [notes, setNotes] = useState("");
+  const searchRequestRef = useRef(0);
 
   useEffect(() => {
+    const requestId = ++searchRequestRef.current;
     const query = searchQuery.trim();
     if (query.length < 2) return;
 
@@ -44,16 +46,20 @@ export default function AddBookPage() {
         .then(async (response) => {
           const payload = await response.json() as { items?: BookSearchResult[]; error?: string };
           if (!response.ok) throw new Error(payload.error ?? "Search failed.");
+          if (requestId !== searchRequestRef.current) return;
           setSearchResults(payload.items ?? []);
           setShowResults(true);
         })
         .catch((error: unknown) => {
           if (error instanceof DOMException && error.name === "AbortError") return;
+          if (requestId !== searchRequestRef.current) return;
           setSearchError(error instanceof Error ? error.message : "Search failed.");
           setSearchResults([]);
           setShowResults(true);
         })
-        .finally(() => setSearching(false));
+        .finally(() => {
+          if (requestId === searchRequestRef.current) setSearching(false);
+        });
     }, 450);
 
     return () => {
@@ -61,6 +67,16 @@ export default function AddBookPage() {
       controller.abort();
     };
   }, [searchQuery]);
+
+  function changeSearchQuery(value: string) {
+    setSearchQuery(value);
+    if (value.trim().length < 2) {
+      setSearching(false);
+      setSearchError(null);
+      setSearchResults([]);
+      setShowResults(false);
+    }
+  }
 
   function selectBook(book: BookSearchResult) {
     setTitle(book.title);
@@ -126,10 +142,10 @@ export default function AddBookPage() {
           <div className="space-y-4">
             <div className="relative">
               <label className="block">
-                <span className="mb-1 block text-center text-xs text-white/60">Search Google Books</span>
+                <span className="mb-1 block text-center text-xs text-white/60">Search Books</span>
                 <input
                   value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onChange={(event) => changeSearchQuery(event.target.value)}
                   onFocus={() => searchResults.length > 0 && setShowResults(true)}
                   placeholder="Start typing a title or author..."
                   autoComplete="off"
