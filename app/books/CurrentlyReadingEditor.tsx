@@ -8,6 +8,14 @@ function nullableNumber(value: string) {
   return value.trim() === "" ? null : Number(value);
 }
 
+function formatTime(minutes: number) {
+  const roundedMinutes = Math.ceil(minutes);
+  if (roundedMinutes < 60) return `${roundedMinutes} min`;
+  const hours = Math.floor(roundedMinutes / 60);
+  const remainder = roundedMinutes % 60;
+  return remainder === 0 ? `${hours} hr` : `${hours} hr ${remainder} min`;
+}
+
 export default function CurrentlyReadingEditor({
   book,
   onSaved,
@@ -21,11 +29,27 @@ export default function CurrentlyReadingEditor({
   const [notes, setNotes] = useState(book.notes ?? "");
   const [rating, setRating] = useState(book.rating === null ? "" : String(book.rating));
   const [showFinish, setShowFinish] = useState(false);
+  const [showPace, setShowPace] = useState(false);
+  const [pacePages, setPacePages] = useState("");
+  const [paceMinutes, setPaceMinutes] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const inputClass = "min-w-0 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-base text-white outline-none focus:border-white/30";
   const labelClass = "mb-1.5 block text-xs font-medium text-white/50";
+  const pacePageCount = nullableNumber(pacePages);
+  const paceMinuteCount = nullableNumber(paceMinutes);
+  const currentPageNumber = nullableNumber(currentPage);
+  const lastPageNumber = nullableNumber(pagesOfText);
+  const pagesPerHour = pacePageCount !== null && pacePageCount > 0 && paceMinuteCount !== null && paceMinuteCount > 0
+    ? (pacePageCount / paceMinuteCount) * 60
+    : null;
+  const remainingPages = currentPageNumber !== null && lastPageNumber !== null
+    ? Math.max(0, lastPageNumber - currentPageNumber)
+    : null;
+  const remainingMinutes = pagesPerHour !== null && remainingPages !== null
+    ? (remainingPages / pagesPerHour) * 60
+    : null;
 
   function readingDate() {
     const adjusted = new Date();
@@ -177,21 +201,61 @@ export default function CurrentlyReadingEditor({
 
   return (
     <div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-4" onClick={(event) => event.stopPropagation()}>
-      <label className="mx-auto block w-full max-w-44 text-center">
+      <label className="block text-center">
         <span className="mb-2 block text-sm font-semibold text-white/70">Current Page</span>
-        <input type="number" min="0" inputMode="numeric" value={currentPage} onChange={(event) => setCurrentPage(event.target.value)} className={`${inputClass} py-3 text-center text-2xl font-semibold tabular-nums`} />
+        <input type="number" min="0" inputMode="numeric" value={currentPage} onChange={(event) => setCurrentPage(event.target.value)} className={`${inputClass} h-16 text-center text-3xl font-semibold tabular-nums`} />
       </label>
 
-      <div className="mt-4 grid grid-cols-2 gap-3">
+      <div className="mt-4 grid grid-cols-3 items-end gap-2 sm:gap-3">
         <label className="min-w-0">
           <span className={labelClass}>First Page</span>
-          <input type="number" min="0" inputMode="numeric" value={firstPage} onChange={(event) => setFirstPage(event.target.value)} className={`${inputClass} py-2 text-center`} />
+          <input type="number" min="0" inputMode="numeric" value={firstPage} onChange={(event) => setFirstPage(event.target.value)} className={`${inputClass} h-10 px-2 py-1.5 text-center text-base`} />
         </label>
         <label className="min-w-0">
           <span className={labelClass}>Last Page</span>
-          <input type="number" min="0" inputMode="numeric" value={pagesOfText} onChange={(event) => setPagesOfText(event.target.value)} className={`${inputClass} py-2 text-center`} />
+          <input type="number" min="0" inputMode="numeric" value={pagesOfText} onChange={(event) => setPagesOfText(event.target.value)} className={`${inputClass} h-10 px-2 py-1.5 text-center text-base`} />
         </label>
+        <button
+          type="button"
+          onClick={() => setShowPace(true)}
+          className="h-10 min-w-0 rounded-xl border border-white/10 bg-white/5 px-2 text-sm font-semibold text-white/70 transition active:scale-[0.98]"
+        >
+          Pace
+        </button>
       </div>
+
+      {showPace ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-3 backdrop-blur-sm sm:items-center" onClick={() => setShowPace(false)}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-zinc-950 p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="text-xl font-semibold">Pace Calculator</div>
+            <div className="mt-1 truncate text-sm text-white/55">{book.title}</div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <label className="min-w-0">
+                <span className={labelClass}>Pages Read</span>
+                <input type="number" min="1" inputMode="numeric" value={pacePages} onChange={(event) => setPacePages(event.target.value)} className={`${inputClass} text-center`} />
+              </label>
+              <label className="min-w-0">
+                <span className={labelClass}>Minutes</span>
+                <input type="number" min="1" inputMode="decimal" value={paceMinutes} onChange={(event) => setPaceMinutes(event.target.value)} className={`${inputClass} text-center`} />
+              </label>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3 text-center">
+              <div className="rounded-xl border border-white/10 bg-white/5 px-2 py-4">
+                <div className="text-xs text-white/45">Pages per hour</div>
+                <div className="mt-1 text-xl font-semibold tabular-nums">{pagesPerHour === null ? "—" : Number(pagesPerHour.toFixed(1))}</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/5 px-2 py-4">
+                <div className="text-xs text-white/45">Time remaining</div>
+                <div className="mt-1 text-xl font-semibold tabular-nums">{remainingMinutes === null ? "—" : formatTime(remainingMinutes)}</div>
+              </div>
+            </div>
+
+            <button type="button" onClick={() => setShowPace(false)} className="mt-5 h-11 w-full rounded-xl bg-white text-base font-semibold text-black">Done</button>
+          </div>
+        </div>
+      ) : null}
 
       <label className="mt-4 block min-w-0">
         <span className={labelClass}>Notes</span>
