@@ -73,7 +73,49 @@ export default function CurrentlyReadingEditor({
     const pageNumber = nullableNumber(currentPage);
     const startingPage = nullableNumber(firstPage);
     const totalPages = nullableNumber(pagesOfText);
-    if (pageNumber === null || pageNumber < 1 || !Number.isInteger(pageNumber)) {
+
+    if (pageNumber === null) {
+      if (startingPage === null || startingPage < 0 || !Number.isInteger(startingPage)) {
+        setMessage("Enter a valid First Page.");
+        return;
+      }
+      if (totalPages !== null && (!Number.isInteger(totalPages) || totalPages <= startingPage)) {
+        setMessage("Last Page must be after First Page.");
+        return;
+      }
+
+      const cleanNotes = notes.trim() || null;
+      setSaving(true);
+      setMessage(null);
+      try {
+        const { error } = await supabase
+          .from("books")
+          .update({
+            current_page: startingPage,
+            first_page: startingPage,
+            pages_of_text: totalPages,
+            notes: cleanNotes,
+          })
+          .eq("id", book.id);
+        if (error) throw error;
+
+        setCurrentPage(String(startingPage));
+        onSaved({
+          ...book,
+          current_page: startingPage,
+          first_page: startingPage,
+          pages_of_text: totalPages,
+          notes: cleanNotes,
+        });
+      } catch (error) {
+        setMessage(`Save failed: ${errorMessage(error)}`);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    if (pageNumber < 1 || !Number.isInteger(pageNumber)) {
       setMessage("Enter the page you are currently up to.");
       return;
     }
