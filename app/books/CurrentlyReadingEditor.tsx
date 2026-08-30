@@ -228,7 +228,12 @@ export default function CurrentlyReadingEditor({
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-3 backdrop-blur-sm sm:items-center" onClick={() => setShowPace(false)}>
           <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-zinc-950 p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="text-xl font-semibold">Pace Calculator</div>
-            <div className="mt-1 truncate text-sm text-white/55">{book.title}</div>
+            <div className="mt-1 flex min-w-0 items-center justify-between gap-3 text-sm text-white/55">
+              <div className="min-w-0 truncate">{book.title}</div>
+              {remainingPages !== null ? (
+                <div className="shrink-0 text-xs tabular-nums text-white/40">{remainingPages} {remainingPages === 1 ? "page" : "pages"} left</div>
+              ) : null}
+            </div>
 
             <div className="mt-5 grid grid-cols-2 gap-3">
               <label className="min-w-0">
