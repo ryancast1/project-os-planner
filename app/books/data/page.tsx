@@ -73,26 +73,47 @@ function booksByYear(books: ReadBook[]) {
   return result;
 }
 
-function BarChart({ data, unit }: { data: BarDatum[]; unit: string }) {
+function BarChart({ data, unit, fitAll = false, showValues = true }: { data: BarDatum[]; unit: string; fitAll?: boolean; showValues?: boolean }) {
+  const [activeKey, setActiveKey] = useState<string | null>(null);
   const maximum = Math.max(1, ...data.map((item) => item.value));
+  const activeItem = data.find((item) => item.key === activeKey) ?? null;
+  const labelStep = Math.max(1, Math.ceil(data.length / 7));
 
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-white/45">No data yet.</div>;
   }
 
   return (
-    <div className="overflow-x-auto pb-1">
-      <div className="flex h-56 items-end gap-2 border-b border-white/15 px-2 pt-7" style={{ minWidth: `max(100%, ${data.length * 42}px)` }}>
-        {data.map((item) => (
-          <div key={item.key} className="flex h-full min-w-8 flex-1 flex-col items-center justify-end">
-            <div className="mb-1 text-[11px] tabular-nums text-white/65" title={`${item.value} ${unit}`}>{item.value}</div>
+    <div className={`relative pb-1 ${fitAll ? "overflow-hidden" : "overflow-x-auto"}`}>
+      {fitAll && activeItem ? (
+        <div className="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 rounded-md bg-zinc-800 px-2 py-1 text-xs tabular-nums text-white shadow-lg">
+          {activeItem.label} · {activeItem.value} {activeItem.value === 1 && unit === "pages" ? "page" : unit}
+        </div>
+      ) : null}
+      <div
+        className={`flex h-56 items-end border-b border-white/15 px-1 pt-7 ${fitAll ? "gap-px" : "gap-2"}`}
+        style={fitAll ? undefined : { minWidth: `max(100%, ${data.length * 42}px)` }}
+      >
+        {data.map((item, index) => (
+          <button
+            key={item.key}
+            type="button"
+            aria-label={`${item.label}: ${item.value} ${unit}`}
+            onPointerEnter={() => setActiveKey(item.key)}
+            onPointerDown={() => setActiveKey(item.key)}
+            onFocus={() => setActiveKey(item.key)}
+            className={`flex h-full flex-1 flex-col items-center justify-end p-0 text-inherit ${fitAll ? "min-w-0" : "min-w-8"}`}
+          >
+            {showValues ? <div className="mb-1 text-[11px] tabular-nums text-white/65">{item.value}</div> : null}
             <div
-              className="w-full max-w-10 rounded-t-md bg-white transition-[height]"
+              className={`w-full rounded-t-sm transition-[height] ${item.key === activeKey ? "bg-white" : "bg-white/80"} ${fitAll ? "max-w-5" : "max-w-10"}`}
               style={{ height: `${item.value === 0 ? 2 : Math.max(7, (item.value / maximum) * 155)}px` }}
               title={`${item.label}: ${item.value} ${unit}`}
             />
-            <div className="mt-2 whitespace-nowrap text-[10px] text-white/45">{item.label}</div>
-          </div>
+            <div className="mt-2 h-3 whitespace-nowrap text-[10px] text-white/45">
+              {!fitAll || index === 0 || index === data.length - 1 || index % labelStep === 0 ? item.label : ""}
+            </div>
+          </button>
         ))}
       </div>
     </div>
@@ -141,7 +162,7 @@ export default function BooksDataPage() {
         <div className="space-y-5">
           <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-1 text-lg font-semibold">Pages Read Per Day</div>
-            {loading ? <div className="py-10 text-center text-sm text-white/45">Loading…</div> : <BarChart data={pages} unit="pages" />}
+            {loading ? <div className="py-10 text-center text-sm text-white/45">Loading…</div> : <BarChart data={pages} unit="pages" fitAll showValues={false} />}
           </section>
 
           <section className="rounded-2xl border border-white/10 bg-white/5 p-4">

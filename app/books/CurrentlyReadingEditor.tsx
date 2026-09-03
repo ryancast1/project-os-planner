@@ -30,8 +30,8 @@ export default function CurrentlyReadingEditor({
   const [rating, setRating] = useState(book.rating === null ? "" : String(book.rating));
   const [showFinish, setShowFinish] = useState(false);
   const [showPace, setShowPace] = useState(false);
-  const [pacePages, setPacePages] = useState("");
-  const [paceMinutes, setPaceMinutes] = useState("");
+  const [pacePages, setPacePages] = useState("40");
+  const [paceMinutes, setPaceMinutes] = useState("60");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -50,6 +50,10 @@ export default function CurrentlyReadingEditor({
   const remainingMinutes = pagesPerHour !== null && remainingPages !== null
     ? (remainingPages / pagesPerHour) * 60
     : null;
+
+  function adjustPacePages(change: number) {
+    setPacePages((current) => String(Math.max(1, Math.round(nullableNumber(current) ?? 1) + change)));
+  }
 
   function readingDate() {
     const adjusted = new Date();
@@ -238,7 +242,13 @@ export default function CurrentlyReadingEditor({
             <div className="mt-5 grid grid-cols-2 gap-3">
               <label className="min-w-0">
                 <span className={labelClass}>Pages Read</span>
-                <input type="number" min="1" inputMode="numeric" value={pacePages} onChange={(event) => setPacePages(event.target.value)} className={`${inputClass} text-center`} />
+                <div className="flex min-w-0 gap-1.5">
+                  <input type="number" min="1" inputMode="numeric" value={pacePages} onChange={(event) => setPacePages(event.target.value)} className={`${inputClass} text-center`} />
+                  <div className="grid w-8 shrink-0 grid-rows-2 gap-1">
+                    <button type="button" aria-label="Add one page" onClick={() => adjustPacePages(1)} className="grid place-items-center rounded-md border border-white/10 bg-white/5 text-[10px] text-white/70 active:bg-white/10">▲</button>
+                    <button type="button" aria-label="Subtract one page" onClick={() => adjustPacePages(-1)} className="grid place-items-center rounded-md border border-white/10 bg-white/5 text-[10px] text-white/70 active:bg-white/10">▼</button>
+                  </div>
+                </div>
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Minutes</span>
