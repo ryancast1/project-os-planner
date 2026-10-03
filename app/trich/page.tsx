@@ -106,6 +106,18 @@ function buildRegrowthIndexData(dailyRows: DailyRow[], getValue: (row: DailyRow)
   return result;
 }
 
+function getReplacementLevel(data: IndexPoint[], todayCount: number) {
+  if (data.length < 2) return null;
+
+  const yesterdayIndex = data[data.length - 2].index;
+  const todayIndexWithoutToday = data[data.length - 1].index - todayCount;
+  return Math.max(0, Math.round(yesterdayIndex - todayIndexWithoutToday));
+}
+
+function getIndexMax(data: IndexPoint[]) {
+  return Math.max(...data.map((point) => point.index));
+}
+
 export default function Home() {
   const [userId, setUserId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "idle" | "saving" | "error">("loading");
@@ -126,6 +138,8 @@ export default function Home() {
   const combinedIndexData = useMemo(() => buildWeightedIndexData(dailyRows, (row) => row.t1 * 2 + row.t2), [dailyRows]);
   const t1RegrowthIndexData = useMemo(() => buildRegrowthIndexData(dailyRows, (row) => row.t1), [dailyRows]);
   const t2RegrowthIndexData = useMemo(() => buildRegrowthIndexData(dailyRows, (row) => row.t2), [dailyRows]);
+  const t1ReplacementLevel = useMemo(() => getReplacementLevel(t1RegrowthIndexData, t1), [t1RegrowthIndexData, t1]);
+  const t2ReplacementLevel = useMemo(() => getReplacementLevel(t2RegrowthIndexData, t2), [t2RegrowthIndexData, t2]);
 
   // Keep "today" updated (Pacific midnight boundary)
   useEffect(() => {
@@ -492,8 +506,9 @@ export default function Home() {
           <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="text-xs text-white/60">21-Day Weighted Index: T1</div>
-              <div className="text-xs text-white/50">
-                Current: {t1IndexData[t1IndexData.length - 1].index.toFixed(1)}
+              <div className="text-right text-xs text-white/50">
+                <div>Current: {t1IndexData[t1IndexData.length - 1].index.toFixed(1)}</div>
+                <div>Max: {getIndexMax(t1IndexData).toFixed(1)}</div>
               </div>
             </div>
             <TrichIndexChart data={t1IndexData} />
@@ -504,8 +519,9 @@ export default function Home() {
           <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="text-xs text-white/60">21-Day Weighted Index: T2</div>
-              <div className="text-xs text-white/50">
-                Current: {t2IndexData[t2IndexData.length - 1].index.toFixed(1)}
+              <div className="text-right text-xs text-white/50">
+                <div>Current: {t2IndexData[t2IndexData.length - 1].index.toFixed(1)}</div>
+                <div>Max: {getIndexMax(t2IndexData).toFixed(1)}</div>
               </div>
             </div>
             <TrichIndexChart data={t2IndexData} />
@@ -516,8 +532,9 @@ export default function Home() {
           <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="text-xs text-white/60">21-Day Weighted Index: Combined</div>
-              <div className="text-xs text-white/50">
-                Current: {combinedIndexData[combinedIndexData.length - 1].index.toFixed(1)}
+              <div className="text-right text-xs text-white/50">
+                <div>Current: {combinedIndexData[combinedIndexData.length - 1].index.toFixed(1)}</div>
+                <div>Max: {getIndexMax(combinedIndexData).toFixed(1)}</div>
               </div>
             </div>
             <TrichIndexChart data={combinedIndexData} />
@@ -527,9 +544,13 @@ export default function Home() {
         {t1RegrowthIndexData.length >= 2 && (
           <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-xs text-white/60">Regrowth Index: T1</div>
-              <div className="text-xs text-white/50">
-                Current: {t1RegrowthIndexData[t1RegrowthIndexData.length - 1].index.toFixed(1)}
+              <div className="text-xs text-white/60">
+                <div>Regrowth Index: T1</div>
+                <div className="mt-1 text-white/50">Replacement Level: {t1ReplacementLevel ?? "—"}</div>
+              </div>
+              <div className="text-right text-xs text-white/50">
+                <div>Current: {t1RegrowthIndexData[t1RegrowthIndexData.length - 1].index.toFixed(1)}</div>
+                <div>Max: {getIndexMax(t1RegrowthIndexData).toFixed(1)}</div>
               </div>
             </div>
             <TrichIndexChart data={t1RegrowthIndexData} />
@@ -539,9 +560,13 @@ export default function Home() {
         {t2RegrowthIndexData.length >= 2 && (
           <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-xs text-white/60">Regrowth Index: T2</div>
-              <div className="text-xs text-white/50">
-                Current: {t2RegrowthIndexData[t2RegrowthIndexData.length - 1].index.toFixed(1)}
+              <div className="text-xs text-white/60">
+                <div>Regrowth Index: T2</div>
+                <div className="mt-1 text-white/50">Replacement Level: {t2ReplacementLevel ?? "—"}</div>
+              </div>
+              <div className="text-right text-xs text-white/50">
+                <div>Current: {t2RegrowthIndexData[t2RegrowthIndexData.length - 1].index.toFixed(1)}</div>
+                <div>Max: {getIndexMax(t2RegrowthIndexData).toFixed(1)}</div>
               </div>
             </div>
             <TrichIndexChart data={t2RegrowthIndexData} />

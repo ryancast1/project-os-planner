@@ -5,7 +5,7 @@ import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 // Column type definitions
-type ColumnType = "text" | "number" | "boolean" | "date" | "datetime" | "time" | "select" | "relation";
+type ColumnType = "text" | "number" | "boolean" | "date" | "datetime" | "timestampTime" | "time" | "select" | "relation";
 
 type RelationConfig = {
   table: string;
@@ -16,6 +16,7 @@ type RelationConfig = {
 
 type ColumnConfig = {
   name: string;
+  label?: string;
   type: ColumnType;
   options?: string[];
   readonly?: boolean;
@@ -247,6 +248,7 @@ const TABLE_CONFIG: Record<string, TableConfig> = {
     defaultSort: { column: "occurred_on", desc: true },
     columns: [
       { name: "occurred_on", type: "date" },
+      { name: "submitted_at", label: "time", type: "timestampTime", readonly: true },
       { name: "trich", type: "number" },
     ],
   },
@@ -308,12 +310,24 @@ function formatDate(val: string | null): string {
   return val;
 }
 
+function formatTimestampTime(val: string | null): string {
+  if (!val) return "";
+  const date = new Date(val);
+  if (Number.isNaN(date.getTime())) return val;
+  return date.toLocaleTimeString("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function truncate(val: string | null, max: number): string {
   if (!val) return "";
   return val.length > max ? val.slice(0, max) + "..." : val;
 }
 
 function columnLabel(col: ColumnConfig) {
+  if (col.label) return col.label;
   return col.type === "relation" ? col.name.replace(/_id$/, "") : col.name;
 }
 
@@ -481,6 +495,8 @@ export default function DatabasePage() {
         if (val == null) return false;
         const displayVal = col.type === "relation"
           ? relationOptions[col.name]?.find((option) => option.value === String(val))?.label ?? val
+          : col.type === "timestampTime"
+            ? formatTimestampTime(String(val))
           : val;
         return String(displayVal).toLowerCase().includes(q);
       })
@@ -616,6 +632,7 @@ export default function DatabasePage() {
     if (val == null) return "";
     if (col.type === "boolean") return val ? "Yes" : "No";
     if (col.type === "datetime") return formatDatetime(val);
+    if (col.type === "timestampTime") return formatTimestampTime(val);
     if (col.type === "date") return formatDate(val);
     if (col.type === "relation") {
       return relationOptions[col.name]?.find((option) => option.value === String(val))?.label ?? "Unknown";
@@ -1184,6 +1201,19 @@ function FieldInput({
             className={inputClass}
           />
         )}
+      </div>
+    );
+  }
+
+  if (col.type === "timestampTime") {
+    return (
+      <div>
+        <label className="block text-xs text-white/60 mb-1">
+          {columnLabel(col)} <span className="text-white/40">(readonly)</span>
+        </label>
+        <div className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 flex items-center text-white/50 text-[16px]">
+          {formatTimestampTime(value)}
+        </div>
       </div>
     );
   }

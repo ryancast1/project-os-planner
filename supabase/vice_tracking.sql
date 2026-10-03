@@ -26,6 +26,12 @@ create policy "Users can insert their own weed hits"
   on public.weed_hits for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update their own weed hits" on public.weed_hits;
+create policy "Users can update their own weed hits"
+  on public.weed_hits for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 drop policy if exists "Users can delete their own weed hits" on public.weed_hits;
 create policy "Users can delete their own weed hits"
   on public.weed_hits for delete

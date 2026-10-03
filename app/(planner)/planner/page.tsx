@@ -131,6 +131,7 @@ type MovieTrackerItem = {
   id: string;
   title: string;
   priority: number | null;
+  note?: string | null;
 };
 
 type ProjectGoal = {
@@ -164,6 +165,20 @@ function toISODate(d: Date) {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function plannerTodayDate(now = new Date()) {
+  const d = new Date(now);
+  d.setHours(d.getHours() - 3);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function nextPlannerDayBoundary(now = new Date()) {
+  const d = new Date(now);
+  d.setHours(3, 0, 0, 0);
+  if (now >= d) d.setDate(d.getDate() + 1);
+  return d;
 }
 
 function fromISODate(iso: string) {
@@ -1458,7 +1473,7 @@ function EditSheet({
       initialDate = locationValueFor(item as any).split("|")[1];
     } else {
       // Default to today
-      initialDate = toISODate(new Date());
+      initialDate = toISODate(plannerTodayDate());
     }
     setCustomDate(initialDate);
     setShowDatePicker(false);
@@ -2888,7 +2903,7 @@ function AddSheet({
     if (defaultTarget.startsWith("D|")) {
       initialDate = defaultTarget.split("|")[1];
     } else {
-      initialDate = toISODate(new Date());
+      initialDate = toISODate(plannerTodayDate());
     }
     setCustomDate(initialDate);
     setShowDatePicker(false);
@@ -3121,6 +3136,7 @@ export default function PlannerPage() {
   const [trichFeedback, setTrichFeedback] = useState<{ label: string; count: number; token: number } | null>(null);
   const trichCountsRef = useRef(trichTodayCounts);
   const trichFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousDayRangeStartRef = useRef<string | null>(null);
   const [projectGoals, setProjectGoals] = useState<ProjectGoal[]>([]);
   const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
   const [notesModalDate, setNotesModalDate] = useState<string | null>(null);
@@ -3307,6 +3323,7 @@ const [movieItems, setMovieItems] = useState<MovieTrackerItem[]>([]);
 // Lookup map for ALL movies (including watched) - used for session title display
 const [movieLookup, setMovieLookup] = useState<Map<string, string>>(new Map());
 const [watchingMovieId, setWatchingMovieId] = useState<string | null>(null);
+const [watchingMovieSessionId, setWatchingMovieSessionId] = useState<string | null>(null);
 const [watchedDate, setWatchedDate] = useState<string>("");
 const [watchedNote, setWatchedNote] = useState<string>("");
 const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
@@ -3459,10 +3476,35 @@ const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
     return () => mql.removeListener(apply);
   }, []);
 
-  const today = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
+  const [today, setToday] = useState(() => plannerTodayDate());
+
+  useEffect(() => {
+    let timer: number | null = null;
+
+    const refreshPlannerToday = () => {
+      setToday((current) => {
+        const next = plannerTodayDate();
+        return toISODate(current) === toISODate(next) ? current : next;
+      });
+    };
+
+    const scheduleNextBoundary = () => {
+      const delay = Math.max(1000, nextPlannerDayBoundary().getTime() - Date.now() + 250);
+      timer = window.setTimeout(() => {
+        refreshPlannerToday();
+        scheduleNextBoundary();
+      }, delay);
+    };
+
+    scheduleNextBoundary();
+    window.addEventListener("focus", refreshPlannerToday);
+    document.addEventListener("visibilitychange", refreshPlannerToday);
+
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      window.removeEventListener("focus", refreshPlannerToday);
+      document.removeEventListener("visibilitychange", refreshPlannerToday);
+    };
   }, []);
 
   const days = useMemo(() => {
@@ -3526,7 +3568,7 @@ function getWindowValue(which: DrawerWindow) {
       return;
     }
 
-    const todayIso = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
+    const todayIso = toISODate(days[0]);
     const trichTodayIso = pacificISODate();
     const start = toISODate(days[0]);
 
@@ -3670,7 +3712,7 @@ function getWindowValue(which: DrawerWindow) {
         .eq("occurred_on", trichTodayIso),
         supabase
   .from("movie_tracker")
-  .select("id,title,priority")
+  .select("id,title,priority,note")
   .not("priority", "is", null)
   .neq("priority", 99)
   .order("priority", { ascending: true })
@@ -4075,24 +4117,52 @@ setMovieItems(
     }
   }
 
-  function openWatchedModal(id: string) {
+  function openWatchedModal(id: string, sessionId: string | null = null, defaultDate?: string | null) {
     setWatchingMovieId(id);
-    setWatchedDate(toISODate(new Date()));
+    setWatchingMovieSessionId(sessionId);
+    setWatchedDate(defaultDate ?? toISODate(new Date()));
+    setWatchedNote("");
+  }
+
+  function closeWatchedModal() {
+    setWatchingMovieId(null);
+    setWatchingMovieSessionId(null);
     setWatchedNote("");
   }
 
   async function confirmMarkWatched() {
-    const movie = movieItems.find((m) => m.id === watchingMovieId);
+    if (!watchingMovieId) return;
+
+    let movie: MovieTrackerItem | null = movieItems.find((m) => m.id === watchingMovieId) ?? null;
     if (!movie) {
-      setWatchingMovieId(null);
+      const { data, error } = await supabase
+        .from("movie_tracker")
+        .select("id,title,priority,note")
+        .eq("id", watchingMovieId)
+        .single();
+
+      if (error) {
+        alert(`Could not load movie: ${error.message}`);
+        return;
+      }
+
+      movie = data as MovieTrackerItem;
+    }
+
+    if (!movie) {
+      closeWatchedModal();
       return;
     }
 
     const watchedPriority = movie.priority;
+    const extra = watchedNote.trim();
+    const mergedNote =
+      extra === "" ? movie.note ?? null : movie.note ? `${movie.note}\n${extra}` : extra;
 
     const payload: any = {
       status: "watched",
       date_watched: watchedDate,
+      note: mergedNote,
       priority: null,
     };
 
@@ -4106,7 +4176,42 @@ setMovieItems(
       return;
     }
 
-    setWatchingMovieId(null);
+    const sessionToComplete = watchingMovieSessionId
+      ? contentSessions.find((s) => s.id === watchingMovieSessionId)
+      : null;
+
+    if (sessionToComplete && sessionToComplete.status !== "done") {
+      const completed_at = new Date().toISOString();
+      let newDaySortOrder = sessionToComplete.day_sort_order;
+
+      if (sessionToComplete.scheduled_for) {
+        const dayContent = unifiedContentByDay[sessionToComplete.scheduled_for] ?? [];
+        const others = dayContent.filter((e) => !(e.kind === "session" && e.session.id === sessionToComplete.id));
+        const openOthers = others.filter((e) => e.kind === "item" ? e.item.status !== "done" : e.session.status !== "done");
+        if (openOthers.length > 0) {
+          const minOpenOrder = Math.min(...openOthers.map((e) => e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0)));
+          newDaySortOrder = minOpenOrder - 1;
+        } else {
+          const doneOthers = others.filter((e) => e.kind === "item" ? e.item.status === "done" : e.session.status === "done");
+          newDaySortOrder = doneOthers.length > 0 ? Math.max(...doneOthers.map((e) => e.kind === "item" ? (e.item.day_sort_order ?? 0) : (e.session.day_sort_order ?? 0))) + 1 : 0;
+        }
+      }
+
+      const { error: sessionError } = await supabase
+        .from("content_sessions")
+        .update({ status: "done", completed_at, day_sort_order: newDaySortOrder })
+        .eq("id", sessionToComplete.id);
+
+      if (sessionError) {
+        alert(`Movie marked watched, but planner session update failed: ${sessionError.message}`);
+      } else {
+        setContentSessions((p) =>
+          p.map((s) => (s.id === sessionToComplete.id ? { ...s, status: "done", completed_at, day_sort_order: newDaySortOrder } : s))
+        );
+      }
+    }
+
+    closeWatchedModal();
 
     // Rebalance priorities
     if (watchedPriority !== null && watchedPriority !== 99) {
@@ -4256,6 +4361,22 @@ setMovieItems(
   }, [authReady]);
 
   const dayRangeStart = useMemo(() => toISODate(days[0]), [days]);
+
+  useEffect(() => {
+    if (!authReady) return;
+
+    if (previousDayRangeStartRef.current === null) {
+      previousDayRangeStartRef.current = dayRangeStart;
+      return;
+    }
+
+    if (previousDayRangeStartRef.current === dayRangeStart) return;
+
+    previousDayRangeStartRef.current = dayRangeStart;
+    setOpenDayIso(dayRangeStart);
+    fetchAll().then(() => cleanupOverdueOneOffs());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, dayRangeStart]);
 
   const overdueTasks = useMemo(() => {
     return tasks.filter((t) => t.status === "open" && t.scheduled_for && t.scheduled_for < dayRangeStart);
@@ -4945,6 +5066,11 @@ const { data, error } = await supabase
   async function toggleContentSessionDone(sessionId: string) {
     const session = contentSessions.find((s) => s.id === sessionId);
     if (!session) return;
+
+    if (session.movie_tracker_id && session.status !== "done") {
+      openWatchedModal(session.movie_tracker_id, session.id, session.scheduled_for);
+      return;
+    }
 
     const newStatus = session.status === "done" ? "open" : "done";
     const completed_at = newStatus === "done" ? new Date().toISOString() : null;
@@ -7415,12 +7541,12 @@ const { error } = await supabase
         <div className="fixed inset-0 z-50 grid place-items-center px-5">
           <div
             className="absolute inset-0 bg-black/70"
-            onClick={() => setWatchingMovieId(null)}
+            onClick={closeWatchedModal}
           />
           <div className="relative w-full max-w-md rounded-2xl border border-neutral-700 bg-neutral-950 p-4 shadow-2xl">
             <div className="text-lg font-semibold mb-1">Mark watched</div>
             <div className="text-sm text-neutral-400 mb-4 truncate">
-              {movieItems.find((m) => m.id === watchingMovieId)?.title ?? ""}
+              {movieItems.find((m) => m.id === watchingMovieId)?.title ?? movieLookup.get(watchingMovieId) ?? ""}
             </div>
 
             <label className="block text-xs text-neutral-400 mb-1">Watched date</label>
@@ -7431,10 +7557,18 @@ const { error } = await supabase
               className="w-full rounded-xl border border-neutral-700 bg-neutral-800/50 px-3 py-2 text-neutral-100 outline-none"
             />
 
+            <label className="mt-4 block text-xs text-neutral-400 mb-1">Notes</label>
+            <textarea
+              value={watchedNote}
+              onChange={(e) => setWatchedNote(e.target.value)}
+              rows={3}
+              className="w-full resize-none rounded-xl border border-neutral-700 bg-neutral-800/50 px-3 py-2 text-neutral-100 outline-none"
+            />
+
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
-                onClick={() => setWatchingMovieId(null)}
+                onClick={closeWatchedModal}
                 className="h-11 flex-1 rounded-xl border border-neutral-700 bg-neutral-800/50 text-neutral-100 font-semibold hover:bg-neutral-700/50 transition"
               >
                 Cancel

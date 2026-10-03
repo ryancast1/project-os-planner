@@ -1259,12 +1259,16 @@ export default function CalendarPage() {
   const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
   function monthLabelForWeek(row: Date[], weekIndex: number) {
+    const monthStart = row.find((d) => d.getDate() === 1 && (!yearView || d.getFullYear() === visibleYear));
+
     if (weekIndex === 0) {
+      // If the first visible week crosses into a new month, label the month
+      // being entered instead of the partial month at the start of the row.
+      if (monthStart) return fmtShortMonth(monthStart);
       const firstInView = yearView ? row.find((d) => d.getFullYear() === visibleYear) : row[0];
       return firstInView ? fmtShortMonth(firstInView) : "";
     }
 
-    const monthStart = row.find((d) => d.getDate() === 1 && (!yearView || d.getFullYear() === visibleYear));
     return monthStart ? fmtShortMonth(monthStart) : "";
   }
 
