@@ -248,7 +248,7 @@ const TABLE_CONFIG: Record<string, TableConfig> = {
     defaultSort: { column: "occurred_on", desc: true },
     columns: [
       { name: "occurred_on", type: "date" },
-      { name: "submitted_at", label: "time", type: "timestampTime", readonly: true },
+      { name: "submitted_at", label: "time (ET)", type: "timestampTime" },
       { name: "trich", type: "number" },
     ],
   },
@@ -315,10 +315,68 @@ function formatTimestampTime(val: string | null): string {
   const date = new Date(val);
   if (Number.isNaN(date.getTime())) return val;
   return date.toLocaleTimeString("en-US", {
-    timeZone: "America/Los_Angeles",
+    timeZone: "America/New_York",
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function formatTimestampTimeInput(val: string | null): string {
+  if (!val) return "";
+  const date = new Date(val);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
+function replaceTimestampTimeInEastern(val: string, nextTime: string): string | null {
+  const date = new Date(val);
+  if (Number.isNaN(date.getTime()) || !nextTime) return null;
+
+  const dateParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(dateParts.find((item) => item.type === type)?.value ?? 0);
+  const [hour, minute, second = 0] = nextTime.split(":").map(Number);
+  const targetAsUTC = Date.UTC(part("year"), part("month") - 1, part("day"), hour, minute, second);
+  let guess = targetAsUTC;
+
+  // Convert the Eastern wall-clock value back to an absolute timestamp. The
+  // small iteration keeps this correct on both EST and EDT dates.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const renderedParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(guess));
+    const renderedPart = (type: Intl.DateTimeFormatPartTypes) =>
+      Number(renderedParts.find((item) => item.type === type)?.value ?? 0);
+    const renderedAsUTC = Date.UTC(
+      renderedPart("year"),
+      renderedPart("month") - 1,
+      renderedPart("day"),
+      renderedPart("hour"),
+      renderedPart("minute"),
+      renderedPart("second")
+    );
+    guess += targetAsUTC - renderedAsUTC;
+  }
+
+  return new Date(guess).toISOString();
 }
 
 function truncate(val: string | null, max: number): string {
@@ -1209,11 +1267,21 @@ function FieldInput({
     return (
       <div>
         <label className="block text-xs text-white/60 mb-1">
-          {columnLabel(col)} <span className="text-white/40">(readonly)</span>
+          {columnLabel(col)} {col.readonly && <span className="text-white/40">(readonly)</span>}
         </label>
-        <div className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 flex items-center text-white/50 text-[16px]">
-          {formatTimestampTime(value)}
-        </div>
+        {col.readonly ? (
+          <div className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 flex items-center text-white/50 text-[16px]">
+            {formatTimestampTime(value)}
+          </div>
+        ) : (
+          <input
+            type="time"
+            step="1"
+            value={formatTimestampTimeInput(value)}
+            onChange={(e) => onChange(replaceTimestampTimeInEastern(value, e.target.value))}
+            className={inputClass}
+          />
+        )}
       </div>
     );
   }
