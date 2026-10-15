@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 const PACIFIC_TZ = "America/Los_Angeles";
+const EASTERN_TZ = "America/New_York";
 
 type DailyRow = { date: string; t1: number; t2: number };
 type IndexPoint = { date: string; index: number };
@@ -27,6 +28,20 @@ function isoToMDY(iso: string) {
 function dateFromISO(iso: string) {
   // Noon UTC avoids DST edge weirdness while still mapping cleanly to the intended date label
   return new Date(`${iso}T12:00:00Z`);
+}
+
+function easternDayStart(iso: string) {
+  // At 3am, Eastern's offset is already past any daylight-saving transition.
+  const offset = new Intl.DateTimeFormat("en-US", {
+    timeZone: EASTERN_TZ,
+    timeZoneName: "shortOffset",
+  }).formatToParts(dateFromISO(iso)).find((part) => part.type === "timeZoneName")?.value;
+  const hours = Number(offset?.replace("GMT", ""));
+  return new Date(`${iso}T03:00:00${hours < 0 ? "-" : "+"}${String(Math.abs(hours)).padStart(2, "0")}:00`).toISOString();
+}
+
+function hourLabel(hour: number) {
+  return `${hour % 12 || 12}${hour < 12 ? "am" : "pm"}`;
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -130,6 +145,7 @@ export default function Home() {
   const [dailyRows, setDailyRows] = useState<DailyRow[]>([]);
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   // Calculate weighted rolling indices separately for T1 and T2.
   // Weights: today = 1.0, yesterday = 0.95, -2d = 0.90, ..., -18d = 0.10, -19d = 0.05, -20d = 0.025
@@ -479,8 +495,16 @@ export default function Home() {
                 {dailyRows.map((r) => {
                   const isZeroDay = r.t1 === 0 && r.t2 === 0;
                   return (
-                  <tr key={r.date} className={`border-t border-white/5 ${isZeroDay ? "bg-emerald-500/20" : ""}`}>
-                    <td className={`px-3 py-2 text-left ${isZeroDay ? "text-emerald-300" : "text-white/80"}`}>{isoToMDY(r.date)}</td>
+                  <tr
+                    key={r.date}
+                    onClick={() => setSelectedDay(r.date)}
+                    className={`cursor-pointer border-t border-white/5 hover:bg-white/10 ${isZeroDay ? "bg-emerald-500/20" : ""}`}
+                  >
+                    <td className={`text-left ${isZeroDay ? "text-emerald-300" : "text-white/80"}`}>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedDay(r.date); }} className="w-full px-3 py-2 text-left underline decoration-white/20 underline-offset-4" aria-label={`View hourly pulls for ${isoToMDY(r.date)}`}>
+                        {isoToMDY(r.date)}
+                      </button>
+                    </td>
                     <td className={`px-3 py-2 text-right tabular-nums ${isZeroDay ? "text-emerald-300" : "text-white/90"}`}>{r.t1}</td>
                     <td className={`px-3 py-2 text-right tabular-nums ${isZeroDay ? "text-emerald-300" : "text-white/90"}`}>{r.t2}</td>
                   </tr>
@@ -573,7 +597,119 @@ export default function Home() {
           </section>
         )}
       </div>
+      {selectedDay && userId && (
+        <HourlyPullsDialog key={selectedDay} date={selectedDay} userId={userId} onClose={() => setSelectedDay(null)} />
+      )}
     </main>
+  );
+}
+
+function HourlyPullsDialog({ date, userId, onClose }: { date: string; userId: string; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [counts, setCounts] = useState<number[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [activeHour, setActiveHour] = useState<number | null>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      dialog?.close();
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const nextDate = new Date(dateFromISO(date).getTime() + 86400000).toISOString().slice(0, 10);
+        const start = easternDayStart(date);
+        const end = easternDayStart(nextDate);
+        const hourly = Array<number>(24).fill(0);
+        const formatter = new Intl.DateTimeFormat("en-US", { timeZone: EASTERN_TZ, hour: "numeric", hourCycle: "h23" });
+        const pageSize = 1000;
+        for (let from = 0; ; from += pageSize) {
+          const { data, error: queryError } = await supabase.from("trich_events")
+            .select("id, submitted_at")
+            .eq("user_id", userId)
+            .in("trich", [1, 2])
+            .gte("submitted_at", start)
+            .lt("submitted_at", end)
+            .order("submitted_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, from + pageSize - 1);
+          if (queryError) throw new Error(queryError.message);
+          if (cancelled) return;
+          for (const event of data ?? []) {
+            const hour = Number(formatter.format(new Date(event.submitted_at)));
+            hourly[(hour + 21) % 24] += 1;
+          }
+          if ((data?.length ?? 0) < pageSize) break;
+        }
+        if (!cancelled) setCounts(hourly);
+      } catch (err) {
+        if (!cancelled) setError(getErrorMessage(err, "Unable to load hourly pulls."));
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [date, userId]);
+
+  const max = Math.max(1, ...(counts ?? []));
+  const total = counts?.reduce((sum, count) => sum + count, 0) ?? 0;
+  const selected = activeHour ?? 0;
+  const startHour = (selected + 3) % 24;
+
+  return (
+    <dialog ref={dialogRef} onCancel={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} aria-labelledby="hourly-title" className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-2xl border border-white/15 bg-zinc-950 p-5 text-white shadow-2xl backdrop:bg-black/75 sm:p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 id="hourly-title" className="text-xl font-semibold">
+            {new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: EASTERN_TZ }).format(dateFromISO(date))}
+            <span className="mt-1 block text-base font-normal text-white/60">{isoToMDY(date)}</span>
+          </h2>
+          <p className="mt-1 text-sm text-white/50">Hourly pulls · 3am to 3am ET</p>
+        </div>
+        <button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-white/15 px-3 text-sm hover:bg-white/10">Close</button>
+      </div>
+      {error ? <p role="alert" className="mt-6 text-sm text-red-300">{error}</p> : !counts ? <p role="status" className="py-16 text-center text-white/50">Loading hourly pulls...</p> : (
+        <>
+          <div className="mb-5 mt-6 flex items-center justify-between gap-2 text-sm tabular-nums">
+            <span className="text-white/60">Total: <strong className="text-white">{total}</strong></span>
+            <span aria-live="polite">{hourLabel(startHour)}–{hourLabel((startHour + 1) % 24)}: <strong className="text-orange-300">{counts[selected]}</strong></span>
+          </div>
+          <div className="relative pl-7">
+            <span className="absolute left-0 top-0 text-xs text-white/40">{max}</span>
+            <span className="absolute bottom-0 left-0 text-xs text-white/40">0</span>
+            <div className="grid h-56 touch-none grid-cols-[repeat(24,minmax(0,1fr))] items-end gap-[2px] border-b border-white/20 bg-[linear-gradient(to_top,transparent_49.5%,rgba(255,255,255,0.06)_50%,transparent_50.5%)]"
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId);
+                const rect = event.currentTarget.getBoundingClientRect();
+                setActiveHour(Math.max(0, Math.min(23, Math.floor((event.clientX - rect.left) / rect.width * 24))));
+              }}
+              onPointerMove={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setActiveHour(Math.max(0, Math.min(23, Math.floor((event.clientX - rect.left) / rect.width * 24))));
+              }}>
+              {counts.map((count, index) => {
+                const hour = (index + 3) % 24;
+                return <button key={index} type="button" aria-label={`${hourLabel(hour)} to ${hourLabel((hour + 1) % 24)} Eastern: ${count} pulls`} onFocus={() => setActiveHour(index)} onClick={() => setActiveHour(index)} className="group relative h-full min-w-0 rounded-t-sm focus-visible:outline-2 focus-visible:outline-orange-200">
+                  <span className={`absolute inset-x-0 bottom-0 rounded-t-sm ${selected === index ? "bg-orange-300" : "bg-orange-500/80"}`} style={{ height: `${count / max * 100}%`, minHeight: count ? 2 : 0 }} />
+                </button>;
+              })}
+            </div>
+            <div className="mt-2 grid grid-cols-8 text-[10px] text-white/45">
+              {Array.from({ length: 8 }, (_, i) => <span key={i}>{hourLabel((3 + i * 3) % 24)}</span>)}
+            </div>
+          </div>
+          <p className="mt-5 text-center text-xs text-white/40">T1 + T2 combined. Tap or drag across the bars for counts.</p>
+          {total === 0 && <p className="mt-3 text-center text-sm text-white/60">No pulls recorded in this time window.</p>}
+        </>
+      )}
+    </dialog>
   );
 }
 

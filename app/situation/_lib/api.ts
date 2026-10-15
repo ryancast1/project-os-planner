@@ -167,16 +167,29 @@ export async function fetchPriceHistory(
   fidelity: number = 1
 ): Promise<PricePoint[]> {
   try {
+    const day = 24 * 3600;
+    const duration = endTs - startTs;
+    // Explicit date windows are capped at 15 days. Presets allow longer
+    // windows, but max needs 12-hour spacing to reach beyond 30 days.
+    const interval =
+      startTs <= 0 || duration > 30 * day
+        ? "max"
+        : duration > 15 * day
+          ? "1m"
+          : null;
+    const historyFidelity = interval === "max" ? Math.max(fidelity, 720) : fidelity;
     const params =
-      startTs > 0
-        ? `&startTs=${startTs}&endTs=${endTs}&fidelity=${fidelity}`
-        : `&interval=max&fidelity=${fidelity}`;
+      interval
+        ? `&interval=${interval}&fidelity=${historyFidelity}`
+        : `&startTs=${startTs}&endTs=${endTs}&fidelity=${historyFidelity}`;
     const res = await fetch(
-      `${PROXY}?endpoint=history&market=${tokenId}${params}`
+      `${PROXY}?endpoint=history&market=${encodeURIComponent(tokenId)}${params}`
     );
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.history ?? []) as PricePoint[];
+    const history = (data.history ?? []) as PricePoint[];
+    // Presets return a wider window; keep only the selected chart range.
+    return history.filter((pt) => (startTs <= 0 || pt.t >= startTs) && pt.t <= endTs);
   } catch {
     return [];
   }

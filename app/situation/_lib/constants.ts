@@ -37,7 +37,8 @@ export function getFidelity(label: TimeRangeLabel): number {
     case "1Y":
     case "5Y":
     case "All":
-      return 360;
+      // Finer CLOB history is limited to the latest 30 days.
+      return 720;
   }
 }
 

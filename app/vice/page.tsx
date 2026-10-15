@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 const APP_TIME_ZONE = "America/New_York";
+const TRACKING_DAY_START_HOUR = 4;
 const PAGE_SIZE = 1000;
 const ML_PER_OUNCE = 29.5735;
 
@@ -23,6 +24,10 @@ type AlcoholEntry = {
   standard_drinks: number;
 };
 type DailyValue = { date: string; value: number };
+
+function formatDrinks(value: number) {
+  return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
 
 function dateKey(date: Date) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -46,7 +51,7 @@ function subtractISODays(iso: string, days: number) {
 }
 
 function trackingDate(occurredOn: string, occurredAt: string) {
-  return occurredAt < "04:00:00" ? previousISODate(occurredOn) : occurredOn;
+  return Number(occurredAt.split(":")[0]) < TRACKING_DAY_START_HOUR ? previousISODate(occurredOn) : occurredOn;
 }
 
 function currentTrackingDate() {
@@ -57,7 +62,7 @@ function currentTrackingDate() {
     hour: "2-digit",
     hourCycle: "h23",
   }).format(now));
-  return hour < 4 ? previousISODate(calendarDate) : calendarDate;
+  return hour < TRACKING_DAY_START_HOUR ? previousISODate(calendarDate) : calendarDate;
 }
 
 function chartDatesFor(datesWithData: string[]) {
@@ -130,6 +135,10 @@ function shortDate(iso: string) {
   return `${Number(month)}/${Number(day)}`;
 }
 
+function weekday(iso: string) {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+}
+
 function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: string; unit: string }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const width = 640;
@@ -177,7 +186,7 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
             <g key={index}>
               <line x1={left} x2={width - right} y1={y} y2={y} stroke="#262626" />
               <text x={left - 7} y={y + 4} textAnchor="end" fill="#737373" fontSize="11">
-                {Number.isInteger(tick) ? tick : tick.toFixed(1)}
+                {unit === "drinks" ? formatDrinks(tick) : Number.isInteger(tick) ? tick : tick.toFixed(1)}
               </text>
             </g>
           );
@@ -189,7 +198,7 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
           const showLabel = index === 0 || index === data.length - 1 || index === Math.floor(data.length / 2);
           return (
             <g key={item.date}>
-              <title>{`${shortDate(item.date)}: ${item.value.toFixed(unit === "hits" ? 0 : 2)} ${unit}`}</title>
+              <title>{`${shortDate(item.date)}: ${unit === "drinks" ? formatDrinks(item.value) : item.value.toFixed(0)} ${unit}`}</title>
               <rect x={x} y={y} width={barWidth} height={barHeight} rx="3" fill={color} />
               {showLabel ? <text x={x + barWidth / 2} y={height - 17} textAnchor="middle" fill="#a3a3a3" fontSize="11">{shortDate(item.date)}</text> : null}
             </g>
@@ -198,7 +207,7 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
         {rollingAverages.length > 1 ? <path d={averagePath} fill="none" stroke="#f5f5f5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /> : null}
         {rollingAverages.map((item) => (
           <circle key={`average-${item.date}`} cx={xCenter(item.index)} cy={yValue(item.value)} r="2.5" fill="#f5f5f5">
-            <title>{`${shortDate(item.date)}: ${item.value.toFixed(2)} ${unit} 7-day average`}</title>
+            <title>{`${shortDate(item.date)}: ${unit === "drinks" ? formatDrinks(item.value) : item.value.toFixed(2)} ${unit} 7-day average`}</title>
           </circle>
         ))}
         {activeItem ? (
@@ -206,8 +215,8 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
             <line x1={xCenter(activeIndex!)} x2={xCenter(activeIndex!)} y1={top} y2={top + plotHeight} stroke="#d4d4d4" strokeWidth="1" strokeDasharray="3 3" />
             <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={activeAverage === undefined ? 49 : 66} rx="8" fill="#171717" stroke="#525252" />
             <text x={tooltipX + 10} y={tooltipY + 17} fill="#d4d4d4" fontSize="11" fontWeight="600">{shortDate(activeItem.date)}</text>
-            <text x={tooltipX + 10} y={tooltipY + 35} fill="#f5f5f5" fontSize="12">{activeItem.value.toFixed(unit === "hits" ? 0 : 2)} {unit}</text>
-            {activeAverage !== undefined ? <text x={tooltipX + 10} y={tooltipY + 53} fill="#a3a3a3" fontSize="11">7-day avg: {activeAverage.toFixed(2)}</text> : null}
+            <text x={tooltipX + 10} y={tooltipY + 35} fill="#f5f5f5" fontSize="12">{unit === "drinks" ? formatDrinks(activeItem.value) : activeItem.value.toFixed(0)} {unit}</text>
+            {activeAverage !== undefined ? <text x={tooltipX + 10} y={tooltipY + 53} fill="#a3a3a3" fontSize="11">7-day avg: {unit === "drinks" ? formatDrinks(activeAverage) : activeAverage.toFixed(2)}</text> : null}
           </g>
         ) : null}
         <rect
@@ -231,6 +240,147 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
   );
 }
 
+function AlcoholDayDialog({ date, entries, onClose }: { date: string; entries: AlcoholEntry[]; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="alcohol-day-title"
+      onClose={onClose}
+      onClick={(event) => { if (event.target === event.currentTarget) dialogRef.current?.close(); }}
+      className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-3xl border border-neutral-800 bg-neutral-950 p-0 text-neutral-100 shadow-2xl backdrop:bg-black/75"
+    >
+      <div className="p-4 sm:p-5">
+        <header className="flex items-center justify-between gap-3">
+          <h2 id="alcohol-day-title" className="text-lg font-semibold">Alcohol · {shortDate(date)}/{date.slice(0, 4)} · {weekday(date)}</h2>
+          <button type="button" autoFocus onClick={() => dialogRef.current?.close()} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-neutral-900 focus-visible:outline-2 focus-visible:outline-emerald-400">Close</button>
+        </header>
+        {entries.length === 0 ? (
+          <p className="py-8 text-center text-sm text-neutral-500">No alcohol entries for this day.</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto rounded-xl border border-neutral-800">
+            <table className="w-full min-w-[460px] text-left text-sm tabular-nums">
+              <thead className="bg-neutral-900/60 text-xs text-neutral-500">
+                <tr>
+                  <th scope="col" className="px-3 py-3 font-semibold">Time</th>
+                  <th scope="col" className="px-3 py-3 font-semibold">Label</th>
+                  <th scope="col" className="px-3 py-3 text-right font-semibold">oz</th>
+                  <th scope="col" className="px-3 py-3 text-right font-semibold">ABV</th>
+                  <th scope="col" className="px-3 py-3 text-right font-semibold">Drinks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((entry) => {
+                  const [hour, minute] = entry.occurred_at.split(":");
+                  const hourNumber = Number(hour);
+                  const time = `${hourNumber % 12 || 12}:${minute} ${hourNumber < 12 ? "AM" : "PM"}`;
+                  return (
+                    <tr key={entry.id} className="border-t border-neutral-800 text-neutral-300">
+                      <td className="whitespace-nowrap px-3 py-3">
+                        {time}
+                        {entry.occurred_on !== date ? <span className="mt-0.5 block text-xs text-neutral-500">{shortDate(entry.occurred_on)}</span> : null}
+                      </td>
+                      <td className="max-w-48 break-words px-3 py-3">{entry.label || "—"}</td>
+                      <td className="px-3 py-3 text-right">{Number(entry.amount_oz).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td className="px-3 py-3 text-right">{Number(entry.abv)}%</td>
+                      <td className="px-3 py-3 text-right">{formatDrinks(Number(entry.standard_drinks))}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </dialog>
+  );
+}
+
+function WeedDayTimeline({ hits }: { hits: WeedHit[] }) {
+  const width = 400;
+  const left = 24;
+  const plotWidth = width - left * 2;
+  const x = (hours: number) => left + hours / 24 * plotWidth;
+
+  return (
+    <figure className="mt-5 rounded-xl border border-neutral-800 bg-neutral-900/30 px-3 pt-3 pb-2">
+      <svg viewBox={`0 0 ${width} 110`} className="mt-2 block h-auto w-full" role="img" aria-label={`${hits.length} hits across the New York tracking day, from 4 AM to 4 AM. Each green mark represents one hit.`}>
+        {Array.from({ length: 25 }, (_, hour) => (
+          <line key={hour} x1={x(hour)} x2={x(hour)} y1="20" y2="65" stroke="#262626" />
+        ))}
+        <line x1={left} x2={width - left} y1="65" y2="65" stroke="#525252" />
+        {hits.map((hit) => {
+          const [hour, minute, second = 0] = hit.occurred_at.split(":").map(Number);
+          const hours = ((hour - TRACKING_DAY_START_HOUR + 24) % 24) + minute / 60 + second / 3600;
+          const [rawHour, rawMinute] = hit.occurred_at.split(":");
+          const time = `${Number(rawHour) % 12 || 12}:${rawMinute} ${Number(rawHour) < 12 ? "AM" : "PM"}`;
+          return (
+            <line key={hit.id} x1={x(hours)} x2={x(hours)} y1="27" y2="64" stroke="#34d399" strokeWidth="2" strokeLinecap="round">
+              <title>{time}</title>
+            </line>
+          );
+        })}
+        {[0, 8, 16, 24].map((offset) => {
+          const hour = (TRACKING_DAY_START_HOUR + offset) % 24;
+          return <text key={offset} x={x(offset)} y="85" textAnchor="middle" fill="#a3a3a3" fontSize="11">{hour % 12 || 12} {hour < 12 ? "AM" : "PM"}</text>;
+        })}
+      </svg>
+    </figure>
+  );
+}
+
+function WeedDayDialog({ date, hits, onClose }: { date: string; hits: WeedHit[]; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="weed-day-title"
+      onClose={onClose}
+      onClick={(event) => { if (event.target === event.currentTarget) dialogRef.current?.close(); }}
+      className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-3xl border border-neutral-800 bg-neutral-950 p-0 text-neutral-100 shadow-2xl backdrop:bg-black/75"
+    >
+      <div className="p-4 sm:p-5">
+        <header className="flex items-center justify-between gap-3">
+          <h2 id="weed-day-title" className="text-lg font-semibold">Weed · {shortDate(date)}/{date.slice(0, 4)} · {weekday(date)}</h2>
+          <button type="button" autoFocus onClick={() => dialogRef.current?.close()} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-neutral-900 focus-visible:outline-2 focus-visible:outline-emerald-400">Close</button>
+        </header>
+        {hits.length === 0 ? (
+          <p className="py-8 text-center text-sm text-neutral-500">No hits for this day.</p>
+        ) : (
+          <>
+          <WeedDayTimeline hits={hits} />
+          <ul className="mt-4 divide-y divide-neutral-800 overflow-hidden rounded-xl border border-neutral-800 text-sm tabular-nums">
+            {hits.map((hit) => {
+              const [hour, minute] = hit.occurred_at.split(":");
+              const hourNumber = Number(hour);
+              const time = `${hourNumber % 12 || 12}:${minute} ${hourNumber < 12 ? "AM" : "PM"}`;
+              return (
+                <li key={hit.id} className="flex items-center justify-between gap-3 px-3 py-3 text-neutral-300">
+                  <time dateTime={`${hit.occurred_on}T${hit.occurred_at}`}>{time}</time>
+                  {hit.occurred_on !== date ? <span className="text-xs text-neutral-500">{shortDate(hit.occurred_on)}</span> : null}
+                </li>
+              );
+            })}
+          </ul>
+          </>
+        )}
+      </div>
+    </dialog>
+  );
+}
+
 export default function VicePage() {
   const [weedHits, setWeedHits] = useState<WeedHit[]>([]);
   const [alcoholEntries, setAlcoholEntries] = useState<AlcoholEntry[]>([]);
@@ -244,6 +394,8 @@ export default function VicePage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [pageNow, setPageNow] = useState(() => Date.now());
+  const [selectedAlcoholDate, setSelectedAlcoholDate] = useState<string | null>(null);
+  const [selectedWeedDate, setSelectedWeedDate] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -324,6 +476,24 @@ export default function VicePage() {
     return alcoholDates.map((date) => ({ date, value: totals.get(date) ?? 0 }));
   }, [alcoholDates, alcoholEntries]);
 
+  const dailyTotals = useMemo(() => {
+    const drinksByDate = new Map(alcoholChart.map((day) => [day.date, day.value]));
+    const hitsByDate = new Map(weedChart.map((day) => [day.date, day.value]));
+    return chartDatesFor([...drinksByDate.keys(), ...hitsByDate.keys()])
+      .reverse()
+      .map((date) => ({ date, drinks: drinksByDate.get(date) ?? 0, hits: hitsByDate.get(date) ?? 0 }));
+  }, [alcoholChart, weedChart]);
+
+  const selectedAlcoholEntries = useMemo(() => alcoholEntries
+    .filter((entry) => trackingDate(entry.occurred_on, entry.occurred_at) === selectedAlcoholDate)
+    .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on) || a.occurred_at.localeCompare(b.occurred_at)),
+  [alcoholEntries, selectedAlcoholDate]);
+
+  const selectedWeedHits = useMemo(() => weedHits
+    .filter((hit) => trackingDate(hit.occurred_on, hit.occurred_at) === selectedWeedDate)
+    .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on) || a.occurred_at.localeCompare(b.occurred_at)),
+  [weedHits, selectedWeedDate]);
+
   const today = currentTrackingDate();
   const todayWeedHits = weedHits.filter((hit) => trackingDate(hit.occurred_on, hit.occurred_at) === today).length;
   const todayStandardDrinks = alcoholEntries.reduce(
@@ -390,7 +560,7 @@ export default function VicePage() {
     setAbv("");
     setLabel("");
     setPageNow(Date.now());
-    setConfirmation(`${standardDrinks.toFixed(2)} standard drinks logged`);
+    setConfirmation(`${formatDrinks(standardDrinks)} standard drinks logged`);
   }
 
   return (
@@ -405,8 +575,8 @@ export default function VicePage() {
             <button type="submit" form="alcohol-form" disabled={alcoholSaving} className="h-28 w-full rounded-3xl bg-white text-5xl font-bold text-neutral-950 shadow-sm transition active:scale-[0.98] disabled:opacity-60" aria-label="Log alcohol entry">
               {alcoholSaving ? "…" : "A"}
             </button>
-            <div className="mt-2 text-center text-sm text-neutral-400"><span className="font-semibold tabular-nums text-neutral-100">{todayStandardDrinks.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> standard drinks today</div>
-            <div className="mt-1 text-center text-xs text-neutral-500"><span className="tabular-nums">{Number(weeklyStandardDrinks.toFixed(1))}</span> drinks in last week</div>
+            <div className="mt-2 text-center text-sm text-neutral-400"><span className="font-semibold tabular-nums text-neutral-100">{formatDrinks(todayStandardDrinks)}</span> standard drinks today</div>
+            <div className="mt-1 text-center text-xs text-neutral-500"><span className="tabular-nums">{formatDrinks(weeklyStandardDrinks)}</span> drinks in last week</div>
             {timeSinceLastDrink ? <div className="mt-1 text-center text-xs tabular-nums text-neutral-500">{timeSinceLastDrink}</div> : null}
           </div>
           <div>
@@ -461,6 +631,40 @@ export default function VicePage() {
           </section>
         </div>
 
+        <section aria-labelledby="daily-totals-title" className="mx-auto mt-6 max-w-md rounded-3xl border border-neutral-800 bg-neutral-950/30 p-4 sm:p-5">
+          <h2 id="daily-totals-title" className="text-center text-lg font-semibold">Daily totals</h2>
+          {loading ? (
+            <div className="py-12 text-center text-sm text-neutral-500">Loading…</div>
+          ) : (
+            <div className="mt-4 max-h-[28rem] overflow-y-auto rounded-2xl border border-neutral-800">
+              <table className="w-full table-fixed border-collapse text-sm tabular-nums">
+                <thead className="sticky top-0 z-10 bg-neutral-950 text-neutral-400">
+                  <tr>
+                    <th scope="col" className="px-3 py-3 text-left font-semibold">Date</th>
+                    <th scope="col" aria-label="Standard drinks" className="w-16 border-l border-neutral-800 py-3 text-center font-semibold sm:w-20">A</th>
+                    <th scope="col" aria-label="Weed hits" className="w-16 border-l border-neutral-800 py-3 text-center font-semibold sm:w-20">W</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyTotals.map((day) => (
+                    <tr key={day.date} className="border-t border-neutral-800">
+                      <th scope="row" className="px-3 text-left font-normal text-neutral-300">
+                        <time dateTime={day.date}>{shortDate(day.date)}/{day.date.slice(0, 4)}</time>
+                      </th>
+                      <td className={`border-l border-neutral-800 p-0 ${day.drinks === 0 ? "bg-emerald-400 text-neutral-950" : "text-neutral-100"}`}>
+                        <button type="button" onClick={() => setSelectedAlcoholDate(day.date)} aria-label={`View alcohol entries for ${day.date}`} aria-haspopup="dialog" className="flex h-10 w-full items-center justify-center text-base font-semibold transition hover:bg-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white">{formatDrinks(day.drinks)}</button>
+                      </td>
+                      <td className={`border-l border-neutral-800 p-0 ${day.hits === 0 ? "bg-emerald-400 text-neutral-950" : "text-neutral-100"}`}>
+                        <button type="button" onClick={() => setSelectedWeedDate(day.date)} aria-label={`View weed hits for ${day.date}`} aria-haspopup="dialog" className="flex h-10 w-full items-center justify-center text-base font-semibold transition hover:bg-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white">{day.hits}</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
         <div className="mt-6 flex justify-center gap-2 pb-2">
           <button
             type="button"
@@ -486,6 +690,8 @@ export default function VicePage() {
           </button>
         </div>
       </div>
+      {selectedAlcoholDate ? <AlcoholDayDialog date={selectedAlcoholDate} entries={selectedAlcoholEntries} onClose={() => setSelectedAlcoholDate(null)} /> : null}
+      {selectedWeedDate ? <WeedDayDialog date={selectedWeedDate} hits={selectedWeedHits} onClose={() => setSelectedWeedDate(null)} /> : null}
     </main>
   );
 }

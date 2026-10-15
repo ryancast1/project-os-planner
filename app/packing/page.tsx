@@ -79,6 +79,7 @@ export default function PackingPage() {
   const [currentTrip, setCurrentTrip] = useState<Trip | null>(null);
   const [tripItems, setTripItems] = useState<TripItem[]>([]);
   const [newTripName, setNewTripName] = useState("");
+  const [clearingChecks, setClearingChecks] = useState(false);
   const [expandedArchivedTripId, setExpandedArchivedTripId] = useState<string | null>(null);
   const [archivedTripItemsById, setArchivedTripItemsById] = useState<Record<string, TripItem[]>>({});
   const [busyArchivedTripId, setBusyArchivedTripId] = useState<string | null>(null);
@@ -290,7 +291,7 @@ export default function PackingPage() {
   }
 
   async function togglePacked(itemId: string, currentPacked: boolean) {
-    if (!currentTrip) return;
+    if (!currentTrip || clearingChecks) return;
     setTripItems((items) =>
       items.map((item) => item.id === itemId ? { ...item, is_packed: !currentPacked } : item)
     );
@@ -303,6 +304,28 @@ export default function PackingPage() {
       setTripItems((items) =>
         items.map((item) => item.id === itemId ? { ...item, is_packed: currentPacked } : item)
       );
+    }
+  }
+
+  async function clearAllChecks() {
+    if (!currentTrip || clearingChecks) return;
+    setErr(null);
+    setClearingChecks(true);
+
+    try {
+      const { error } = await supabase
+        .from("packing_trip_items")
+        .update({ is_packed: false })
+        .eq("trip_id", currentTrip.id);
+
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+
+      setTripItems((items) => items.map((item) => ({ ...item, is_packed: false })));
+    } finally {
+      setClearingChecks(false);
     }
   }
 
@@ -724,19 +747,29 @@ export default function PackingPage() {
               <>
                 {/* Trip header */}
                 <section className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-950/30 p-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="text-lg font-semibold text-neutral-100">{currentTrip.trip_name}</div>
                       <div className="mt-1 text-xs text-neutral-400">
                         {packedCount} / {totalCount} packed
                       </div>
                     </div>
-                    <button
-                      onClick={archiveTrip}
-                      className="rounded-xl border border-neutral-700 bg-black/30 px-4 py-2 text-sm font-semibold text-neutral-100"
-                    >
-                      Archive Trip
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={clearAllChecks}
+                        disabled={clearingChecks || !tripItems.some((item) => item.is_packed)}
+                        className="rounded-xl border border-neutral-700 bg-black/30 px-4 py-2 text-sm font-semibold text-neutral-100 disabled:opacity-50"
+                      >
+                        {clearingChecks ? "Clearing..." : "Clear All Checks"}
+                      </button>
+                      <button
+                        onClick={archiveTrip}
+                        disabled={clearingChecks}
+                        className="rounded-xl border border-neutral-700 bg-black/30 px-4 py-2 text-sm font-semibold text-neutral-100 disabled:opacity-50"
+                      >
+                        Archive Trip
+                      </button>
+                    </div>
                   </div>
                 </section>
 
@@ -827,6 +860,7 @@ export default function PackingPage() {
                                     />
                                     <button
                                       onClick={() => togglePacked(item.id, item.is_packed)}
+                                      disabled={clearingChecks}
                                       className={
                                         "h-5 w-5 shrink-0 rounded border-2 " +
                                         (item.is_packed
@@ -990,7 +1024,7 @@ export default function PackingPage() {
                       >
                         <div className="text-sm font-semibold text-neutral-100">{trip.trip_name}</div>
                         <div className="mt-1 text-xs text-neutral-400">
-                          Archived {trip.archived_at ? new Date(trip.archived_at).toLocaleDateString() : ""}
+                          Created {new Date(trip.created_at).toLocaleDateString()}
                         </div>
                         {isExpanded && (
                           <div className="mt-1 text-xs text-neutral-500">
