@@ -24,6 +24,7 @@ import { useViewSwipe } from "./_lib/useViewSwipe";
 import { createTVPanels } from "./_lib/tv";
 import TVToolbar from "./_components/TVToolbar";
 import { ELECTION_NIGHT_LABEL, isElectionNightAvailable } from "./_lib/electionNight";
+import type { MoverRange } from "./_lib/movers";
 import "./tv.css";
 
 export default function SituationDashboard() {
@@ -38,6 +39,8 @@ export default function SituationDashboard() {
   const [panels, setPanels] = useState<PanelSlot[]>([null]);
   const [timeRange, setTimeRange] = useState<TimeRangeLabel>("1D");
   const [tvElectionNight, setTVElectionNight] = useState(false);
+  const [moverRange, setMoverRange] = useState<MoverRange | null>(null);
+  const [moverCount, setMoverCount] = useState(0);
   const chartTimeRange = layout === "TV" && tvElectionNight ? ELECTION_NIGHT_LABEL : timeRange;
 
   // Views
@@ -366,6 +369,9 @@ export default function SituationDashboard() {
       {/* Header: 3-row stacked on portrait mobile, single row otherwise */}
       {layout === "TV" ? (
         <TVToolbar
+          moverRange={moverRange}
+          moverCount={moverCount}
+          onMoverRangeChange={setMoverRange}
           timeRange={chartTimeRange}
           editing={tvEditing}
           isDirty={isDirty}
@@ -497,6 +503,8 @@ export default function SituationDashboard() {
         mobilePortrait={isMobilePortrait}
         mobileLandscape={isMobileLandscape}
         tvEditing={tvEditing}
+        moverRange={layout === "TV" ? moverRange : null}
+        onMoverCountChange={setMoverCount}
       />
 
       <ManageMarketsModal

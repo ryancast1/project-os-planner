@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { TimeRangeLabel } from "../_lib/types";
 import { TIME_RANGES } from "../_lib/constants";
 import { ELECTION_NIGHT_LABEL, isElectionNightAvailable } from "../_lib/electionNight";
+import { MOVER_RANGES, type MoverRange } from "../_lib/movers";
 
 export default function TVToolbar({
   timeRange,
@@ -15,6 +16,9 @@ export default function TVToolbar({
   onSave,
   onBack,
   onManage,
+  moverRange,
+  moverCount,
+  onMoverRangeChange,
 }: {
   timeRange: TimeRangeLabel;
   editing: boolean;
@@ -25,6 +29,9 @@ export default function TVToolbar({
   onSave: () => Promise<boolean>;
   onBack: () => void;
   onManage: () => void;
+  moverRange: MoverRange | null;
+  moverCount: number;
+  onMoverRangeChange: (range: MoverRange | null) => void;
 }) {
   const [fullscreen, setFullscreen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -99,12 +106,36 @@ export default function TVToolbar({
           disabled={!electionNightAvailable}
           aria-pressed={timeRange === ELECTION_NIGHT_LABEL}
           title={electionNightAvailable
-            ? "Since November 3, 2026 at 7:00 p.m. ET, continuing past midnight"
-            : "Available November 3, 2026 at 7:00 p.m. ET"}
+            ? "Since November 3, 2026 at 6:00 p.m. ET, continuing past midnight"
+            : "Available November 3, 2026 at 6:00 p.m. ET"}
           className="tv-control tv-election-night"
         >
           {ELECTION_NIGHT_LABEL}
         </button>
+      </div>
+      <div className="tv-mover-controls" role="group" aria-label="Movers">
+        <span>Movers</span>
+        {MOVER_RANGES.map((option) => (
+          <button
+            key={option.value}
+            className="tv-control"
+            aria-label={`Movers: ${option.label}`}
+            aria-pressed={moverRange === option.value}
+            title={`Highlight the top 3 displayed markets over ${option.label}. Markets with more than 3 outcomes are excluded. Click again to turn off. Prediction markets use percentage points; other prices use percentage change. Updates every 30 seconds.`}
+            onClick={() => onMoverRangeChange(moverRange === option.value ? null : option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+        {moverRange && (
+          <span
+            role="status"
+            style={{ fontSize: "0.85em", color: "rgb(255 255 255 / 55%)", whiteSpace: "nowrap" }}
+            title="Highlights actual moves, not unchanged prices, using the rising outcome's color when available. Markets without reliable recent comparisons are skipped. Try a longer window if no markets qualify."
+          >
+            {moverCount > 0 ? `${moverCount} highlighted` : "No qualifying moves yet"}
+          </span>
+        )}
       </div>
       <div className="tv-board-actions">
         <button onClick={onToggleEditing} aria-pressed={editing} className="tv-control" disabled={saving}>

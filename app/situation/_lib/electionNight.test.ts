@@ -5,8 +5,8 @@ import { getFidelity, getStartTs, getYahooParams, TIME_RANGES } from "./constant
 import { ELECTION_NIGHT_LABEL, ELECTION_NIGHT_START_TS, isElectionNightAvailable } from "./electionNight";
 import { loadLocalState, loadTVElectionNight, saveTVElectionNight } from "./storage";
 
-test("Election Night starts at 7pm Eastern on November 3, using the post-DST offset", () => {
-  assert.equal(new Date(ELECTION_NIGHT_START_TS * 1000).toISOString(), "2026-11-04T00:00:00.000Z");
+test("Election Night starts at 6pm Eastern on November 3, using the post-DST offset", () => {
+  assert.equal(new Date(ELECTION_NIGHT_START_TS * 1000).toISOString(), "2026-11-03T23:00:00.000Z");
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", hour12: false,
   }).formatToParts(new Date(ELECTION_NIGHT_START_TS * 1000));
@@ -14,11 +14,11 @@ test("Election Night starts at 7pm Eastern on November 3, using the post-DST off
   assert.equal(value("year"), "2026");
   assert.equal(value("month"), "11");
   assert.equal(value("day"), "3");
-  assert.equal(value("hour"), "19");
+  assert.equal(value("hour"), "18");
 });
 
 test("the fixed start never moves across midnight or the following day", () => {
-  for (const date of ["2026-11-03T19:01:00-05:00", "2026-11-03T23:59:00-05:00", "2026-11-04T00:01:00-05:00", "2026-11-04T12:00:00-05:00"])
+  for (const date of ["2026-11-03T18:01:00-05:00", "2026-11-03T23:59:00-05:00", "2026-11-04T00:01:00-05:00", "2026-11-04T12:00:00-05:00"])
     assert.equal(getStartTs(ELECTION_NIGHT_LABEL, Date.parse(date)), ELECTION_NIGHT_START_TS);
   const now = Date.parse("2026-11-04T00:01:00-05:00");
   assert.equal(getStartTs("1H", now), now / 1000 - 3600);
@@ -33,10 +33,10 @@ test("the toggle is available only after its fixed start and is absent from regu
   assert.deepEqual(getYahooParams(ELECTION_NIGHT_LABEL), { range: "5d", interval: "5m" });
 });
 
-test("Polymarket requests retain the 7pm start as their end time advances past midnight", async () => {
+test("Polymarket requests retain the 6pm start as their end time advances past midnight", async () => {
   const originalFetch = globalThis.fetch;
   try {
-    for (const end of [ELECTION_NIGHT_START_TS + 4 * 3600, ELECTION_NIGHT_START_TS + 6 * 3600]) {
+    for (const end of [ELECTION_NIGHT_START_TS + 4 * 3600, ELECTION_NIGHT_START_TS + 7 * 3600]) {
       globalThis.fetch = async (input) => {
         const url = new URL(String(input), "http://localhost");
         assert.equal(Number(url.searchParams.get("startTs")), ELECTION_NIGHT_START_TS);
@@ -57,7 +57,7 @@ test("Polymarket requests retain the 7pm start as their end time advances past m
   }
 });
 
-test("stock histories trim to the anchor, and closed stocks can keep polling with no post-7pm points", async () => {
+test("stock histories trim to the anchor, and closed stocks can keep polling with no post-6pm points", async () => {
   const originalFetch = globalThis.fetch;
   try {
     globalThis.fetch = async () => Response.json({ chart: { result: [{

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, type CSSProperties } from "react";
+import { memo, useEffect, useState, useRef, useCallback, type CSSProperties } from "react";
 import type {
   SavedMarket,
   MarketInfo,
@@ -30,8 +30,10 @@ import OddsChart from "./OddsChart";
 import OddsDisplay from "./OddsDisplay";
 import StockDisplay from "./StockDisplay";
 import MarketDropdown from "./MarketDropdown";
+import MoverReporter from "./MoverReporter";
+import { describeMover, isMoverEligibleMarket, type MarketMover, type MoverCache, type MoverRange } from "../_lib/movers";
 
-export default function Panel({
+function Panel({
   slotIndex,
   marketId,
   savedMarkets,
@@ -40,6 +42,9 @@ export default function Panel({
   mobileLandscape = false,
   tvMode = false,
   tvEditing = false,
+  moverRange = null,
+  mover,
+  onMoverChange,
   onChangeMarket,
   onManageMarkets,
 }: {
@@ -51,6 +56,9 @@ export default function Panel({
   mobileLandscape?: boolean;
   tvMode?: boolean;
   tvEditing?: boolean;
+  moverRange?: MoverRange | null;
+  mover?: MarketMover;
+  onMoverChange?: (slot: number, mover: MarketMover | null) => void;
   onChangeMarket: (slotIndex: number, marketId: string | null) => void;
   onManageMarkets: () => void;
 }) {
@@ -72,6 +80,7 @@ export default function Panel({
 
   const outcomesRef = useRef<Outcome[]>([]);
   const stockRef = useRef<StockSnapshot | null>(null);
+  const moverCache = useRef<MoverCache>({ histories: {} });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeRangeRef = useRef<TimeRangeLabel>(timeRange);
 
@@ -168,6 +177,7 @@ export default function Panel({
     outcomesRef.current = [];
     setStockSnapshot(null);
     stockRef.current = null;
+    moverCache.current = { histories: {} };
     setError(null);
 
     if (!marketId) {
@@ -279,14 +289,44 @@ export default function Panel({
 
   return (
     <div
-      className={`flex flex-col h-full min-w-0 min-h-0 rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden ${tvMode ? "tv-market-panel" : ""} ${highConfidence ? "market-high-confidence" : ""}`}
-      style={highConfidence ? { "--market-accent": highConfidence.color } as CSSProperties : undefined}
+      className={`flex flex-col h-full min-w-0 min-h-0 rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden ${tvMode ? "tv-market-panel" : ""} ${highConfidence ? "market-high-confidence" : ""} ${tvMode && mover ? "tv-market-mover" : ""}`}
+      style={{ position: tvMode ? "relative" : undefined, "--market-accent": highConfidence?.color } as CSSProperties}
       data-high-confidence-outcome={highConfidence?.outcome.tokenId}
+      data-mover-market={tvMode && mover ? marketId : undefined}
+      title={tvMode && mover ? describeMover(mover) : undefined}
+      aria-describedby={tvMode && mover ? `tv-mover-${slotIndex}` : undefined}
       role="group"
       aria-label={highConfidence
         ? `${panelTitle}: ${highConfidence.outcome.name} at ${(highConfidence.outcome.currentPrice * 100).toFixed(1)}%. High market confidence, not an official result.`
         : panelTitle || `Market ${slotIndex + 1}`}
     >
+      {tvMode && mover && (
+        <div
+          aria-hidden="true"
+          data-mover-ring
+          style={{
+            position: "absolute", inset: 0, zIndex: 10, pointerEvents: "none",
+            border: `clamp(3px, 0.18vw, 7px) solid ${mover.color}`,
+            boxShadow: `inset 0 0 clamp(6px, 0.45vw, 16px) color-mix(in srgb, ${mover.color} 60%, transparent)`,
+          }}
+        />
+      )}
+      {tvMode && mover && <span id={`tv-mover-${slotIndex}`} className="sr-only">{describeMover(mover)}</span>}
+      {tvMode && moverRange && marketId && !loading && !error && onMoverChange && (isBuiltin || (market && isMoverEligibleMarket(market, outcomes))) && (
+        <MoverReporter
+          key={`${marketId}:${moverRange}`}
+          slotIndex={slotIndex}
+          marketId={marketId}
+          range={moverRange}
+          market={market}
+          outcomes={outcomes}
+          chartOutcomes={chartOutcomes}
+          stockSnapshot={stockSnapshot}
+          cache={moverCache}
+          overrides={savedMarket?.outcome_colors}
+          onChange={onMoverChange}
+        />
+      )}
       {/* Landscape mobile: read-only title | Normal: interactive dropdown */}
       {tvMode ? (
         <div className="tv-panel-heading">
@@ -434,3 +474,5 @@ export default function Panel({
     </div>
   );
 }
+
+export default memo(Panel);

@@ -22,7 +22,9 @@
 
 .tv-board-label h1 { font-weight: 700; letter-spacing: 0.08em; }
 .tv-board-label > span { color: rgb(255 255 255 / 45%); }
-.tv-time-ranges, .tv-board-actions { display: flex; align-items: center; gap: 0.2em; }
+.tv-time-ranges, .tv-board-actions, .tv-mover-controls { display: flex; align-items: center; gap: 0.2em; }
+.tv-mover-controls > span { margin: 0 0.35em; color: rgb(255 255 255 / 55%); }
+.tv-mover-controls .tv-control[aria-pressed="true"] { border-color: rgb(251 191 36 / 65%); color: #fcd34d; }
 .tv-board-actions { margin-left: auto; }
 
 .tv-control {
@@ -58,6 +60,7 @@
 }
 
 .tv-market-panel {
+  position: relative;
   container-type: inline-size;
   border-radius: 0;
   background: linear-gradient(155deg, rgb(255 255 255 / 4%), rgb(255 255 255 / 1%));

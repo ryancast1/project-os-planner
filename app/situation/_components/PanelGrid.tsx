@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import type { LayoutMode, SavedMarket, TimeRangeLabel, PanelSlot } from "../_lib/types";
 import { LAYOUT_CONFIGS } from "../_lib/constants";
 import Panel from "./Panel";
+import { getTopMovers, MOVER_REFRESH_MS, type MarketMover, type MoverRange } from "../_lib/movers";
 
 export default function PanelGrid({
   layout,
@@ -15,6 +16,8 @@ export default function PanelGrid({
   mobilePortrait = false,
   mobileLandscape = false,
   tvEditing = false,
+  moverRange = null,
+  onMoverCountChange,
 }: {
   layout: LayoutMode;
   panels: PanelSlot[];
@@ -25,9 +28,27 @@ export default function PanelGrid({
   mobilePortrait?: boolean;
   mobileLandscape?: boolean;
   tvEditing?: boolean;
+  moverRange?: MoverRange | null;
+  onMoverCountChange?: (count: number) => void;
 }) {
   const config = LAYOUT_CONFIGS[layout];
   const compact = config.panelCount >= 4;
+  const [moverCandidates, setMoverCandidates] = useState<Record<number, MarketMover | null>>({});
+  const [moverNow, setMoverNow] = useState(0);
+  const handleMoverChange = useCallback((slot: number, mover: MarketMover | null) => {
+    setMoverCandidates((current) => ({ ...current, [slot]: mover }));
+    setMoverNow(Math.floor(Date.now() / 1000));
+  }, []);
+  useEffect(() => {
+    if (layout !== "TV" || !moverRange) return;
+    const timer = window.setInterval(() => setMoverNow(Math.floor(Date.now() / 1000)), MOVER_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [layout, moverRange]);
+  const topMovers = getTopMovers(Object.entries(moverCandidates)
+    .filter(([slot, candidate]) => panels[Number(slot)] === candidate?.marketId)
+    .map(([, candidate]) => candidate), moverRange, panels, moverNow);
+  const moverCount = topMovers.length;
+  useEffect(() => { onMoverCountChange?.(moverCount); }, [moverCount, onMoverCountChange]);
 
   // -- Portrait mobile carousel state --
   const [activeCard, setActiveCard] = useState(0);
@@ -61,6 +82,9 @@ export default function PanelGrid({
             compact
             tvMode
             tvEditing={tvEditing}
+            moverRange={moverRange}
+            mover={topMovers.find((mover) => mover.marketId === panels[i])}
+            onMoverChange={handleMoverChange}
             onChangeMarket={onChangeMarket}
             onManageMarkets={onManageMarkets}
           />
