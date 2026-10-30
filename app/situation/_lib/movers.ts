@@ -10,6 +10,8 @@ export const MOVER_RANGES = [
 ] as const;
 export type MoverRange = typeof MOVER_RANGES[number]["value"];
 export const MOVER_REFRESH_MS = 30_000;
+export const MOVER_MIN_CHANGE = 3;
+export const MOVER_MAX_HIGHLIGHTS = 5;
 export type MoverCache = {
   histories: Record<string, PricePoint[]>;
   stock?: StockSnapshot;
@@ -133,12 +135,12 @@ export function getTopMovers(candidates: (MarketMover | null)[], range: MoverRan
   const unique = new Map<string, MarketMover>();
   for (const candidate of candidates) {
     if (!candidate || candidate.range !== range || !visible.has(candidate.marketId) ||
-      !Number.isFinite(candidate.score) || candidate.score <= 0 ||
+      !Number.isFinite(candidate.score) || candidate.score < MOVER_MIN_CHANGE ||
       candidate.asOf > now || now - candidate.asOf > 90) continue;
     const prior = unique.get(candidate.marketId);
     if (!prior || candidate.asOf >= prior.asOf) unique.set(candidate.marketId, candidate);
   }
-  return [...unique.values()].sort((a, b) => b.score - a.score || a.marketId.localeCompare(b.marketId)).slice(0, 3);
+  return [...unique.values()].sort((a, b) => b.score - a.score || a.marketId.localeCompare(b.marketId)).slice(0, MOVER_MAX_HIGHLIGHTS);
 }
 
 export function describeMover(mover: MarketMover): string {

@@ -188,14 +188,36 @@ test("closed, flat, missing-baseline, or zero-baseline stocks are omitted", () =
   assert.equal(getStockMover("stock", "10M", snapshot, now), null);
 });
 
-test("ranking takes three unique visible markets, with deterministic ties and fresh matching range", () => {
+test("ranking takes five unique qualifying markets, with deterministic ties and fresh matching range", () => {
   const candidates = [candidate("d", 2), candidate("b", 5), candidate("a", 5), candidate("c", 4),
+    candidate("e", 3), candidate("f", 3.5), candidate("g", 3.1), candidate("h", 3),
     candidate("b", 3, { asOf: now - 10 }), candidate("hidden", 99), candidate("old", 99, { asOf: now - 91 }),
     candidate("future", 99, { asOf: now + 1 }), candidate("wrong", 99, { range: "1D" }), candidate("nan", NaN), null];
-  assert.deepEqual(getTopMovers(candidates, "10M", ["a", "b", "c", "d", "old", "future", "wrong", "nan"], now).map((mover) => mover.marketId), ["a", "b", "c"]);
+  assert.deepEqual(getTopMovers(candidates, "10M", ["a", "b", "c", "d", "e", "f", "g", "h", "old", "future", "wrong", "nan"], now).map((mover) => mover.marketId), ["a", "b", "c", "f", "g"]);
   assert.deepEqual(getTopMovers(candidates, null, ["a"], now), []);
   assert.deepEqual(getTopMovers(candidates, "10M", ["a"], now + 91), []);
   assert.deepEqual(getTopMovers([candidate("a", 0)], "10M", ["a"], now), []);
+});
+
+test("the minimum is inclusive at three percentage points and never fills remaining slots with smaller moves", () => {
+  const candidates = [candidate("below", 2.999), candidate("exact", 3), candidate("above", 3.001),
+    candidate("negative", 3, { change: -3 }), candidate("tiny", 0.1)];
+  assert.deepEqual(getTopMovers(candidates, "10M", candidates.map((mover) => mover.marketId), now)
+    .map((mover) => mover.marketId), ["above", "exact", "negative"]);
+  assert.deepEqual(getTopMovers(candidates, "10M", ["below", "tiny"], now), []);
+});
+
+test("prediction-market threshold uses raw cents, not relative growth or a rounded display", () => {
+  const outcomes = [outcome("a", "A", 0.52999), outcome("b", "B", 0.03)];
+  const mover = getPolymarketMover("race", "10M", market(outcomes), outcomes, outcomes, {
+    a: history("10M", 0.5), b: history("10M", 0.01),
+  }, now)!;
+  assert.deepEqual(getTopMovers([mover], "10M", ["race"], now), []);
+  outcomes[0].currentPrice = 0.53;
+  const qualifying = getPolymarketMover("race", "10M", market(outcomes), outcomes, outcomes, {
+    a: history("10M", 0.5), b: history("10M", 0.01),
+  }, now)!;
+  assert.equal(getTopMovers([qualifying], "10M", ["race"], now).length, 1);
 });
 
 test("ring descriptions explain the selected window, rising outcome, and change", () => {

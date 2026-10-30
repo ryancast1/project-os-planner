@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { TimeRangeLabel } from "../_lib/types";
 import { TIME_RANGES } from "../_lib/constants";
 import { ELECTION_NIGHT_LABEL, isElectionNightAvailable } from "../_lib/electionNight";
-import { MOVER_RANGES, type MoverRange } from "../_lib/movers";
+import { MOVER_MAX_HIGHLIGHTS, MOVER_MIN_CHANGE, MOVER_RANGES, type MoverRange } from "../_lib/movers";
 
 export default function TVToolbar({
   timeRange,
@@ -121,7 +121,7 @@ export default function TVToolbar({
             className="tv-control"
             aria-label={`Movers: ${option.label}`}
             aria-pressed={moverRange === option.value}
-            title={`Highlight the top 3 displayed markets over ${option.label}. Markets with more than 3 outcomes are excluded. Click again to turn off. Prediction markets use percentage points; other prices use percentage change. Updates every 30 seconds.`}
+            title={`Highlight up to ${MOVER_MAX_HIGHLIGHTS} displayed markets over ${option.label}, with a minimum move of ${MOVER_MIN_CHANGE} percentage points (cents) for prediction markets or ${MOVER_MIN_CHANGE}% for other prices. Markets with more than 3 outcomes are excluded. Click again to turn off. Updates every 30 seconds.`}
             onClick={() => onMoverRangeChange(moverRange === option.value ? null : option.value)}
           >
             {option.label}
@@ -131,7 +131,7 @@ export default function TVToolbar({
           <span
             role="status"
             style={{ fontSize: "0.85em", color: "rgb(255 255 255 / 55%)", whiteSpace: "nowrap" }}
-            title="Highlights actual moves, not unchanged prices, using the rising outcome's color when available. Markets without reliable recent comparisons are skipped. Try a longer window if no markets qualify."
+            title={`Requires at least ${MOVER_MIN_CHANGE} percentage points of movement (${MOVER_MIN_CHANGE}% for other prices), using the rising outcome's color when available. Markets without reliable recent comparisons are skipped. Try a longer window if no markets qualify.`}
           >
             {moverCount > 0 ? `${moverCount} highlighted` : "No qualifying moves yet"}
           </span>
