@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getPolymarketQuote } from "../_lib/polymarket";
 
 const GAMMA_API = "https://gamma-api.polymarket.com";
 const CLOB_API = "https://clob.polymarket.com";
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
     }
     case "price": {
       const tokenId = searchParams.get("token_id") ?? "";
-      url = `${CLOB_API}/price?token_id=${encodeURIComponent(tokenId)}&side=buy`;
+      url = `${CLOB_API}/book?token_id=${encodeURIComponent(tokenId)}`;
       break;
     }
     case "history": {
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, endpoint === "price" ? { cache: "no-store" } : undefined);
     if (!res.ok) {
       return NextResponse.json(
         { error: `Upstream ${res.status}` },
@@ -58,6 +59,15 @@ export async function GET(req: NextRequest) {
       );
     }
     const data = await res.json();
+    if (endpoint === "price") {
+      let quote = getPolymarketQuote(data);
+      if (!quote) {
+        const tokenId = searchParams.get("token_id") ?? "";
+        const lastTrade = await fetch(`${CLOB_API}/last-trade-price?token_id=${encodeURIComponent(tokenId)}`, { cache: "no-store" });
+        if (lastTrade.ok) quote = getPolymarketQuote(data, (await lastTrade.json()).price);
+      }
+      return NextResponse.json({ price: quote?.price ?? null, normalizationSafe: quote?.normalizationSafe ?? false });
+    }
     return NextResponse.json(data);
   } catch {
     return NextResponse.json(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, type CSSProperties } from "react";
 import type {
   SavedMarket,
   MarketInfo,
@@ -9,7 +9,6 @@ import type {
   StockSnapshot,
 } from "../_lib/types";
 import {
-  COLORS,
   COLOR_GREEN,
   COLOR_RED,
   REFRESH_INTERVAL_MS,
@@ -24,6 +23,9 @@ import {
 } from "../_lib/constants";
 import { fetchEvent, fetchPrice, fetchPriceHistory, fetchStockData } from "../_lib/api";
 import { getVisiblePolymarketOutcomes } from "../_lib/outcomes";
+import { getCurrentPolymarketPrice, hasFreshPolymarketPrice } from "../_lib/polymarket";
+import { getOutcomeColors } from "../_lib/colors";
+import { getHighConfidenceOutcome } from "../_lib/highConfidence";
 import OddsChart from "./OddsChart";
 import OddsDisplay from "./OddsDisplay";
 import StockDisplay from "./StockDisplay";
@@ -36,6 +38,8 @@ export default function Panel({
   timeRange,
   compact,
   mobileLandscape = false,
+  tvMode = false,
+  tvEditing = false,
   onChangeMarket,
   onManageMarkets,
 }: {
@@ -45,6 +49,8 @@ export default function Panel({
   timeRange: TimeRangeLabel;
   compact: boolean;
   mobileLandscape?: boolean;
+  tvMode?: boolean;
+  tvEditing?: boolean;
   onChangeMarket: (slotIndex: number, marketId: string | null) => void;
   onManageMarkets: () => void;
 }) {
@@ -70,6 +76,8 @@ export default function Panel({
   const timeRangeRef = useRef<TimeRangeLabel>(timeRange);
 
   const isBuiltin = marketId?.startsWith("builtin:") ?? false;
+  const savedMarket = savedMarkets.find((saved) => saved.id === marketId);
+  const savedSlug = savedMarket?.slug;
 
   // Keep timeRangeRef in sync
   useEffect(() => {
@@ -112,7 +120,9 @@ export default function Panel({
 
           return {
             ...o,
-            currentPrice: price ?? o.currentPrice,
+            currentPrice: getCurrentPolymarketPrice(price, nextHistory, o.currentPrice, now),
+            normalizationSafe: price?.normalizationSafe === true,
+            priceIsFresh: hasFreshPolymarketPrice(price, nextHistory, now),
             history: nextHistory,
           };
         })
@@ -134,8 +144,8 @@ export default function Panel({
     ) => {
       const { range: yahooRange, interval: yahooInterval } = getYahooParams(range);
       const startTs =
-        range === "1H" || range === "4H" ? getStartTs(range) : undefined;
-      const snap = await fetchStockData(ticker, yahooRange, yahooInterval, startTs, includePrePost);
+        range === "1H" || range === "4H" || range === "Election Night" ? getStartTs(range) : undefined;
+      const snap = await fetchStockData(ticker, yahooRange, yahooInterval, startTs, includePrePost, range === "Election Night");
       if (snap) {
         const withLabel: StockSnapshot = { ...snap, label, displayType };
         stockRef.current = withLabel;
@@ -182,14 +192,14 @@ export default function Panel({
     }
 
     // ---- Polymarket ----
-    const saved = savedMarkets.find((m) => m.id === marketId);
-    if (!saved) { setLoading(false); return; }
+    if (!savedSlug) { setLoading(false); return; }
+    const slug = savedSlug;
 
     let cancelled = false;
 
     async function init() {
       setLoading(true);
-      const info = await fetchEvent(saved!.slug);
+      const info = await fetchEvent(slug);
       if (cancelled) return;
       if (!info) {
         setError("Could not load market");
@@ -203,7 +213,7 @@ export default function Panel({
 
     init();
     return () => { cancelled = true; };
-  }, [marketId, savedMarkets, refreshPolyData, refreshStockData, isBuiltin]);
+  }, [marketId, savedSlug, refreshPolyData, refreshStockData, isBuiltin]);
 
   // ---- Re-fetch when time range changes ----
   useEffect(() => {
@@ -239,12 +249,16 @@ export default function Panel({
   }, [isBuiltin ? !!stockSnapshot : outcomes.length > 0, isBuiltin, marketId, refreshPolyData, refreshStockData]);
 
   // Chart outcomes for polymarket
-  const isBinary = market && outcomes.length === 2 && outcomes[0].name === "Yes";
+  const isBinary = market?.kind === "binary";
   const visibleMultiOutcomes = getVisiblePolymarketOutcomes(outcomes, compact);
   const displayOutcomes = isBinary ? outcomes : visibleMultiOutcomes;
   const chartOutcomes = isBinary
-    ? [outcomes[0]]
+    ? outcomes.slice(0, 1)
     : visibleMultiOutcomes;
+  const outcomeColors = getOutcomeColors(chartOutcomes, savedMarket?.outcome_colors, market?.outcomeNames ?? outcomes.map((outcome) => outcome.name));
+  const highConfidence = !isBuiltin && !loading && !error
+    ? getHighConfidenceOutcome(market, outcomes, chartOutcomes, savedMarket?.outcome_colors)
+    : null;
 
   // Stock outcome shaped for OddsChart (reuses chart component)
   const stockChartOutcomes: Outcome[] = stockSnapshot
@@ -264,9 +278,30 @@ export default function Panel({
     : (savedMarkets.find((m) => m.id === marketId)?.label ?? "");
 
   return (
-    <div className="flex flex-col h-full rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
+    <div
+      className={`flex flex-col h-full min-w-0 min-h-0 rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden ${tvMode ? "tv-market-panel" : ""} ${highConfidence ? "market-high-confidence" : ""}`}
+      style={highConfidence ? { "--market-accent": highConfidence.color } as CSSProperties : undefined}
+      data-high-confidence-outcome={highConfidence?.outcome.tokenId}
+      role="group"
+      aria-label={highConfidence
+        ? `${panelTitle}: ${highConfidence.outcome.name} at ${(highConfidence.outcome.currentPrice * 100).toFixed(1)}%. High market confidence, not an official result.`
+        : panelTitle || `Market ${slotIndex + 1}`}
+    >
       {/* Landscape mobile: read-only title | Normal: interactive dropdown */}
-      {mobileLandscape ? (
+      {tvMode ? (
+        <div className="tv-panel-heading">
+          <span className="tv-slot-number">{String(slotIndex + 1).padStart(2, "0")}</span>
+          {tvEditing ? (
+            <MarketDropdown
+              savedMarkets={savedMarkets}
+              selectedId={marketId}
+              onSelect={(id) => onChangeMarket(slotIndex, id)}
+            />
+          ) : (
+            <p className="tv-panel-title" title={panelTitle}>{panelTitle || "Choose a market"}</p>
+          )}
+        </div>
+      ) : mobileLandscape ? (
         <div className="shrink-0 px-2 pt-1.5 pb-0">
           <p className="text-[10px] text-white/40 truncate">{panelTitle}</p>
         </div>
@@ -284,7 +319,7 @@ export default function Panel({
       <div className="flex-1 min-h-0 flex flex-col px-2 pb-2">
         {!marketId && (
           <div className="flex-1 flex flex-col items-center justify-center text-white/30 text-sm gap-2">
-            <p>No market selected</p>
+            <p>{tvMode ? (tvEditing ? "Select a market above" : "Use Edit markets to fill this box") : "No market selected"}</p>
             {savedMarkets.length === 0 && (
               <button
                 onClick={onManageMarkets}
@@ -352,7 +387,7 @@ export default function Panel({
 
           return (
             <>
-              <StockDisplay snapshot={displaySnapshot} compact={compact} mobileLandscape={mobileLandscape} />
+              <StockDisplay snapshot={displaySnapshot} compact={compact} mobileLandscape={mobileLandscape} tvMode={tvMode} />
               <div className="mt-1 flex-1 min-h-0">
                 <OddsChart
                   outcomes={stockChartOutcomes}
@@ -363,6 +398,7 @@ export default function Panel({
                   xMax={chartXMax}
                   previousClose={chartReference}
                   mobileLandscape={mobileLandscape}
+                  tvMode={tvMode}
                 />
               </div>
             </>
@@ -376,17 +412,20 @@ export default function Panel({
               market={market}
               outcomes={outcomes}
               visibleOutcomes={displayOutcomes}
+              colors={outcomeColors}
               compact={compact}
               mobileLandscape={mobileLandscape}
+              tvMode={tvMode}
             />
             <div className="mt-1 flex-1 min-h-0">
               <OddsChart
                 outcomes={chartOutcomes}
-                colors={COLORS}
+                colors={outcomeColors}
                 startTs={getStartTs(timeRange)}
                 valueFormat="percent"
                 showLegend={!compact}
                 mobileLandscape={mobileLandscape}
+                tvMode={tvMode}
               />
             </div>
           </>

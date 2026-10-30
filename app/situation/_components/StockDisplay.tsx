@@ -28,10 +28,12 @@ export default function StockDisplay({
   snapshot,
   compact,
   mobileLandscape = false,
+  tvMode = false,
 }: {
   snapshot: StockSnapshot;
   compact: boolean;
   mobileLandscape?: boolean;
+  tvMode?: boolean;
 }) {
   const { label, currentPrice, previousClose, displayType } = snapshot;
   const isYield = displayType === "yield";
@@ -49,7 +51,7 @@ export default function StockDisplay({
   return (
     <div className="shrink-0 text-center pt-1">
       {/* Label hidden in landscape mobile — shown in panel title bar instead */}
-      {!mobileLandscape && (
+      {!mobileLandscape && !tvMode && (
         <div
           className={
             compact
@@ -63,7 +65,9 @@ export default function StockDisplay({
 
       <div
         className={
-          mobileLandscape
+          tvMode
+            ? "tv-stock-value leading-none font-bold tabular-nums"
+            : mobileLandscape
             ? "text-2xl leading-none font-bold tabular-nums"
             : compact
             ? "text-3xl md:text-5xl leading-none font-bold tabular-nums"
@@ -77,7 +81,9 @@ export default function StockDisplay({
       {changePct != null && (
         <div
           className={
-            mobileLandscape
+            tvMode
+              ? "tv-value-caption mt-0.5 tabular-nums"
+              : mobileLandscape
               ? "text-[9px] mt-0.5 tabular-nums"
               : compact
               ? "text-[10px] mt-0.5 tabular-nums"

@@ -2,30 +2,37 @@
 
 import type { MarketInfo, Outcome } from "../_lib/types";
 import { COLORS } from "../_lib/constants";
-import { getVisiblePolymarketOutcomes } from "../_lib/outcomes";
+import {
+  formatPolymarketPercentage,
+  getPolymarketPercentages,
+  getVisiblePolymarketOutcomes,
+} from "../_lib/outcomes";
 
 export default function OddsDisplay({
   market,
   outcomes,
   visibleOutcomes,
+  colors = COLORS,
   compact,
   mobileLandscape = false,
+  tvMode = false,
 }: {
   market: MarketInfo;
   outcomes: Outcome[];
   visibleOutcomes?: Outcome[];
+  colors?: string[];
   compact: boolean;
   mobileLandscape?: boolean;
+  tvMode?: boolean;
 }) {
-  const isBinary =
-    outcomes.length === 2 && outcomes[0].name === "Yes";
+  const isBinary = market.kind === "binary";
+  const { percentages } = getPolymarketPercentages(market, outcomes);
 
   if (isBinary) {
-    const yesPrice = outcomes[0].currentPrice;
-    const pct = Math.round(yesPrice * 100);
+    const pct = percentages.get(outcomes[0].tokenId);
     return (
       <div className="shrink-0 text-center pt-1">
-        {!mobileLandscape && (
+        {!mobileLandscape && !tvMode && (
           <div
             className={
               compact
@@ -38,19 +45,23 @@ export default function OddsDisplay({
         )}
         <div
           className={
-            mobileLandscape
+            tvMode
+              ? "tv-odds-value leading-none font-bold tabular-nums"
+              : mobileLandscape
               ? "text-2xl leading-none font-bold tabular-nums"
               : compact
               ? "text-3xl md:text-5xl leading-none font-bold tabular-nums"
               : "text-6xl md:text-[10rem] leading-none font-bold tabular-nums"
           }
-          style={{ color: COLORS[0] }}
+          style={{ color: colors[0] }}
         >
-          {pct}%
+          {formatPolymarketPercentage(pct)}
         </div>
         <div
           className={
-            mobileLandscape
+            tvMode
+              ? "tv-value-caption text-white/50"
+              : mobileLandscape
               ? "text-[9px] text-white/40 mt-0.5"
               : compact
               ? "text-[10px] text-white/40 mt-0.5"
@@ -63,29 +74,11 @@ export default function OddsDisplay({
     );
   }
 
-  // Multi-outcome — normalize and show either the compact threshold set
-  // or the top few outcomes in larger layouts.
-  const sum = outcomes.reduce((s, o) => s + o.currentPrice, 0) || 1;
   const selectedOutcomes = visibleOutcomes ?? getVisiblePolymarketOutcomes(outcomes, compact);
-  const normalizedByToken = new Map(
-    outcomes.map((o) => [o.tokenId, Math.round((o.currentPrice / sum) * 100)])
-  );
-  const diff = 100 - Array.from(normalizedByToken.values()).reduce((s, n) => s + n, 0);
-  if (diff !== 0 && outcomes.length > 0) {
-    const maxOutcome = outcomes.reduce((best, outcome) =>
-      (normalizedByToken.get(outcome.tokenId) ?? 0) > (normalizedByToken.get(best.tokenId) ?? 0)
-        ? outcome
-        : best
-    );
-    normalizedByToken.set(
-      maxOutcome.tokenId,
-      (normalizedByToken.get(maxOutcome.tokenId) ?? 0) + diff
-    );
-  }
 
   return (
     <div className="shrink-0">
-      {!mobileLandscape && (
+      {!mobileLandscape && !tvMode && (
         <div
           className={
             compact
@@ -97,7 +90,7 @@ export default function OddsDisplay({
         </div>
       )}
       {compact ? (
-        <div className="flex flex-wrap justify-center gap-x-2 gap-y-1 px-1 pt-1">
+        <div className={`flex flex-wrap justify-center gap-x-2 gap-y-1 px-1 pt-1 ${tvMode ? "tv-outcomes" : ""}`}>
           {selectedOutcomes.map((o, i) => (
             <div
               key={o.tokenId}
@@ -106,16 +99,16 @@ export default function OddsDisplay({
               <div className="flex items-center gap-1">
                 <div
                   className="h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: COLORS[i % COLORS.length] }}
+                  style={{ backgroundColor: colors[i % colors.length] }}
                 />
                 <span className="max-w-[90px] truncate text-[9px] font-semibold uppercase tracking-[0.03em] text-white/65">
                   {o.name}
                 </span>
                 <span
                   className="text-[11px] leading-none font-bold tabular-nums"
-                  style={{ color: COLORS[i % COLORS.length] }}
+                  style={{ color: colors[i % colors.length] }}
                 >
-                  {normalizedByToken.get(o.tokenId) ?? 0}%
+                  {formatPolymarketPercentage(percentages.get(o.tokenId))}
                 </span>
               </div>
             </div>
@@ -140,9 +133,9 @@ export default function OddsDisplay({
                     ? "text-base leading-none font-bold tabular-nums"
                     : "text-4xl md:text-[7rem] leading-none font-bold tabular-nums"
                 }
-                style={{ color: COLORS[i % COLORS.length] }}
+                style={{ color: colors[i % colors.length] }}
               >
-                {normalizedByToken.get(o.tokenId) ?? 0}%
+                {formatPolymarketPercentage(percentages.get(o.tokenId))}
               </div>
             </div>
           ))}

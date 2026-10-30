@@ -1,4 +1,5 @@
 import type { TimeRangeLabel, LayoutMode, BuiltinMarket } from "./types";
+import { ELECTION_NIGHT_LABEL, ELECTION_NIGHT_START_TS } from "./electionNight";
 
 export const PROXY = "/situation/api";
 export const REFRESH_INTERVAL_MS = 12_000;
@@ -16,16 +17,18 @@ export const TIME_RANGES = [
   { label: "All" as const, seconds: 0 },
 ];
 
-export function getStartTs(label: TimeRangeLabel): number {
+export function getStartTs(label: TimeRangeLabel, nowMs: number = Date.now()): number {
+  if (label === ELECTION_NIGHT_LABEL) return ELECTION_NIGHT_START_TS;
   const range = TIME_RANGES.find((r) => r.label === label)!;
   if (range.seconds === 0) return 0;
-  return Math.floor(Date.now() / 1000) - range.seconds;
+  return Math.floor(nowMs / 1000) - range.seconds;
 }
 
 export function getFidelity(label: TimeRangeLabel): number {
   switch (label) {
     case "1H":
     case "4H":
+    case "Election Night":
       return 1;
     case "1D":
       return 5;
@@ -47,6 +50,7 @@ export function getYahooParams(label: TimeRangeLabel): { range: string; interval
   switch (label) {
     case "1H": return { range: "1d", interval: "2m" };
     case "4H": return { range: "1d", interval: "5m" };
+    case "Election Night": return { range: "5d", interval: "5m" };
     case "1D": return { range: "1d", interval: "5m" };
     case "1W": return { range: "5d", interval: "30m" };
     case "1M": return { range: "1mo", interval: "1d" };
@@ -203,6 +207,12 @@ export const LAYOUT_CONFIGS: Record<LayoutMode, LayoutConfig> = {
     rows: 2,
     gridClass: "grid-cols-2 md:grid-cols-4 grid-rows-4 md:grid-rows-2",
     panelCount: 8,
+  },
+  TV: {
+    cols: 7,
+    rows: 4,
+    gridClass: "grid-cols-7 grid-rows-4",
+    panelCount: 28,
   },
 };
 

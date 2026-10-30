@@ -7,12 +7,29 @@ export type Outcome = {
   tokenId: string;
   currentPrice: number;
   history: PricePoint[];
+  /** True only when this refresh obtained a reliable, two-sided quote. */
+  normalizationSafe?: boolean;
+  priceIsFresh?: boolean;
 };
 
 export type MarketInfo = {
   title: string;
   outcomes: Outcome[];
+  kind: "binary" | "multi";
+  /** Complete, mutually exclusive choices confirmed by upstream metadata. */
+  normalizationEligible: boolean;
+  mutuallyExclusive: boolean;
+  /** All active choice names, including low-price choices omitted from charts. */
+  outcomeNames?: string[];
 };
+
+export type PolymarketQuote = {
+  price: number;
+  normalizationSafe: boolean;
+};
+
+export type OutcomeColor = "red" | "blue" | "green" | "yellow" | "purple" | "pink" | "teal" | "orange";
+export type OutcomeColors = Record<string, OutcomeColor>;
 
 // -- New types for Situation 2.0 --
 
@@ -23,11 +40,12 @@ export type SavedMarket = {
   slug: string;
   source: string;
   created_at: string;
+  outcome_colors?: OutcomeColors;
 };
 
-export type LayoutMode = "1" | "2" | "2x2" | "3x2" | "4x2";
+export type LayoutMode = "1" | "2" | "2x2" | "3x2" | "4x2" | "TV";
 
-export type TimeRangeLabel = "1H" | "4H" | "1D" | "1W" | "1M" | "3M" | "1Y" | "5Y" | "All";
+export type TimeRangeLabel = "1H" | "4H" | "1D" | "1W" | "1M" | "3M" | "1Y" | "5Y" | "All" | "Election Night";
 
 /** Each slot holds a saved-market ID or null (empty) */
 export type PanelSlot = string | null;

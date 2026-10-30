@@ -14,6 +14,7 @@ export default function MarketDropdown({
 }) {
   return (
     <select
+      aria-label="Select a market"
       value={selectedId ?? ""}
       onChange={(e) => onSelect(e.target.value || null)}
       className="w-full rounded-lg border border-white/10 bg-white/5 text-white text-xs px-2 py-1.5 outline-none focus:border-white/20 truncate"

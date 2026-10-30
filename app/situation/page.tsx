@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import type { LayoutMode, TimeRangeLabel, PanelSlot, SavedMarket, SavedView } from "./_lib/types";
+import type { LayoutMode, TimeRangeLabel, PanelSlot, SavedMarket, SavedView, OutcomeColors } from "./_lib/types";
 import { LAYOUT_CONFIGS, LAYOUT_OPTIONS, TIME_RANGES } from "./_lib/constants";
 import {
   loadLocalState,
@@ -11,6 +11,8 @@ import {
   saveTimeRange,
   loadActiveViewId,
   saveActiveViewId,
+  loadTVElectionNight,
+  saveTVElectionNight,
 } from "./_lib/storage";
 import { getUserId, loadSavedMarkets } from "./_lib/markets";
 import { loadViews, createView, updateView, deleteView } from "./_lib/views";
@@ -19,6 +21,10 @@ import PanelGrid from "./_components/PanelGrid";
 import ViewsBar from "./_components/ViewsBar";
 import ManageMarketsModal from "./_components/ManageMarketsModal";
 import { useViewSwipe } from "./_lib/useViewSwipe";
+import { createTVPanels } from "./_lib/tv";
+import TVToolbar from "./_components/TVToolbar";
+import { ELECTION_NIGHT_LABEL, isElectionNightAvailable } from "./_lib/electionNight";
+import "./tv.css";
 
 export default function SituationDashboard() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -31,6 +37,8 @@ export default function SituationDashboard() {
   const [layout, setLayout] = useState<LayoutMode>("1");
   const [panels, setPanels] = useState<PanelSlot[]>([null]);
   const [timeRange, setTimeRange] = useState<TimeRangeLabel>("1D");
+  const [tvElectionNight, setTVElectionNight] = useState(false);
+  const chartTimeRange = layout === "TV" && tvElectionNight ? ELECTION_NIGHT_LABEL : timeRange;
 
   // Views
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
@@ -39,6 +47,16 @@ export default function SituationDashboard() {
 
   // UI
   const [manageOpen, setManageOpen] = useState(false);
+  const [tvOpening, setTVOpening] = useState(false);
+  const [tvEditing, setTVEditing] = useState(false);
+  const [viewError, setViewError] = useState<string | null>(null);
+  const viewRevisionRef = useRef(0);
+  const previousViewRef = useRef<{
+    layout: LayoutMode;
+    panels: PanelSlot[];
+    activeViewId: string | null;
+    isDirty: boolean;
+  } | null>(null);
 
   // Portrait mobile: single-column scroll view
   const [isMobilePortrait, setIsMobilePortrait] = useState(false);
@@ -66,11 +84,11 @@ export default function SituationDashboard() {
     setLayout(local.layout);
     setPanels(local.panels);
     setTimeRange(local.timeRange);
+    setTVElectionNight(loadTVElectionNight());
 
     (async () => {
       const uid = await getUserId();
       setUserId(uid);
-      setAuthLoading(false);
 
       if (uid) {
         const [markets, views] = await Promise.all([
@@ -94,6 +112,7 @@ export default function SituationDashboard() {
           )
         );
       }
+      setAuthLoading(false);
     })();
   }, []);
 
@@ -107,6 +126,7 @@ export default function SituationDashboard() {
   // -- Layout change --
   const handleLayoutChange = useCallback(
     (newLayout: LayoutMode) => {
+      viewRevisionRef.current += 1;
       setLayout(newLayout);
       saveLayout(newLayout);
 
@@ -127,6 +147,7 @@ export default function SituationDashboard() {
   // -- Panel market change --
   const handleChangeMarket = useCallback(
     (slotIndex: number, marketId: string | null) => {
+      viewRevisionRef.current += 1;
       setPanels((prev) => {
         const next = [...prev];
         next[slotIndex] = marketId;
@@ -140,9 +161,19 @@ export default function SituationDashboard() {
 
   // -- Time range change (doesn't dirty a view — it's a display pref) --
   const handleTimeRangeChange = useCallback((tr: TimeRangeLabel) => {
+    if (tr === ELECTION_NIGHT_LABEL) {
+      if (layout !== "TV" || !isElectionNightAvailable()) return;
+      setTVElectionNight(true);
+      saveTVElectionNight(true);
+      return;
+    }
+    if (layout === "TV") {
+      setTVElectionNight(false);
+      saveTVElectionNight(false);
+    }
     setTimeRange(tr);
     saveTimeRange(tr);
-  }, []);
+  }, [layout]);
 
   // -- Markets changed (add/remove in modal) --
   const handleMarketsChange = useCallback(async () => {
@@ -158,9 +189,22 @@ export default function SituationDashboard() {
     });
   }, [userId]);
 
+  // -- Apply market-wide color preferences without reloading chart data --
+  const handleMarketColorsChange = useCallback((marketId: string, colors: OutcomeColors) => {
+    setSavedMarkets((previous) => previous.map((market) => market.id === marketId
+      ? { ...market, outcome_colors: colors }
+      : market));
+  }, []);
+
   // -- Load a saved view --
   const handleLoadView = useCallback(
     (view: SavedView) => {
+      viewRevisionRef.current += 1;
+      if (view.layout === "TV" && layout !== "TV") {
+        previousViewRef.current = { layout, panels, activeViewId, isDirty };
+      }
+      setTVEditing(false);
+      setViewError(null);
       setActiveViewId(view.id);
       saveActiveViewId(view.id);
       setIsDirty(false);
@@ -178,40 +222,84 @@ export default function SituationDashboard() {
       setPanels(trimmed);
       savePanels(trimmed);
     },
-    [savedMarkets]
+    [savedMarkets, layout, panels, activeViewId, isDirty]
   );
+
+  const handleOpenTV = useCallback(async () => {
+    if (!userId || tvOpening) return;
+    const existing = savedViews.find((view) => view.layout === "TV");
+    if (existing) {
+      handleLoadView(existing);
+      return;
+    }
+
+    setTVOpening(true);
+    setViewError(null);
+    try {
+      const view = await createView(userId, "TV", "TV", createTVPanels(panels, savedMarkets));
+      if (!view) {
+        setViewError("Could not create the TV view. Please try again.");
+        return;
+      }
+      setSavedViews((previous) => [...previous, view]);
+      handleLoadView(view);
+      setTVEditing(true);
+    } catch {
+      setViewError("Could not create the TV view. Please try again.");
+    } finally {
+      setTVOpening(false);
+    }
+  }, [userId, tvOpening, savedViews, panels, savedMarkets, handleLoadView]);
+
+  const handleExitTV = useCallback(() => {
+    viewRevisionRef.current += 1;
+    const previous = previousViewRef.current ?? {
+      layout: "4x2" as const,
+      panels: panels.slice(0, LAYOUT_CONFIGS["4x2"].panelCount),
+      activeViewId: null,
+      isDirty: true,
+    };
+    setLayout(previous.layout);
+    saveLayout(previous.layout);
+    const validIds = new Set(savedMarkets.map((market) => market.id));
+    const restoredPanels = reconcilePanels(previous.panels, validIds);
+    setPanels(restoredPanels);
+    savePanels(restoredPanels);
+    setActiveViewId(previous.activeViewId);
+    saveActiveViewId(previous.activeViewId);
+    setIsDirty(previous.isDirty);
+    setViewError(null);
+    previousViewRef.current = null;
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  }, [panels, savedMarkets]);
 
   // -- Save current state over the active view --
   const handleSaveView = useCallback(async () => {
-    if (!activeViewId || !userId) return;
+    if (!activeViewId || !userId) return false;
     const view = savedViews.find((v) => v.id === activeViewId);
-    if (!view) return;
+    if (!view) return false;
 
-    // Capture current state synchronously via setState read trick
-    let snapshotPanels: PanelSlot[] = [];
-    setPanels((prev) => { snapshotPanels = prev; return prev; });
-    let snapshotLayout: LayoutMode = "1";
-    setLayout((prev) => { snapshotLayout = prev; return prev; });
-
-    const ok = await updateView(activeViewId, view.title, snapshotLayout, snapshotPanels);
+    const revision = viewRevisionRef.current;
+    const ok = await updateView(activeViewId, view.title, layout, panels);
     if (ok) {
-      setIsDirty(false);
+      if (viewRevisionRef.current === revision) {
+        setIsDirty(false);
+        setViewError(null);
+      }
       const views = await loadViews(userId);
       setSavedViews(views);
+    } else {
+      setViewError("Could not save this view. Please try again.");
     }
-  }, [activeViewId, userId, savedViews]);
+    return ok;
+  }, [activeViewId, userId, savedViews, layout, panels]);
 
   // -- Create a new named view with current state --
   const handleCreateView = useCallback(
     async (title: string) => {
       if (!userId) return;
 
-      let snapshotPanels: PanelSlot[] = [];
-      setPanels((prev) => { snapshotPanels = prev; return prev; });
-      let snapshotLayout: LayoutMode = "1";
-      setLayout((prev) => { snapshotLayout = prev; return prev; });
-
-      const newView = await createView(userId, title, snapshotLayout, snapshotPanels);
+      const newView = await createView(userId, title, layout, panels);
       if (newView) {
         const views = await loadViews(userId);
         setSavedViews(views);
@@ -220,7 +308,7 @@ export default function SituationDashboard() {
         setIsDirty(false);
       }
     },
-    [userId]
+    [userId, layout, panels]
   );
 
   // -- Delete a view --
@@ -245,7 +333,7 @@ export default function SituationDashboard() {
     savedViews,
     activeViewId,
     onSwitchView: handleLoadView,
-    enabled: !isMobilePortrait && !manageOpen,
+    enabled: !isMobilePortrait && !manageOpen && layout !== "TV",
   });
 
   // -- Auth loading --
@@ -271,10 +359,24 @@ export default function SituationDashboard() {
   return (
     <main
       ref={swipeRef}
-      className={`bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2 ${isMobilePortrait ? "min-h-dvh overflow-y-auto" : "h-dvh overflow-hidden"}`}
+      className={layout === "TV"
+        ? "tv-dashboard bg-gradient-to-b from-black to-zinc-950 text-white flex flex-col h-dvh overflow-hidden"
+        : `bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2 ${isMobilePortrait ? "min-h-dvh overflow-y-auto" : "h-dvh overflow-hidden"}`}
     >
       {/* Header: 3-row stacked on portrait mobile, single row otherwise */}
-      {isMobilePortrait ? (
+      {layout === "TV" ? (
+        <TVToolbar
+          timeRange={chartTimeRange}
+          editing={tvEditing}
+          isDirty={isDirty}
+          assignedCount={panels.filter(Boolean).length}
+          onTimeRangeChange={handleTimeRangeChange}
+          onToggleEditing={() => setTVEditing((value) => !value)}
+          onSave={handleSaveView}
+          onBack={handleExitTV}
+          onManage={() => setManageOpen(true)}
+        />
+      ) : isMobilePortrait ? (
         <div className="shrink-0 flex flex-col gap-1.5">
           {/* Row 1: Grid type (layout picker) */}
           <div className="flex items-center gap-1">
@@ -359,9 +461,20 @@ export default function SituationDashboard() {
             onSaveView={handleSaveView}
             onCreateView={handleCreateView}
             onDeleteView={handleDeleteView}
+            onOpenTV={handleOpenTV}
+            tvOpening={tvOpening}
           />
 
           <div className="flex-1" />
+
+          <button
+            onClick={handleOpenTV}
+            disabled={tvOpening}
+            className="shrink-0 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15 transition disabled:opacity-50"
+            title="Open the 28-market TV board"
+          >
+            {tvOpening ? "Opening..." : "TV"}
+          </button>
 
           <button
             onClick={() => setManageOpen(true)}
@@ -372,15 +485,18 @@ export default function SituationDashboard() {
         </div>
       )}
 
+      {viewError && <p role="alert" className="shrink-0 text-sm text-amber-300">{viewError}</p>}
+
       <PanelGrid
         layout={layout}
         panels={panels}
         savedMarkets={savedMarkets}
-        timeRange={timeRange}
+        timeRange={chartTimeRange}
         onChangeMarket={handleChangeMarket}
         onManageMarkets={() => setManageOpen(true)}
         mobilePortrait={isMobilePortrait}
         mobileLandscape={isMobileLandscape}
+        tvEditing={tvEditing}
       />
 
       <ManageMarketsModal
@@ -389,6 +505,7 @@ export default function SituationDashboard() {
         savedMarkets={savedMarkets}
         userId={userId}
         onMarketsChange={handleMarketsChange}
+        onMarketColorsChange={handleMarketColorsChange}
       />
       {/* View-switch toast */}
       {transitionLabel && (

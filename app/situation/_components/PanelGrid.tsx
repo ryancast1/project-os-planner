@@ -14,6 +14,7 @@ export default function PanelGrid({
   onManageMarkets,
   mobilePortrait = false,
   mobileLandscape = false,
+  tvEditing = false,
 }: {
   layout: LayoutMode;
   panels: PanelSlot[];
@@ -23,6 +24,7 @@ export default function PanelGrid({
   onManageMarkets: () => void;
   mobilePortrait?: boolean;
   mobileLandscape?: boolean;
+  tvEditing?: boolean;
 }) {
   const config = LAYOUT_CONFIGS[layout];
   const compact = config.panelCount >= 4;
@@ -45,6 +47,27 @@ export default function PanelGrid({
       behavior: "smooth",
     });
   }, []);
+
+  if (layout === "TV") {
+    return (
+      <div className="tv-grid" aria-label="TV market board: 7 columns, 4 rows">
+        {Array.from({ length: config.panelCount }, (_, i) => (
+          <Panel
+            key={`${i}:${panels[i] ?? "empty"}`}
+            slotIndex={i}
+            marketId={panels[i] ?? null}
+            savedMarkets={savedMarkets}
+            timeRange={timeRange}
+            compact
+            tvMode
+            tvEditing={tvEditing}
+            onChangeMarket={onChangeMarket}
+            onManageMarkets={onManageMarkets}
+          />
+        ))}
+      </div>
+    );
+  }
 
   // Landscape mobile: force correct col/row counts without md: dependency, hide dropdowns
   if (mobileLandscape) {

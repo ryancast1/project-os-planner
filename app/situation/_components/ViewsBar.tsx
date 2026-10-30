@@ -11,14 +11,18 @@ export default function ViewsBar({
   onSaveView,
   onCreateView,
   onDeleteView,
+  onOpenTV,
+  tvOpening = false,
 }: {
   savedViews: SavedView[];
   activeViewId: string | null;
   isDirty: boolean;
   onLoadView: (view: SavedView) => void;
-  onSaveView: () => Promise<void>;
+  onSaveView: () => Promise<boolean>;
   onCreateView: (title: string) => Promise<void>;
   onDeleteView: (id: string) => Promise<void>;
+  onOpenTV?: () => void;
+  tvOpening?: boolean;
 }) {
   const [creating, setCreating] = useState(false);
   const [titleInput, setTitleInput] = useState("");
@@ -90,8 +94,14 @@ export default function ViewsBar({
     <div className="flex items-center gap-2">
       {/* Views dropdown */}
       <select
+        aria-label="Saved market views"
+        disabled={tvOpening}
         value={activeViewId ?? ""}
         onChange={(e) => {
+          if (e.target.value === "__tv__") {
+            onOpenTV?.();
+            return;
+          }
           const view = savedViews.find((v) => v.id === e.target.value);
           if (view) onLoadView(view);
         }}
@@ -105,6 +115,9 @@ export default function ViewsBar({
             {v.title}
           </option>
         ))}
+        {onOpenTV && !savedViews.some((view) => view.layout === "TV") && (
+          <option value="__tv__" className="bg-zinc-900">TV (28 markets)</option>
+        )}
       </select>
 
       {/* Save button — only enabled when view selected */}

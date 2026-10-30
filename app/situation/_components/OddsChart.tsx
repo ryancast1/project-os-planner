@@ -73,6 +73,7 @@ export default function OddsChart({
   xMax,
   previousClose,
   mobileLandscape = false,
+  tvMode = false,
 }: {
   outcomes: Outcome[];
   colors: string[];
@@ -87,6 +88,7 @@ export default function OddsChart({
   previousClose?: number | null;
   /** Landscape mobile: hide legend, X-axis, and reduce Y to top+bottom only */
   mobileLandscape?: boolean;
+  tvMode?: boolean;
 }) {
   // -- Crosshair / tooltip state --
   const [hoverSvgX, setHoverSvgX] = useState<number | null>(null);
@@ -201,9 +203,13 @@ export default function OddsChart({
 
   // In landscape mobile: only show the top and bottom Y labels
   const displayYLabels =
-    mobileLandscape && yLabels.length > 2
+    (mobileLandscape || tvMode) && yLabels.length > 2
       ? [yLabels[0], yLabels[yLabels.length - 1]]
       : yLabels;
+
+  const displayTimeLabels = tvMode && timeLabels.length > 2
+    ? [timeLabels[0], timeLabels[timeLabels.length - 1]]
+    : timeLabels;
 
   // -- Hover / crosshair --
   const enableHover = !mobileLandscape;
@@ -267,7 +273,7 @@ export default function OddsChart({
 
       <div
         ref={chartRef}
-        className="flex-1 min-h-0 rounded-2xl border border-white/10 bg-black/30 relative overflow-hidden"
+        className="market-chart-surface flex-1 min-h-0 rounded-2xl border border-white/10 bg-black/30 relative overflow-hidden"
         style={enableHover ? { touchAction: "none" } : undefined}
         onPointerDown={
           enableHover
@@ -311,7 +317,7 @@ export default function OddsChart({
             <div
               key={yl.value}
               className="absolute left-1 text-[11px] text-white/50 -translate-y-1/2 z-10 pointer-events-none"
-              style={{ top: `${topPct}%` }}
+              style={{ top: `${topPct}%`, ...(tvMode ? { fontSize: "clamp(9px, 3.8cqw, 20px)" } : {}) }}
             >
               {yl.display}
             </div>
@@ -319,13 +325,19 @@ export default function OddsChart({
         })}
 
         {/* X axis time labels — hidden in landscape mobile */}
-        {!mobileLandscape && timeLabels.map((tl) => {
+        {!mobileLandscape && displayTimeLabels.map((tl, i) => {
           const leftPct = (toSvgX(tl.ts) / 100) * 100;
           return (
             <div
               key={tl.ts}
-              className="absolute bottom-1 text-[10px] text-white/45 -translate-x-1/2 z-10 pointer-events-none"
-              style={{ left: `${leftPct}%` }}
+              className="absolute bottom-1 text-[10px] text-white/45 -translate-x-1/2 z-10 pointer-events-none whitespace-nowrap"
+              style={{
+                left: `${leftPct}%`,
+                ...(tvMode ? {
+                  fontSize: "clamp(9px, 3.8cqw, 20px)",
+                  translate: i === 0 ? "0" : "-100%",
+                } : {}),
+              }}
             >
               {tl.label}
             </div>

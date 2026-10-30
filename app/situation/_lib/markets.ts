@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabaseClient";
-import type { SavedMarket } from "./types";
+import type { OutcomeColors, SavedMarket } from "./types";
+import { clearLocalOutcomeColors, loadLocalOutcomeColors, sanitizeOutcomeColors, saveLocalOutcomeColors } from "./colors";
 
 export async function getUserId(): Promise<string | null> {
   const {
@@ -21,7 +22,37 @@ export async function loadSavedMarkets(
     console.error("Failed to load saved markets:", error);
     return [];
   }
-  return (data ?? []) as SavedMarket[];
+  return ((data ?? []) as SavedMarket[]).map((market) => ({
+    ...market,
+    outcome_colors: loadLocalOutcomeColors(userId, market.id) ?? sanitizeOutcomeColors(market.outcome_colors),
+  }));
+}
+
+export async function saveMarketOutcomeColors(
+  userId: string,
+  marketId: string,
+  colors: OutcomeColors,
+): Promise<"synced" | "local" | null> {
+  const sanitized = sanitizeOutcomeColors(colors);
+  // Keep settings usable before the optional database migration is installed,
+  // or when the network is unavailable. A pending empty map also means reset.
+  const savedLocally = saveLocalOutcomeColors(userId, marketId, sanitized);
+  try {
+    const { data, error } = await supabase
+      .from("situation_markets")
+      .update({ outcome_colors: sanitized })
+      .eq("id", marketId)
+      .eq("user_id", userId)
+      .select("id")
+      .maybeSingle();
+    if (!error && data) {
+      clearLocalOutcomeColors(userId, marketId);
+      return "synced";
+    }
+  } catch {
+    // The editor reports when a save is available only in this browser.
+  }
+  return savedLocally ? "local" : null;
 }
 
 export async function addSavedMarket(

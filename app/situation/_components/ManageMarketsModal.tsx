@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { SavedMarket } from "../_lib/types";
+import type { OutcomeColors, SavedMarket } from "../_lib/types";
 import { extractSlug, fetchEvent } from "../_lib/api";
 import { addSavedMarket, removeSavedMarket } from "../_lib/markets";
+import OutcomeColorsEditor from "./OutcomeColorsEditor";
 
 export default function ManageMarketsModal({
   open,
@@ -11,17 +12,20 @@ export default function ManageMarketsModal({
   savedMarkets,
   userId,
   onMarketsChange,
+  onMarketColorsChange,
 }: {
   open: boolean;
   onClose: () => void;
   savedMarkets: SavedMarket[];
   userId: string;
   onMarketsChange: () => void;
+  onMarketColorsChange: (marketId: string, colors: OutcomeColors) => void;
 }) {
   const [urlInput, setUrlInput] = useState("");
   const [labelInput, setLabelInput] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [colorsMarketId, setColorsMarketId] = useState<string | null>(null);
 
   if (!open) return null;
 
@@ -71,12 +75,13 @@ export default function ManageMarketsModal({
       />
 
       {/* Content */}
-      <div className="relative bg-zinc-950 rounded-2xl border border-white/10 w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
+      <div role="dialog" aria-modal="true" aria-labelledby="manage-markets-title" className="relative bg-zinc-950 rounded-2xl border border-white/10 w-full max-w-xl max-h-[80vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">Manage Markets</h2>
+          <h2 id="manage-markets-title" className="text-lg font-semibold text-white">Manage Markets</h2>
           <button
             onClick={onClose}
+            aria-label="Close Manage Markets"
             className="text-white/50 hover:text-white/80 transition text-xl leading-none"
           >
             &times;
@@ -120,22 +125,36 @@ export default function ManageMarketsModal({
               {savedMarkets.map((m) => (
                 <li
                   key={m.id}
-                  className="flex items-center justify-between gap-3 rounded-lg bg-white/5 px-3 py-2"
+                  className="rounded-lg bg-white/5 px-3 py-2"
                 >
-                  <div className="min-w-0">
-                    <div className="text-sm text-white truncate">
-                      {m.label}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-white truncate">{m.label}</div>
+                      <div className="text-[10px] text-white/40 truncate">{m.slug}</div>
                     </div>
-                    <div className="text-[10px] text-white/40 truncate">
-                      {m.slug}
-                    </div>
+                    <button
+                      onClick={() => setColorsMarketId((current) => current === m.id ? null : m.id)}
+                      aria-expanded={colorsMarketId === m.id}
+                      aria-label={`Colors for ${m.label}`}
+                      className="shrink-0 rounded-md border border-white/15 px-2 py-1 text-xs text-white/70 hover:bg-white/10"
+                    >
+                      {colorsMarketId === m.id ? "Done" : "Colors"}
+                    </button>
+                    <button
+                      onClick={() => handleRemove(m.id)}
+                      className="text-red-400/70 hover:text-red-400 text-xs shrink-0 transition"
+                    >
+                      Remove
+                    </button>
                   </div>
-                  <button
-                    onClick={() => handleRemove(m.id)}
-                    className="text-red-400/70 hover:text-red-400 text-xs shrink-0 transition"
-                  >
-                    Remove
-                  </button>
+                  {colorsMarketId === m.id && (
+                    <OutcomeColorsEditor
+                      key={m.id}
+                      market={m}
+                      userId={userId}
+                      onColorsSaved={onMarketColorsChange}
+                    />
+                  )}
                 </li>
               ))}
             </ul>

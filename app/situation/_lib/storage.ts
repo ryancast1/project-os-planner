@@ -1,11 +1,13 @@
 import type { LayoutMode, TimeRangeLabel, PanelSlot } from "./types";
 import { TIME_RANGES, LAYOUT_CONFIGS } from "./constants";
+import { isElectionNightAvailable } from "./electionNight";
 
 const STORAGE_KEYS = {
   layout: "situation-layout",
   panels: "situation-panels",
   timeRange: "situation-timerange",
   activeViewId: "situation-active-view",
+  tvElectionNight: "situation-tv-election-night",
 } as const;
 
 export type LocalState = {
@@ -14,7 +16,7 @@ export type LocalState = {
   timeRange: TimeRangeLabel;
 };
 
-const VALID_LAYOUTS: LayoutMode[] = ["1", "2", "2x2", "3x2", "4x2"];
+const VALID_LAYOUTS: LayoutMode[] = ["1", "2", "2x2", "3x2", "4x2", "TV"];
 
 export function loadLocalState(): LocalState {
   if (typeof window === "undefined") {
@@ -61,6 +63,15 @@ export function savePanels(panels: PanelSlot[]) {
 
 export function saveTimeRange(timeRange: TimeRangeLabel) {
   localStorage.setItem(STORAGE_KEYS.timeRange, timeRange);
+}
+
+export function loadTVElectionNight(nowMs: number = Date.now()): boolean {
+  if (typeof window === "undefined" || !isElectionNightAvailable(nowMs)) return false;
+  return localStorage.getItem(STORAGE_KEYS.tvElectionNight) === "true";
+}
+
+export function saveTVElectionNight(enabled: boolean) {
+  localStorage.setItem(STORAGE_KEYS.tvElectionNight, String(enabled));
 }
 
 export function loadActiveViewId(): string | null {
