@@ -43,7 +43,7 @@ export type SavedMarket = {
   outcome_colors?: OutcomeColors;
 };
 
-export type LayoutMode = "1" | "2" | "2x2" | "3x2" | "4x2" | "TV";
+export type LayoutMode = "1" | "2" | "2x2" | "3x2" | "4x2" | "7x4";
 
 export type TimeRangeLabel = "1H" | "4H" | "1D" | "1W" | "1M" | "3M" | "1Y" | "5Y" | "All" | "Election Night";
 

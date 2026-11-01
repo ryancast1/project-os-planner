@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { SavedView } from "../_lib/types";
+import styles from "./Toolbar.module.css";
 
 export default function ViewsBar({
   savedViews,
@@ -11,18 +12,14 @@ export default function ViewsBar({
   onSaveView,
   onCreateView,
   onDeleteView,
-  onOpenTV,
-  tvOpening = false,
 }: {
   savedViews: SavedView[];
   activeViewId: string | null;
   isDirty: boolean;
   onLoadView: (view: SavedView) => void;
   onSaveView: () => Promise<boolean>;
-  onCreateView: (title: string) => Promise<void>;
+  onCreateView: (title: string) => Promise<boolean>;
   onDeleteView: (id: string) => Promise<void>;
-  onOpenTV?: () => void;
-  tvOpening?: boolean;
 }) {
   const [creating, setCreating] = useState(false);
   const [titleInput, setTitleInput] = useState("");
@@ -32,10 +29,14 @@ export default function ViewsBar({
     e.preventDefault();
     if (!titleInput.trim()) return;
     setBusy(true);
-    await onCreateView(titleInput.trim());
-    setBusy(false);
-    setTitleInput("");
-    setCreating(false);
+    try {
+      if (await onCreateView(titleInput.trim())) {
+        setTitleInput("");
+        setCreating(false);
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleSave() {
@@ -57,19 +58,19 @@ export default function ViewsBar({
   // -- Creating mode --
   if (creating) {
     return (
-      <form onSubmit={handleCreate} className="flex items-center gap-2">
+      <form onSubmit={handleCreate} className={styles.views}>
         <input
           type="text"
           value={titleInput}
           onChange={(e) => setTitleInput(e.target.value)}
           placeholder="View name..."
           autoFocus
-          className="w-40 md:w-56 rounded-lg border border-white/10 bg-white/5 text-white text-xs px-2 py-1.5 outline-none focus:border-white/25"
+          className={styles.nameInput}
         />
         <button
           type="submit"
           disabled={busy || !titleInput.trim()}
-          className="shrink-0 px-3 py-1.5 text-xs rounded-lg bg-white/15 text-white hover:bg-white/20 transition disabled:opacity-40"
+          className={`${styles.button} ${styles.action}`}
         >
           {busy ? "..." : "Create"}
         </button>
@@ -79,7 +80,7 @@ export default function ViewsBar({
             setCreating(false);
             setTitleInput("");
           }}
-          className="shrink-0 text-xs text-white/40 hover:text-white/70 transition"
+          className={styles.button}
         >
           Cancel
         </button>
@@ -91,21 +92,17 @@ export default function ViewsBar({
   const activeView = savedViews.find((v) => v.id === activeViewId);
 
   return (
-    <div className="flex items-center gap-2">
+    <div className={styles.views}>
       {/* Views dropdown */}
       <select
         aria-label="Saved market views"
-        disabled={tvOpening}
         value={activeViewId ?? ""}
         onChange={(e) => {
-          if (e.target.value === "__tv__") {
-            onOpenTV?.();
-            return;
-          }
           const view = savedViews.find((v) => v.id === e.target.value);
           if (view) onLoadView(view);
         }}
-        className="w-36 md:w-52 rounded-lg border border-white/10 bg-white/5 text-white text-xs px-2 py-1.5 outline-none focus:border-white/25 truncate"
+        className={styles.viewSelect}
+        title={activeView?.title ?? "Saved market views"}
       >
         <option value="" className="bg-zinc-900">
           {savedViews.length === 0 ? "No saved views" : "— select a view —"}
@@ -115,20 +112,13 @@ export default function ViewsBar({
             {v.title}
           </option>
         ))}
-        {onOpenTV && !savedViews.some((view) => view.layout === "TV") && (
-          <option value="__tv__" className="bg-zinc-900">TV (28 markets)</option>
-        )}
       </select>
 
       {/* Save button — only enabled when view selected */}
       <button
         onClick={handleSave}
         disabled={!activeViewId || busy}
-        className={`shrink-0 px-3 py-1.5 text-xs rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed ${
-          isDirty && activeViewId
-            ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30"
-            : "bg-white/8 text-white/60 hover:bg-white/12 hover:text-white/80"
-        }`}
+        className={`${styles.button} ${styles.action} ${isDirty && activeViewId ? styles.dirty : ""}`}
         title={activeView ? `Save changes to "${activeView.title}"` : "Select a view to save"}
       >
         {isDirty && activeViewId ? "Save*" : "Save"}
@@ -137,7 +127,7 @@ export default function ViewsBar({
       {/* New view button */}
       <button
         onClick={() => setCreating(true)}
-        className="shrink-0 px-3 py-1.5 text-xs rounded-lg bg-white/8 text-white/60 hover:bg-white/12 hover:text-white/80 transition"
+        className={`${styles.button} ${styles.action}`}
         title="Save current layout as a new view"
       >
         + New
@@ -148,7 +138,8 @@ export default function ViewsBar({
         <button
           onClick={handleDelete}
           disabled={busy}
-          className="shrink-0 text-xs text-red-400/50 hover:text-red-400 transition disabled:opacity-30"
+          className={`${styles.button} ${styles.delete}`}
+          aria-label="Delete this view"
           title="Delete this view"
         >
           ✕

@@ -1,6 +1,7 @@
 import type { LayoutMode, TimeRangeLabel, PanelSlot } from "./types";
 import { TIME_RANGES, LAYOUT_CONFIGS } from "./constants";
-import { isElectionNightAvailable } from "./electionNight";
+import { ELECTION_NIGHT_LABEL, isElectionNightAvailable } from "./electionNight";
+import { normalizeLayout } from "./layouts";
 
 const STORAGE_KEYS = {
   layout: "situation-layout",
@@ -16,19 +17,14 @@ export type LocalState = {
   timeRange: TimeRangeLabel;
 };
 
-const VALID_LAYOUTS: LayoutMode[] = ["1", "2", "2x2", "3x2", "4x2", "TV"];
-
-export function loadLocalState(): LocalState {
+export function loadLocalState(nowMs: number = Date.now()): LocalState {
   if (typeof window === "undefined") {
     return { layout: "1", panels: [null], timeRange: "1D" };
   }
 
   // Layout
   const rawLayout = localStorage.getItem(STORAGE_KEYS.layout);
-  const layout: LayoutMode =
-    rawLayout && VALID_LAYOUTS.includes(rawLayout as LayoutMode)
-      ? (rawLayout as LayoutMode)
-      : "1";
+  const layout = normalizeLayout(rawLayout) ?? "1";
 
   // Panels
   let panels: PanelSlot[];
@@ -45,10 +41,10 @@ export function loadLocalState(): LocalState {
 
   // Time range
   const rawTR = localStorage.getItem(STORAGE_KEYS.timeRange);
-  const timeRange: TimeRangeLabel =
-    rawTR && TIME_RANGES.some((r) => r.label === rawTR)
-      ? (rawTR as TimeRangeLabel)
-      : "1D";
+  const electionNight = isElectionNightAvailable(nowMs) &&
+    (rawTR === ELECTION_NIGHT_LABEL || (layout === "7x4" && localStorage.getItem(STORAGE_KEYS.tvElectionNight) === "true"));
+  const timeRange: TimeRangeLabel = electionNight ? ELECTION_NIGHT_LABEL
+    : rawTR && TIME_RANGES.some((r) => r.label === rawTR) ? rawTR as TimeRangeLabel : "1D";
 
   return { layout, panels, timeRange };
 }
@@ -63,15 +59,7 @@ export function savePanels(panels: PanelSlot[]) {
 
 export function saveTimeRange(timeRange: TimeRangeLabel) {
   localStorage.setItem(STORAGE_KEYS.timeRange, timeRange);
-}
-
-export function loadTVElectionNight(nowMs: number = Date.now()): boolean {
-  if (typeof window === "undefined" || !isElectionNightAvailable(nowMs)) return false;
-  return localStorage.getItem(STORAGE_KEYS.tvElectionNight) === "true";
-}
-
-export function saveTVElectionNight(enabled: boolean) {
-  localStorage.setItem(STORAGE_KEYS.tvElectionNight, String(enabled));
+  localStorage.removeItem(STORAGE_KEYS.tvElectionNight);
 }
 
 export function loadActiveViewId(): string | null {

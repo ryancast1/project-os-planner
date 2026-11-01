@@ -4,51 +4,6 @@
   gap: var(--tv-gap);
 }
 
-.tv-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 0.65em;
-  font-size: clamp(11px, 0.8vw, 26px);
-}
-
-.tv-board-label {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6em;
-  white-space: nowrap;
-}
-
-.tv-board-label h1 { font-weight: 700; letter-spacing: 0.08em; }
-.tv-board-label > span { color: rgb(255 255 255 / 45%); }
-.tv-time-ranges, .tv-board-actions, .tv-mover-controls { display: flex; align-items: center; gap: 0.2em; }
-.tv-mover-controls > span { margin: 0 0.35em; color: rgb(255 255 255 / 55%); }
-.tv-mover-controls .tv-control[aria-pressed="true"] { border-color: rgb(251 191 36 / 65%); color: #fcd34d; }
-.tv-board-actions { margin-left: auto; }
-
-.tv-control {
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 0.55em;
-  padding: 0.4em 0.65em;
-  color: rgb(255 255 255 / 65%);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.tv-control:hover, .tv-control[aria-pressed="true"] {
-  background: rgb(255 255 255 / 10%);
-  color: white;
-}
-
-.tv-control:focus-visible { outline: 2px solid #fbbf24; outline-offset: 2px; }
-.tv-control:disabled { opacity: 0.5; cursor: wait; }
-.tv-election-night:disabled { cursor: not-allowed; }
-.tv-save[data-dirty="true"] { color: #fcd34d; border-color: rgb(251 191 36 / 35%); }
-.tv-toolbar-message { width: 100%; color: #fcd34d; }
-.tv-refresh-label { display: flex; align-items: center; gap: 0.4em; color: rgb(255 255 255 / 45%); }
-.tv-refresh-label > span { width: 0.4em; height: 0.4em; border-radius: 50%; background: #00c853; }
-
 .tv-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -92,19 +47,6 @@
 }
 
 .tv-slot-number { font-size: 0.7em; color: rgb(255 255 255 / 25%); padding-top: 0.2em; font-variant-numeric: tabular-nums; }
-.tv-panel-title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  min-height: 2.5em;
-  line-height: 1.25;
-  font-weight: 600;
-  color: rgb(255 255 255 / 80%);
-  overflow-wrap: anywhere;
-}
-
-.tv-panel-heading select { min-width: 0; font-size: inherit; }
 .tv-odds-value { font-size: clamp(26px, 18cqw, 110px); }
 .tv-stock-value { font-size: clamp(20px, 13cqw, 85px); }
 .tv-value-caption { font-size: clamp(10px, 4.2cqw, 24px); }
@@ -120,7 +62,3 @@
 .tv-outcomes span { font-size: clamp(9px, 3.8cqw, 20px); }
 .tv-outcomes span:last-child { margin-left: auto; flex-shrink: 0; font-size: clamp(11px, 5cqw, 28px); }
 .tv-outcomes span:first-of-type { max-width: 26cqw; }
-
-@media (max-width: 1250px) {
-  .tv-refresh-label { display: none; }
-}

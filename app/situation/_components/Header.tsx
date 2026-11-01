@@ -1,67 +1,73 @@
 "use client";
 
 import Link from "next/link";
-import type { LayoutMode, TimeRangeLabel } from "../_lib/types";
-import { TIME_RANGES, LAYOUT_OPTIONS } from "../_lib/constants";
+import type { LayoutMode, SavedView, TimeRangeLabel } from "../_lib/types";
+import type { MoverRange } from "../_lib/movers";
+import LayoutControls from "./LayoutControls";
+import TimeRangeControls from "./TimeRangeControls";
+import MoversControls from "./MoversControls";
+import ViewsBar from "./ViewsBar";
+import styles from "./Toolbar.module.css";
 
 export default function Header({
   layout,
   timeRange,
   onLayoutChange,
   onTimeRangeChange,
+  savedViews,
+  activeViewId,
+  isDirty,
+  onLoadView,
+  onSaveView,
+  onCreateView,
+  onDeleteView,
+  onManage,
+  moverRange,
+  moverCount,
+  onMoverRangeChange,
+  mobilePortrait,
 }: {
   layout: LayoutMode;
   timeRange: TimeRangeLabel;
   onLayoutChange: (l: LayoutMode) => void;
   onTimeRangeChange: (t: TimeRangeLabel) => void;
+  savedViews: SavedView[];
+  activeViewId: string | null;
+  isDirty: boolean;
+  onLoadView: (view: SavedView) => void;
+  onSaveView: () => Promise<boolean>;
+  onCreateView: (title: string) => Promise<boolean>;
+  onDeleteView: (id: string) => Promise<void>;
+  onManage: () => void;
+  moverRange: MoverRange | null;
+  moverCount: number;
+  onMoverRangeChange: (range: MoverRange | null) => void;
+  mobilePortrait: boolean;
 }) {
   return (
-    <>
-      {/* Home */}
-      <Link
-        href="/"
-        className="shrink-0 text-xs text-white/50 hover:text-white/80 transition mr-1"
-      >
-        &larr; Home
+    <header className={`${styles.toolbar} ${mobilePortrait ? styles.portrait : ""}`} data-no-view-swipe>
+      <Link href="/" className={styles.home} aria-label="Home">
+        <span aria-hidden="true">&larr;</span><span className={styles.homeName}>Home</span>
       </Link>
-
-      <span className="shrink-0 text-white/10 text-xs select-none">|</span>
-
-      {/* Layout picker */}
-      <div className="flex items-center gap-0.5">
-        {LAYOUT_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => onLayoutChange(opt.value)}
-            className={`px-1.5 md:px-2 py-0.5 text-[10px] md:text-xs rounded-md transition ${
-              layout === opt.value
-                ? "bg-white/15 text-white"
-                : "text-white/40 hover:text-white/70"
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
+      <LayoutControls value={layout} onChange={onLayoutChange} />
+      <div className={styles.timeAndMovers}>
+        <TimeRangeControls value={timeRange} onChange={onTimeRangeChange} />
+        {layout === "7x4" && !mobilePortrait && (
+          <MoversControls value={moverRange} count={moverCount} onChange={onMoverRangeChange} />
+        )}
       </div>
-
-      <span className="shrink-0 text-white/10 text-xs select-none">|</span>
-
-      {/* Time range */}
-      <div className="flex items-center gap-0.5">
-        {TIME_RANGES.map((r) => (
-          <button
-            key={r.label}
-            onClick={() => onTimeRangeChange(r.label)}
-            className={`px-1.5 md:px-2 py-0.5 text-[10px] md:text-xs rounded-md transition ${
-              timeRange === r.label
-                ? "bg-white/15 text-white"
-                : "text-white/40 hover:text-white/70"
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
+      <div className={styles.actions}>
+        <ViewsBar
+          savedViews={savedViews}
+          activeViewId={activeViewId}
+          isDirty={isDirty}
+          onLoadView={onLoadView}
+          onSaveView={onSaveView}
+          onCreateView={onCreateView}
+          onDeleteView={onDeleteView}
+        />
+        <button className={`${styles.button} ${styles.action}`} onClick={onManage}>Manage</button>
       </div>
-    </>
+    </header>
   );
 }

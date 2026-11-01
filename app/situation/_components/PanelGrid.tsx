@@ -15,7 +15,6 @@ export default function PanelGrid({
   onManageMarkets,
   mobilePortrait = false,
   mobileLandscape = false,
-  tvEditing = false,
   moverRange = null,
   onMoverCountChange,
 }: {
@@ -27,7 +26,6 @@ export default function PanelGrid({
   onManageMarkets: () => void;
   mobilePortrait?: boolean;
   mobileLandscape?: boolean;
-  tvEditing?: boolean;
   moverRange?: MoverRange | null;
   onMoverCountChange?: (count: number) => void;
 }) {
@@ -40,7 +38,7 @@ export default function PanelGrid({
     setMoverNow(Math.floor(Date.now() / 1000));
   }, []);
   useEffect(() => {
-    if (layout !== "TV" || !moverRange) return;
+    if (layout !== "7x4" || !moverRange) return;
     const timer = window.setInterval(() => setMoverNow(Math.floor(Date.now() / 1000)), MOVER_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [layout, moverRange]);
@@ -69,9 +67,9 @@ export default function PanelGrid({
     });
   }, []);
 
-  if (layout === "TV") {
+  if (layout === "7x4" && !mobilePortrait) {
     return (
-      <div className="tv-grid" aria-label="TV market board: 7 columns, 4 rows">
+      <div className="tv-grid" aria-label="Market grid: 7 columns, 4 rows">
         {Array.from({ length: config.panelCount }, (_, i) => (
           <Panel
             key={`${i}:${panels[i] ?? "empty"}`}
@@ -81,7 +79,6 @@ export default function PanelGrid({
             timeRange={timeRange}
             compact
             tvMode
-            tvEditing={tvEditing}
             moverRange={moverRange}
             mover={topMovers.find((mover) => mover.marketId === panels[i])}
             onMoverChange={handleMoverChange}

@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabaseClient";
 import type { SavedView, LayoutMode, PanelSlot } from "./types";
+import { normalizeSavedView, storedLayout } from "./layouts";
 
 export async function loadViews(userId: string): Promise<SavedView[]> {
   const { data, error } = await supabase
@@ -12,7 +13,7 @@ export async function loadViews(userId: string): Promise<SavedView[]> {
     console.error("Failed to load views:", error);
     return [];
   }
-  return (data ?? []) as SavedView[];
+  return (data ?? []).map(normalizeSavedView).filter((view): view is SavedView => view !== null);
 }
 
 export async function createView(
@@ -23,7 +24,7 @@ export async function createView(
 ): Promise<SavedView | null> {
   const { data, error } = await supabase
     .from("situation_views")
-    .insert({ user_id: userId, title, layout, panels })
+    .insert({ user_id: userId, title, layout: storedLayout(layout), panels })
     .select()
     .single();
 
@@ -31,7 +32,7 @@ export async function createView(
     console.error("Failed to create view:", error);
     return null;
   }
-  return data as SavedView;
+  return normalizeSavedView(data);
 }
 
 export async function updateView(
@@ -42,7 +43,7 @@ export async function updateView(
 ): Promise<boolean> {
   const { error } = await supabase
     .from("situation_views")
-    .update({ title, layout, panels })
+    .update({ title, layout: storedLayout(layout), panels })
     .eq("id", id);
 
   if (error) {

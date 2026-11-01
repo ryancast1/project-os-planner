@@ -208,7 +208,7 @@ export const LAYOUT_CONFIGS: Record<LayoutMode, LayoutConfig> = {
     gridClass: "grid-cols-2 md:grid-cols-4 grid-rows-4 md:grid-rows-2",
     panelCount: 8,
   },
-  TV: {
+  "7x4": {
     cols: 7,
     rows: 4,
     gridClass: "grid-cols-7 grid-rows-4",
@@ -222,4 +222,5 @@ export const LAYOUT_OPTIONS: { value: LayoutMode; label: string }[] = [
   { value: "2x2", label: "2\u00d72" },
   { value: "3x2", label: "3\u00d72" },
   { value: "4x2", label: "4\u00d72" },
+  { value: "7x4", label: "7\u00d74" },
 ];

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { fetchPriceHistory, fetchStockData } from "./api";
 import { getFidelity, getStartTs, getYahooParams, TIME_RANGES } from "./constants";
 import { ELECTION_NIGHT_LABEL, ELECTION_NIGHT_START_TS, isElectionNightAvailable } from "./electionNight";
-import { loadLocalState, loadTVElectionNight, saveTVElectionNight } from "./storage";
+import { loadLocalState, saveTimeRange } from "./storage";
 
 test("Election Night starts at 6pm Eastern on November 3, using the post-DST offset", () => {
   assert.equal(new Date(ELECTION_NIGHT_START_TS * 1000).toISOString(), "2026-11-03T23:00:00.000Z");
@@ -24,7 +24,7 @@ test("the fixed start never moves across midnight or the following day", () => {
   assert.equal(getStartTs("1H", now), now / 1000 - 3600);
 });
 
-test("the toggle is available only after its fixed start and is absent from regular ranges", () => {
+test("the toggle is available only after its fixed start and leaves rolling ranges unchanged", () => {
   assert.equal(isElectionNightAvailable(ELECTION_NIGHT_START_TS * 1000 - 1), false);
   assert.equal(isElectionNightAvailable(ELECTION_NIGHT_START_TS * 1000), true);
   assert.equal(isElectionNightAvailable(ELECTION_NIGHT_START_TS * 1000 + 86400_000), true);
@@ -79,7 +79,7 @@ test("stock histories trim to the anchor, and closed stocks can keep polling wit
   }
 });
 
-test("the TV selection persists separately and cannot restore prematurely", () => {
+test("Election Night persists as a shared time range for all layouts and cannot restore prematurely", () => {
   const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
   const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
   const data = new Map<string, string>([["situation-timerange", "1D"]]);
@@ -87,14 +87,17 @@ test("the TV selection persists separately and cannot restore prematurely", () =
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
     getItem: (key: string) => data.get(key) ?? null,
     setItem: (key: string, value: string) => data.set(key, value),
+    removeItem: (key: string) => data.delete(key),
   } });
   try {
-    saveTVElectionNight(true);
-    assert.equal(loadTVElectionNight(ELECTION_NIGHT_START_TS * 1000 - 1), false);
-    assert.equal(loadTVElectionNight(ELECTION_NIGHT_START_TS * 1000), true);
-    assert.equal(loadLocalState().timeRange, "1D");
-    saveTVElectionNight(false);
-    assert.equal(loadTVElectionNight(ELECTION_NIGHT_START_TS * 1000 + 86400_000), false);
+    saveTimeRange(ELECTION_NIGHT_LABEL);
+    assert.equal(loadLocalState(ELECTION_NIGHT_START_TS * 1000 - 1).timeRange, "1D");
+    for (const layout of ["1", "2", "2x2", "3x2", "4x2", "7x4"]) {
+      data.set("situation-layout", layout);
+      assert.equal(loadLocalState(ELECTION_NIGHT_START_TS * 1000).timeRange, ELECTION_NIGHT_LABEL);
+    }
+    saveTimeRange("1W");
+    assert.equal(loadLocalState(ELECTION_NIGHT_START_TS * 1000 + 86400_000).timeRange, "1W");
   } finally {
     if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
     else Reflect.deleteProperty(globalThis, "window");

@@ -7,17 +7,22 @@ export default function MarketDropdown({
   savedMarkets,
   selectedId,
   onSelect,
+  className = "",
+  title,
 }: {
   savedMarkets: SavedMarket[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  className?: string;
+  title?: string;
 }) {
   return (
     <select
       aria-label="Select a market"
+      title={title}
       value={selectedId ?? ""}
       onChange={(e) => onSelect(e.target.value || null)}
-      className="w-full rounded-lg border border-white/10 bg-white/5 text-white text-xs px-2 py-1.5 outline-none focus:border-white/20 truncate"
+      className={`w-full rounded-lg border border-white/10 bg-white/5 text-white text-xs px-2 py-1.5 outline-none focus:border-white/20 truncate ${className}`}
     >
       <option value="" className="bg-zinc-900">
         Select a market...

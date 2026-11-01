@@ -30,8 +30,10 @@ import OddsChart from "./OddsChart";
 import OddsDisplay from "./OddsDisplay";
 import StockDisplay from "./StockDisplay";
 import MarketDropdown from "./MarketDropdown";
+import headingStyles from "./MarketHeading.module.css";
 import MoverReporter from "./MoverReporter";
 import { describeMover, isMoverEligibleMarket, type MarketMover, type MoverCache, type MoverRange } from "../_lib/movers";
+import { getHistoricalPrices } from "../_lib/chartHover";
 
 function Panel({
   slotIndex,
@@ -41,7 +43,6 @@ function Panel({
   compact,
   mobileLandscape = false,
   tvMode = false,
-  tvEditing = false,
   moverRange = null,
   mover,
   onMoverChange,
@@ -55,7 +56,6 @@ function Panel({
   compact: boolean;
   mobileLandscape?: boolean;
   tvMode?: boolean;
-  tvEditing?: boolean;
   moverRange?: MoverRange | null;
   mover?: MarketMover;
   onMoverChange?: (slot: number, mover: MarketMover | null) => void;
@@ -77,6 +77,11 @@ function Panel({
   // -- Shared state --
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hoveredTime, setHoveredTime] = useState<{ marketId: string | null; range: TimeRangeLabel; timestamp: number } | null>(null);
+  const handleHoverTimeChange = useCallback((timestamp: number | null) => {
+    setHoveredTime(timestamp == null ? null : { marketId, range: timeRange, timestamp });
+  }, [marketId, timeRange]);
+  const hoverTimestamp = hoveredTime?.marketId === marketId && hoveredTime?.range === timeRange ? hoveredTime.timestamp : null;
 
   const outcomesRef = useRef<Outcome[]>([]);
   const stockRef = useRef<StockSnapshot | null>(null);
@@ -179,6 +184,7 @@ function Panel({
     stockRef.current = null;
     moverCache.current = { histories: {} };
     setError(null);
+    setHoveredTime(null);
 
     if (!marketId) {
       setLoading(false);
@@ -266,6 +272,7 @@ function Panel({
     ? outcomes.slice(0, 1)
     : visibleMultiOutcomes;
   const outcomeColors = getOutcomeColors(chartOutcomes, savedMarket?.outcome_colors, market?.outcomeNames ?? outcomes.map((outcome) => outcome.name));
+  const hoveredPrices = hoverTimestamp == null ? null : getHistoricalPrices(outcomes, hoverTimestamp);
   const highConfidence = !isBuiltin && !loading && !error
     ? getHighConfidenceOutcome(market, outcomes, chartOutcomes, savedMarket?.outcome_colors)
     : null;
@@ -281,6 +288,7 @@ function Panel({
         },
       ]
     : [];
+  const hoveredStockPrice = hoverTimestamp == null ? undefined : getHistoricalPrices(stockChartOutcomes, hoverTimestamp)[stockSnapshot?.ticker ?? ""] ?? null;
 
   // Title shown in landscape mobile instead of the interactive dropdown
   const panelTitle = isBuiltin
@@ -331,15 +339,17 @@ function Panel({
       {tvMode ? (
         <div className="tv-panel-heading">
           <span className="tv-slot-number">{String(slotIndex + 1).padStart(2, "0")}</span>
-          {tvEditing ? (
+          <div className={headingStyles.picker} data-market-heading>
+            <p className={`${headingStyles.title} tv-panel-title`} aria-hidden="true">{panelTitle || "Select a market..."}</p>
             <MarketDropdown
+              className={headingStyles.overlay}
+              title={panelTitle || "Select a market"}
               savedMarkets={savedMarkets}
               selectedId={marketId}
               onSelect={(id) => onChangeMarket(slotIndex, id)}
             />
-          ) : (
-            <p className="tv-panel-title" title={panelTitle}>{panelTitle || "Choose a market"}</p>
-          )}
+            <span className={headingStyles.chevron} aria-hidden="true" />
+          </div>
         </div>
       ) : mobileLandscape ? (
         <div className="shrink-0 px-2 pt-1.5 pb-0">
@@ -359,7 +369,7 @@ function Panel({
       <div className="flex-1 min-h-0 flex flex-col px-2 pb-2">
         {!marketId && (
           <div className="flex-1 flex flex-col items-center justify-center text-white/30 text-sm gap-2">
-            <p>{tvMode ? (tvEditing ? "Select a market above" : "Use Edit markets to fill this box") : "No market selected"}</p>
+            <p>{tvMode ? "Select a market above" : "No market selected"}</p>
             {savedMarkets.length === 0 && (
               <button
                 onClick={onManageMarkets}
@@ -427,9 +437,10 @@ function Panel({
 
           return (
             <>
-              <StockDisplay snapshot={displaySnapshot} compact={compact} mobileLandscape={mobileLandscape} tvMode={tvMode} />
+              <StockDisplay snapshot={displaySnapshot} compact={compact} mobileLandscape={mobileLandscape} tvMode={tvMode} hoveredPrice={hoveredStockPrice} />
               <div className="mt-1 flex-1 min-h-0">
                 <OddsChart
+                  key={`${marketId}:${timeRange}`}
                   outcomes={stockChartOutcomes}
                   colors={[stockColor]}
                   startTs={getStartTs(timeRange)}
@@ -439,6 +450,7 @@ function Panel({
                   previousClose={chartReference}
                   mobileLandscape={mobileLandscape}
                   tvMode={tvMode}
+                  onHoverTimeChange={handleHoverTimeChange}
                 />
               </div>
             </>
@@ -456,9 +468,11 @@ function Panel({
               compact={compact}
               mobileLandscape={mobileLandscape}
               tvMode={tvMode}
+              hoveredPrices={hoveredPrices}
             />
             <div className="mt-1 flex-1 min-h-0">
               <OddsChart
+                key={`${marketId}:${timeRange}`}
                 outcomes={chartOutcomes}
                 colors={outcomeColors}
                 startTs={getStartTs(timeRange)}
@@ -466,6 +480,7 @@ function Panel({
                 showLegend={!compact}
                 mobileLandscape={mobileLandscape}
                 tvMode={tvMode}
+                onHoverTimeChange={handleHoverTimeChange}
               />
             </div>
           </>

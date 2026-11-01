@@ -29,34 +29,37 @@ export default function StockDisplay({
   compact,
   mobileLandscape = false,
   tvMode = false,
+  hoveredPrice,
 }: {
   snapshot: StockSnapshot;
   compact: boolean;
   mobileLandscape?: boolean;
   tvMode?: boolean;
+  hoveredPrice?: number | null;
 }) {
   const { label, currentPrice, previousClose, displayType } = snapshot;
   const isYield = displayType === "yield";
+  const displayedPrice = hoveredPrice === undefined ? currentPrice : hoveredPrice;
 
   const change =
-    previousClose != null ? currentPrice - previousClose : null;
+    previousClose != null && displayedPrice != null ? displayedPrice - previousClose : null;
   const changePct =
-    previousClose != null && previousClose !== 0
-      ? (change! / previousClose) * 100
+    change != null && previousClose != null && previousClose !== 0
+      ? (change / previousClose) * 100
       : null;
   const isUp = changePct != null ? changePct >= 0 : null;
   const accentColor =
     isUp === null ? COLOR_GREEN : isUp ? COLOR_GREEN : COLOR_RED;
 
   return (
-    <div className="shrink-0 text-center pt-1">
+    <div className="shrink-0 text-center pt-1" data-readout-mode={hoveredPrice === undefined ? "live" : "historical"}>
       {/* Label hidden in landscape mobile — shown in panel title bar instead */}
       {!mobileLandscape && !tvMode && (
         <div
           className={
             compact
               ? "text-xs text-white/60 mb-0.5 truncate px-2"
-              : "text-base md:text-xl text-white/60 mb-1"
+              : "text-base md:text-xl text-white/60 mb-1 truncate px-2"
           }
         >
           {label}
@@ -74,8 +77,9 @@ export default function StockDisplay({
             : "text-5xl md:text-[7rem] leading-none font-bold tabular-nums"
         }
         style={{ color: accentColor }}
+        data-outcome-value={snapshot.ticker}
       >
-        {isYield ? formatYield(currentPrice) : formatPrice(currentPrice)}
+        {displayedPrice == null ? "--" : isYield ? formatYield(displayedPrice) : formatPrice(displayedPrice)}
       </div>
 
       {changePct != null && (

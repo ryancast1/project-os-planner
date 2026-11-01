@@ -32,6 +32,10 @@ function getAdjacentView(
   }
 }
 
+function isEditingControl(target: EventTarget | null): boolean {
+  return target instanceof Element && !!target.closest("select, input, textarea, button, a, [role='dialog'], [data-no-view-swipe]");
+}
+
 /* ── Hook ────────────────────────────────────────────────── */
 
 export function useViewSwipe({
@@ -104,10 +108,10 @@ export function useViewSwipe({
   /* ── Wheel handler (Mac trackpad 2-finger swipe) ────── */
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el || !enabled) return;
 
     function handleWheel(e: WheelEvent) {
-      if (!enabledRef.current) return;
+      if (!enabledRef.current || isEditingControl(e.target)) return;
 
       // Suppress browser back/forward navigation for ANY horizontal wheel event
       // on this page — must fire before threshold checks so the browser never
@@ -145,16 +149,18 @@ export function useViewSwipe({
       el.removeEventListener("wheel", handleWheel);
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
-  }, [doSwitch]);
+  }, [doSwitch, enabled]);
 
   /* ── Touch handlers (iPhone landscape 1-finger swipe) ── */
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el || !enabled) return;
 
     function handleTouchStart(e: TouchEvent) {
+      touchCancelled.current = true;
       if (!enabledRef.current) return;
       if (viewsRef.current.length < 2) return;
+      if (e.touches.length !== 1 || isEditingControl(e.target)) return;
       const touch = e.touches[0];
       touchStartX.current = touch.clientX;
       touchStartY.current = touch.clientY;
@@ -164,6 +170,7 @@ export function useViewSwipe({
 
     function handleTouchMove(e: TouchEvent) {
       if (touchCancelled.current) return;
+      if (e.touches.length !== 1) { touchCancelled.current = true; return; }
       const touch = e.touches[0];
       const dx = Math.abs(touch.clientX - touchStartX.current);
       const dy = Math.abs(touch.clientY - touchStartY.current);
@@ -201,7 +208,7 @@ export function useViewSwipe({
       el.removeEventListener("touchmove", handleTouchMove);
       el.removeEventListener("touchend", handleTouchEnd);
     };
-  }, [doSwitch]);
+  }, [doSwitch, enabled]);
 
   // Cleanup label timer on unmount
   useEffect(() => {

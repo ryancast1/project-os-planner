@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import Link from "next/link";
 import type { LayoutMode, TimeRangeLabel, PanelSlot, SavedMarket, SavedView, OutcomeColors } from "./_lib/types";
-import { LAYOUT_CONFIGS, LAYOUT_OPTIONS, TIME_RANGES } from "./_lib/constants";
+import { LAYOUT_CONFIGS } from "./_lib/constants";
 import {
   loadLocalState,
   saveLayout,
@@ -11,18 +10,13 @@ import {
   saveTimeRange,
   loadActiveViewId,
   saveActiveViewId,
-  loadTVElectionNight,
-  saveTVElectionNight,
 } from "./_lib/storage";
 import { getUserId, loadSavedMarkets } from "./_lib/markets";
 import { loadViews, createView, updateView, deleteView } from "./_lib/views";
 import Header from "./_components/Header";
 import PanelGrid from "./_components/PanelGrid";
-import ViewsBar from "./_components/ViewsBar";
 import ManageMarketsModal from "./_components/ManageMarketsModal";
 import { useViewSwipe } from "./_lib/useViewSwipe";
-import { createTVPanels } from "./_lib/tv";
-import TVToolbar from "./_components/TVToolbar";
 import { ELECTION_NIGHT_LABEL, isElectionNightAvailable } from "./_lib/electionNight";
 import type { MoverRange } from "./_lib/movers";
 import "./tv.css";
@@ -38,10 +32,8 @@ export default function SituationDashboard() {
   const [layout, setLayout] = useState<LayoutMode>("1");
   const [panels, setPanels] = useState<PanelSlot[]>([null]);
   const [timeRange, setTimeRange] = useState<TimeRangeLabel>("1D");
-  const [tvElectionNight, setTVElectionNight] = useState(false);
   const [moverRange, setMoverRange] = useState<MoverRange | null>(null);
   const [moverCount, setMoverCount] = useState(0);
-  const chartTimeRange = layout === "TV" && tvElectionNight ? ELECTION_NIGHT_LABEL : timeRange;
 
   // Views
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
@@ -50,16 +42,8 @@ export default function SituationDashboard() {
 
   // UI
   const [manageOpen, setManageOpen] = useState(false);
-  const [tvOpening, setTVOpening] = useState(false);
-  const [tvEditing, setTVEditing] = useState(false);
   const [viewError, setViewError] = useState<string | null>(null);
   const viewRevisionRef = useRef(0);
-  const previousViewRef = useRef<{
-    layout: LayoutMode;
-    panels: PanelSlot[];
-    activeViewId: string | null;
-    isDirty: boolean;
-  } | null>(null);
 
   // Portrait mobile: single-column scroll view
   const [isMobilePortrait, setIsMobilePortrait] = useState(false);
@@ -87,7 +71,8 @@ export default function SituationDashboard() {
     setLayout(local.layout);
     setPanels(local.panels);
     setTimeRange(local.timeRange);
-    setTVElectionNight(loadTVElectionNight());
+    saveLayout(local.layout);
+    saveTimeRange(local.timeRange);
 
     (async () => {
       const uid = await getUserId();
@@ -165,18 +150,11 @@ export default function SituationDashboard() {
   // -- Time range change (doesn't dirty a view — it's a display pref) --
   const handleTimeRangeChange = useCallback((tr: TimeRangeLabel) => {
     if (tr === ELECTION_NIGHT_LABEL) {
-      if (layout !== "TV" || !isElectionNightAvailable()) return;
-      setTVElectionNight(true);
-      saveTVElectionNight(true);
-      return;
-    }
-    if (layout === "TV") {
-      setTVElectionNight(false);
-      saveTVElectionNight(false);
+      if (!isElectionNightAvailable()) return;
     }
     setTimeRange(tr);
     saveTimeRange(tr);
-  }, [layout]);
+  }, []);
 
   // -- Markets changed (add/remove in modal) --
   const handleMarketsChange = useCallback(async () => {
@@ -203,10 +181,6 @@ export default function SituationDashboard() {
   const handleLoadView = useCallback(
     (view: SavedView) => {
       viewRevisionRef.current += 1;
-      if (view.layout === "TV" && layout !== "TV") {
-        previousViewRef.current = { layout, panels, activeViewId, isDirty };
-      }
-      setTVEditing(false);
       setViewError(null);
       setActiveViewId(view.id);
       saveActiveViewId(view.id);
@@ -225,56 +199,8 @@ export default function SituationDashboard() {
       setPanels(trimmed);
       savePanels(trimmed);
     },
-    [savedMarkets, layout, panels, activeViewId, isDirty]
+    [savedMarkets]
   );
-
-  const handleOpenTV = useCallback(async () => {
-    if (!userId || tvOpening) return;
-    const existing = savedViews.find((view) => view.layout === "TV");
-    if (existing) {
-      handleLoadView(existing);
-      return;
-    }
-
-    setTVOpening(true);
-    setViewError(null);
-    try {
-      const view = await createView(userId, "TV", "TV", createTVPanels(panels, savedMarkets));
-      if (!view) {
-        setViewError("Could not create the TV view. Please try again.");
-        return;
-      }
-      setSavedViews((previous) => [...previous, view]);
-      handleLoadView(view);
-      setTVEditing(true);
-    } catch {
-      setViewError("Could not create the TV view. Please try again.");
-    } finally {
-      setTVOpening(false);
-    }
-  }, [userId, tvOpening, savedViews, panels, savedMarkets, handleLoadView]);
-
-  const handleExitTV = useCallback(() => {
-    viewRevisionRef.current += 1;
-    const previous = previousViewRef.current ?? {
-      layout: "4x2" as const,
-      panels: panels.slice(0, LAYOUT_CONFIGS["4x2"].panelCount),
-      activeViewId: null,
-      isDirty: true,
-    };
-    setLayout(previous.layout);
-    saveLayout(previous.layout);
-    const validIds = new Set(savedMarkets.map((market) => market.id));
-    const restoredPanels = reconcilePanels(previous.panels, validIds);
-    setPanels(restoredPanels);
-    savePanels(restoredPanels);
-    setActiveViewId(previous.activeViewId);
-    saveActiveViewId(previous.activeViewId);
-    setIsDirty(previous.isDirty);
-    setViewError(null);
-    previousViewRef.current = null;
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
-  }, [panels, savedMarkets]);
 
   // -- Save current state over the active view --
   const handleSaveView = useCallback(async () => {
@@ -300,16 +226,22 @@ export default function SituationDashboard() {
   // -- Create a new named view with current state --
   const handleCreateView = useCallback(
     async (title: string) => {
-      if (!userId) return;
+      if (!userId) return false;
 
+      const revision = viewRevisionRef.current;
       const newView = await createView(userId, title, layout, panels);
-      if (newView) {
-        const views = await loadViews(userId);
-        setSavedViews(views);
+      if (!newView) {
+        setViewError("Could not create this view. Please try again.");
+        return false;
+      }
+      setSavedViews((previous) => [...previous, newView]);
+      if (viewRevisionRef.current === revision) {
         setActiveViewId(newView.id);
         saveActiveViewId(newView.id);
         setIsDirty(false);
+        setViewError(null);
       }
+      return true;
     },
     [userId, layout, panels]
   );
@@ -336,8 +268,9 @@ export default function SituationDashboard() {
     savedViews,
     activeViewId,
     onSwitchView: handleLoadView,
-    enabled: !isMobilePortrait && !manageOpen && layout !== "TV",
+    enabled: !authLoading && !isMobilePortrait && !manageOpen,
   });
+  const denseLayout = layout === "7x4" && !isMobilePortrait;
 
   // -- Auth loading --
   if (authLoading) {
@@ -362,134 +295,28 @@ export default function SituationDashboard() {
   return (
     <main
       ref={swipeRef}
-      className={layout === "TV"
+      className={denseLayout
         ? "tv-dashboard bg-gradient-to-b from-black to-zinc-950 text-white flex flex-col h-dvh overflow-hidden"
         : `bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2 ${isMobilePortrait ? "min-h-dvh overflow-y-auto" : "h-dvh overflow-hidden"}`}
     >
-      {/* Header: 3-row stacked on portrait mobile, single row otherwise */}
-      {layout === "TV" ? (
-        <TVToolbar
-          moverRange={moverRange}
-          moverCount={moverCount}
-          onMoverRangeChange={setMoverRange}
-          timeRange={chartTimeRange}
-          editing={tvEditing}
-          isDirty={isDirty}
-          assignedCount={panels.filter(Boolean).length}
-          onTimeRangeChange={handleTimeRangeChange}
-          onToggleEditing={() => setTVEditing((value) => !value)}
-          onSave={handleSaveView}
-          onBack={handleExitTV}
-          onManage={() => setManageOpen(true)}
-        />
-      ) : isMobilePortrait ? (
-        <div className="shrink-0 flex flex-col gap-1.5">
-          {/* Row 1: Grid type (layout picker) */}
-          <div className="flex items-center gap-1">
-            <Link
-              href="/"
-              className="text-xs text-white/50 hover:text-white/80 transition mr-1 shrink-0"
-            >
-              &larr; Home
-            </Link>
-            <span className="shrink-0 text-white/10 text-xs select-none">|</span>
-            <div className="flex items-center gap-0.5">
-              {LAYOUT_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => handleLayoutChange(opt.value)}
-                  className={`px-2 py-0.5 text-[10px] rounded-md transition ${
-                    layout === opt.value
-                      ? "bg-white/15 text-white"
-                      : "text-white/40 hover:text-white/70"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Row 2: Time scale */}
-          <div className="flex items-center gap-0.5">
-            {TIME_RANGES.map((r) => (
-              <button
-                key={r.label}
-                onClick={() => handleTimeRangeChange(r.label)}
-                className={`px-2 py-0.5 text-[10px] rounded-md transition ${
-                  timeRange === r.label
-                    ? "bg-white/15 text-white"
-                    : "text-white/40 hover:text-white/70"
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Row 3: Views dropdown/saver + Manage */}
-          <div className="flex items-center gap-1">
-            <ViewsBar
-              savedViews={savedViews}
-              activeViewId={activeViewId}
-              isDirty={isDirty}
-              onLoadView={handleLoadView}
-              onSaveView={handleSaveView}
-              onCreateView={handleCreateView}
-              onDeleteView={handleDeleteView}
-            />
-            <div className="flex-1" />
-            <button
-              onClick={() => setManageOpen(true)}
-              className="shrink-0 text-xs text-white/50 hover:text-white/80 transition"
-            >
-              Manage
-            </button>
-          </div>
-        </div>
-      ) : (
-        /* Desktop / landscape: single row */
-        <div className="shrink-0 flex items-center gap-1 md:gap-1.5">
-          <Header
-            layout={layout}
-            timeRange={timeRange}
-            onLayoutChange={handleLayoutChange}
-            onTimeRangeChange={handleTimeRangeChange}
-          />
-
-          <span className="shrink-0 text-white/10 text-xs select-none">|</span>
-
-          <ViewsBar
-            savedViews={savedViews}
-            activeViewId={activeViewId}
-            isDirty={isDirty}
-            onLoadView={handleLoadView}
-            onSaveView={handleSaveView}
-            onCreateView={handleCreateView}
-            onDeleteView={handleDeleteView}
-            onOpenTV={handleOpenTV}
-            tvOpening={tvOpening}
-          />
-
-          <div className="flex-1" />
-
-          <button
-            onClick={handleOpenTV}
-            disabled={tvOpening}
-            className="shrink-0 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15 transition disabled:opacity-50"
-            title="Open the 28-market TV board"
-          >
-            {tvOpening ? "Opening..." : "TV"}
-          </button>
-
-          <button
-            onClick={() => setManageOpen(true)}
-            className="shrink-0 text-xs text-white/50 hover:text-white/80 transition"
-          >
-            Manage
-          </button>
-        </div>
-      )}
+      <Header
+        layout={layout}
+        timeRange={timeRange}
+        onLayoutChange={handleLayoutChange}
+        onTimeRangeChange={handleTimeRangeChange}
+        savedViews={savedViews}
+        activeViewId={activeViewId}
+        isDirty={isDirty}
+        onLoadView={handleLoadView}
+        onSaveView={handleSaveView}
+        onCreateView={handleCreateView}
+        onDeleteView={handleDeleteView}
+        onManage={() => setManageOpen(true)}
+        moverRange={moverRange}
+        moverCount={moverCount}
+        onMoverRangeChange={setMoverRange}
+        mobilePortrait={isMobilePortrait}
+      />
 
       {viewError && <p role="alert" className="shrink-0 text-sm text-amber-300">{viewError}</p>}
 
@@ -497,13 +324,12 @@ export default function SituationDashboard() {
         layout={layout}
         panels={panels}
         savedMarkets={savedMarkets}
-        timeRange={chartTimeRange}
+        timeRange={timeRange}
         onChangeMarket={handleChangeMarket}
         onManageMarkets={() => setManageOpen(true)}
         mobilePortrait={isMobilePortrait}
         mobileLandscape={isMobileLandscape}
-        tvEditing={tvEditing}
-        moverRange={layout === "TV" ? moverRange : null}
+        moverRange={layout === "7x4" ? moverRange : null}
         onMoverCountChange={setMoverCount}
       />
 

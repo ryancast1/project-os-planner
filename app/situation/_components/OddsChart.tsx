@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import type { Outcome, PricePoint } from "../_lib/types";
+import { useEffect, useState, useRef, type CSSProperties } from "react";
+import type { Outcome } from "../_lib/types";
+import { getTimeLabelLimit, selectAxisLabels } from "../_lib/chartLayout";
+import { findNearestPricePoint } from "../_lib/chartHover";
+import styles from "./OddsChart.module.css";
 
 type ValueFormat = "percent" | "price" | "yield";
 
@@ -47,22 +50,6 @@ function formatHoverValue(v: number, fmt: ValueFormat): string {
   }
 }
 
-/** Binary search for the data point closest in time to `ts` */
-function findNearest(history: PricePoint[], ts: number): PricePoint | null {
-  if (history.length === 0) return null;
-  let lo = 0;
-  let hi = history.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (history[mid].t < ts) lo = mid + 1;
-    else hi = mid;
-  }
-  if (lo === 0) return history[0];
-  const before = history[lo - 1];
-  const after = history[lo];
-  return Math.abs(before.t - ts) <= Math.abs(after.t - ts) ? before : after;
-}
-
 export default function OddsChart({
   outcomes,
   colors,
@@ -74,6 +61,7 @@ export default function OddsChart({
   previousClose,
   mobileLandscape = false,
   tvMode = false,
+  onHoverTimeChange,
 }: {
   outcomes: Outcome[];
   colors: string[];
@@ -89,12 +77,23 @@ export default function OddsChart({
   /** Landscape mobile: hide legend, X-axis, and reduce Y to top+bottom only */
   mobileLandscape?: boolean;
   tvMode?: boolean;
+  onHoverTimeChange?: (timestamp: number | null) => void;
 }) {
   // -- Crosshair / tooltip state --
-  const [hoverSvgX, setHoverSvgX] = useState<number | null>(null);
+  const [hoverTs, setHoverTs] = useState<number | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(0);
 
   const allPoints = outcomes.flatMap((o) => o.history);
+  const hasHistory = allPoints.length > 0;
+  useEffect(() => {
+    const element = chartRef.current;
+    if (!element || !hasHistory) return;
+    const observer = new ResizeObserver(([entry]) => setChartWidth(entry.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [hasHistory]);
+  useEffect(() => () => onHoverTimeChange?.(null), [onHoverTimeChange]);
 
   if (allPoints.length === 0) {
     return (
@@ -127,7 +126,7 @@ export default function OddsChart({
   const xRight = 97;
   const xSpan = xRight - xLeft;
   const yTop = 5;
-  const yBottom = 92;
+  const yBottom = 96;
   const ySpanSvg = yBottom - yTop;
 
   function toSvgX(t: number): number {
@@ -207,29 +206,27 @@ export default function OddsChart({
       ? [yLabels[0], yLabels[yLabels.length - 1]]
       : yLabels;
 
-  const displayTimeLabels = tvMode && timeLabels.length > 2
-    ? [timeLabels[0], timeLabels[timeLabels.length - 1]]
-    : timeLabels;
+  const axisFontSize = tvMode ? Math.max(9, Math.min(20, (chartWidth + 16) * 0.038)) : 10;
+  const displayTimeLabels = selectAxisLabels(timeLabels, getTimeLabelLimit(chartWidth, axisFontSize, timeLabels, tvMode));
 
   // -- Hover / crosshair --
   const enableHover = !mobileLandscape;
 
-  // Convert hoverSvgX to a timestamp + find nearest data points
-  const hoverTs =
-    hoverSvgX != null
-      ? tMin + ((hoverSvgX - xLeft) / xSpan) * tRange
-      : null;
+  const hoverSvgX = hoverTs == null ? null : toSvgX(hoverTs);
+  function updateHover(svgX: number | null) {
+    const timestamp = svgX == null ? null : tMin + ((svgX - xLeft) / xSpan) * tRange;
+    setHoverTs(timestamp);
+    onHoverTimeChange?.(timestamp);
+  }
 
   const hoverPoints =
     hoverTs != null
       ? outcomes.map((o, i) => {
-          const pt = findNearest(o.history, hoverTs);
+          const pt = findNearestPricePoint(o.history, hoverTs);
           if (!pt) return null;
           return {
             color: colors[i % colors.length],
-            name: o.name,
             point: pt,
-            valueStr: formatHoverValue(pt.p, valueFormat),
           };
         })
       : [];
@@ -272,136 +269,110 @@ export default function OddsChart({
       )}
 
       <div
-        ref={chartRef}
-        className="market-chart-surface flex-1 min-h-0 rounded-2xl border border-white/10 bg-black/30 relative overflow-hidden"
-        style={enableHover ? { touchAction: "none" } : undefined}
-        onPointerDown={
-          enableHover
-            ? (e) => {
+        data-market-chart
+        className={`market-chart-surface flex-1 min-h-0 rounded-2xl border border-white/10 bg-black/30 relative overflow-hidden ${styles.surface}`}
+        style={{
+          "--chart-font": tvMode ? "clamp(9px, 3.8cqw, 20px)" : "11px",
+          "--chart-x-font": tvMode ? "clamp(9px, 3.8cqw, 20px)" : "10px",
+        } as CSSProperties}
+      >
+        <div
+          ref={chartRef}
+          data-chart-plot
+          className={styles.plot}
+          style={enableHover ? { touchAction: "none" } : undefined}
+          onPointerDown={
+            enableHover
+              ? (e) => {
                 if (!chartRef.current) return;
                 // Capture pointer so all subsequent move events stay on this element (critical for touch drag)
                 if (e.pointerType !== "mouse") {
-                  (e.target as Element).setPointerCapture(e.pointerId);
+                  e.currentTarget.setPointerCapture(e.pointerId);
                 }
                 const rect = chartRef.current.getBoundingClientRect();
                 const svgX = ((e.clientX - rect.left) / rect.width) * 100;
-                if (svgX >= xLeft && svgX <= xRight) setHoverSvgX(svgX);
+                if (svgX >= xLeft && svgX <= xRight) updateHover(svgX);
               }
-            : undefined
-        }
-        onPointerMove={
-          enableHover
-            ? (e) => {
+              : undefined
+          }
+          onPointerMove={
+            enableHover
+              ? (e) => {
                 if (!chartRef.current) return;
                 const rect = chartRef.current.getBoundingClientRect();
                 const svgX = ((e.clientX - rect.left) / rect.width) * 100;
-                if (svgX >= xLeft && svgX <= xRight) setHoverSvgX(svgX);
-                else setHoverSvgX(null);
+                if (svgX >= xLeft && svgX <= xRight) updateHover(svgX);
+                else updateHover(null);
               }
-            : undefined
-        }
-        onPointerUp={
-          enableHover
-            ? (e) => {
+              : undefined
+          }
+          onPointerUp={
+            enableHover
+              ? (e) => {
                 // Touch: clear crosshair on finger lift. Mouse: keep hovering.
-                if (e.pointerType !== "mouse") setHoverSvgX(null);
+                if (e.pointerType !== "mouse") updateHover(null);
               }
-            : undefined
-        }
-        onPointerLeave={enableHover ? () => setHoverSvgX(null) : undefined}
-      >
-        {/* Y axis labels */}
-        {displayYLabels.map((yl) => {
-          const topPct = (toSvgY(yl.value) / 100) * 100;
-          return (
-            <div
-              key={yl.value}
-              className="absolute left-1 text-[11px] text-white/50 -translate-y-1/2 z-10 pointer-events-none"
-              style={{ top: `${topPct}%`, ...(tvMode ? { fontSize: "clamp(9px, 3.8cqw, 20px)" } : {}) }}
-            >
-              {yl.display}
-            </div>
-          );
-        })}
+              : undefined
+          }
+          onPointerLeave={enableHover ? () => updateHover(null) : undefined}
+          onPointerCancel={enableHover ? () => updateHover(null) : undefined}
+        >
+          {/* Y axis labels */}
+          {displayYLabels.map((yl) => {
+            const topPct = (toSvgY(yl.value) / 100) * 100;
+            return (
+              <div
+                key={yl.value}
+                data-y-label
+                className={styles.yLabel}
+                style={{ top: `clamp(0.85em, ${topPct}%, calc(100% - 0.85em))` }}
+              >
+                {yl.display}
+              </div>
+            );
+          })}
 
-        {/* X axis time labels — hidden in landscape mobile */}
-        {!mobileLandscape && displayTimeLabels.map((tl, i) => {
-          const leftPct = (toSvgX(tl.ts) / 100) * 100;
-          return (
-            <div
-              key={tl.ts}
-              className="absolute bottom-1 text-[10px] text-white/45 -translate-x-1/2 z-10 pointer-events-none whitespace-nowrap"
-              style={{
-                left: `${leftPct}%`,
-                ...(tvMode ? {
-                  fontSize: "clamp(9px, 3.8cqw, 20px)",
-                  translate: i === 0 ? "0" : "-100%",
-                } : {}),
-              }}
-            >
-              {tl.label}
-            </div>
-          );
-        })}
+          {/* Hover crosshair + tooltip */}
+          {hoverSvgX != null && (
+            <>
+              {/* Vertical crosshair line */}
+              <div
+                className="absolute top-0 bottom-0 w-px bg-white/30 z-20 pointer-events-none"
+                style={{ left: `${hoverSvgX}%` }}
+              />
 
-        {/* Hover crosshair + tooltip */}
-        {hoverSvgX != null && (
-          <>
-            {/* Vertical crosshair line */}
-            <div
-              className="absolute top-0 bottom-0 w-px bg-white/30 z-20 pointer-events-none"
-              style={{ left: `${hoverSvgX}%` }}
-            />
-
-            {/* Dots on each line at nearest data point */}
-            {hoverPoints.map(
-              (hp, i) =>
-                hp && (
-                  <div
-                    key={i}
-                    className="absolute w-2.5 h-2.5 rounded-full border-2 border-black/60 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none"
-                    style={{
-                      left: `${toSvgX(hp.point.t)}%`,
-                      top: `${toSvgY(hp.point.p)}%`,
-                      backgroundColor: hp.color,
-                    }}
-                  />
-                )
-            )}
-
-            {/* Tooltip */}
-            <div
-              className="absolute top-2 z-30 pointer-events-none bg-black/85 backdrop-blur-sm border border-white/15 rounded-lg px-2.5 py-1.5 text-[11px] whitespace-nowrap"
-              style={
-                hoverSvgX < 50
-                  ? { left: `${hoverSvgX + 2}%` }
-                  : { right: `${100 - hoverSvgX + 2}%` }
-              }
-            >
-              <div className="text-white/50 mb-0.5">{hoverTimeStr}</div>
+              {/* Dots on each line at nearest data point */}
               {hoverPoints.map(
                 (hp, i) =>
                   hp && (
-                    <div key={i} className="flex items-center gap-1.5">
-                      <div
-                        className="w-2 h-0.5 rounded shrink-0"
-                        style={{ backgroundColor: hp.color }}
-                      />
-                      {outcomes.length > 1 && (
-                        <span className="text-white/50">{hp.name}</span>
-                      )}
-                      <span className="text-white font-medium">
-                        {hp.valueStr}
-                      </span>
-                    </div>
+                    <div
+                      key={i}
+                      className="absolute w-2.5 h-2.5 rounded-full border-2 border-black/60 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none"
+                      style={{
+                        left: `${toSvgX(hp.point.t)}%`,
+                        top: `${toSvgY(hp.point.p)}%`,
+                        backgroundColor: hp.color,
+                      }}
+                    />
                   )
               )}
-            </div>
-          </>
-        )}
 
-        {/* Previous close reference line */}
-        {previousClose != null && (
+              {/* Tooltip */}
+              <div
+                data-chart-tooltip
+                role="tooltip"
+                data-no-view-swipe
+                data-chart-hover-date
+                className={styles.dateBadge}
+                style={hoverSvgX < 50 ? { right: 6 } : { left: 6 }}
+              >
+                {hoverTimeStr}
+              </div>
+            </>
+          )}
+
+          {/* Previous close reference line */}
+          {previousClose != null && (
             <>
               <div
                 className="absolute left-0 right-0 border-t border-dashed border-white/20 z-10 pointer-events-none"
@@ -416,56 +387,74 @@ export default function OddsChart({
             </>
           )}
 
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          className="w-full h-full"
-        >
-          {/* Y gridlines */}
-          {yLabels.map((yl) => (
+          <svg
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            className={styles.svg}
+          >
+            {/* Y gridlines */}
+            {yLabels.map((yl) => (
+              <line
+                key={yl.value}
+                x1={xLeft}
+                y1={toSvgY(yl.value)}
+                x2={xRight}
+                y2={toSvgY(yl.value)}
+                stroke="rgba(255,255,255,0.07)"
+              />
+            ))}
             <line
-              key={yl.value}
               x1={xLeft}
-              y1={toSvgY(yl.value)}
+              y1={yBottom}
               x2={xRight}
-              y2={toSvgY(yl.value)}
-              stroke="rgba(255,255,255,0.07)"
+              y2={yBottom}
+              stroke="rgba(255,255,255,0.10)"
             />
-          ))}
-          <line
-            x1={xLeft}
-            y1={yBottom}
-            x2={xRight}
-            y2={yBottom}
-            stroke="rgba(255,255,255,0.10)"
-          />
 
-          {/* Lines */}
-          {outcomes.map((o, i) => {
-            if (o.history.length < 2) return null;
-            const points = o.history
-              .map((pt) => `${toSvgX(pt.t)},${toSvgY(pt.p)}`)
-              .join(" ");
-            const lastPt = o.history[o.history.length - 1];
-            const color = colors[i % colors.length];
-            return (
-              <g key={o.tokenId}>
-                <polyline
-                  fill="none"
-                  stroke={color}
-                  strokeWidth="0.5"
-                  points={points}
-                />
-                <circle
-                  cx={toSvgX(lastPt.t)}
-                  cy={toSvgY(lastPt.p)}
-                  r="0.8"
-                  fill={color}
-                />
-              </g>
-            );
-          })}
-        </svg>
+            {/* Lines */}
+            {outcomes.map((o, i) => {
+              if (o.history.length < 2) return null;
+              const points = o.history
+                .map((pt) => `${toSvgX(pt.t)},${toSvgY(pt.p)}`)
+                .join(" ");
+              const lastPt = o.history[o.history.length - 1];
+              const color = colors[i % colors.length];
+              return (
+                <g key={o.tokenId}>
+                  <polyline
+                    fill="none"
+                    stroke={color}
+                    strokeWidth="0.5"
+                    points={points}
+                  />
+                  <circle
+                    cx={toSvgX(lastPt.t)}
+                    cy={toSvgY(lastPt.p)}
+                    r="0.8"
+                    fill={color}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+        {!mobileLandscape && (
+          <div className={styles.timeAxis} data-time-axis>
+            {displayTimeLabels.map((tl, i) => (
+              <div
+                key={tl.ts}
+                data-x-label
+                className={styles.timeLabel}
+                style={{
+                  left: displayTimeLabels.length === 1 ? "50%" : i === 0 ? `max(10px, ${toSvgX(tl.ts)}%)` : i === displayTimeLabels.length - 1 ? `min(${toSvgX(tl.ts)}%, calc(100% - 10px))` : `${toSvgX(tl.ts)}%`,
+                  transform: displayTimeLabels.length === 1 ? "translateX(-50%)" : i === 0 ? "none" : i === displayTimeLabels.length - 1 ? "translateX(-100%)" : "translateX(-50%)",
+                }}
+              >
+                {tl.label}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

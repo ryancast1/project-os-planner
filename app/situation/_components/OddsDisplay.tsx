@@ -2,6 +2,7 @@
 
 import type { MarketInfo, Outcome } from "../_lib/types";
 import { COLORS } from "../_lib/constants";
+import { formatHistoricalPercentage } from "../_lib/chartHover";
 import {
   formatPolymarketPercentage,
   getPolymarketPercentages,
@@ -16,6 +17,7 @@ export default function OddsDisplay({
   compact,
   mobileLandscape = false,
   tvMode = false,
+  hoveredPrices = null,
 }: {
   market: MarketInfo;
   outcomes: Outcome[];
@@ -24,20 +26,23 @@ export default function OddsDisplay({
   compact: boolean;
   mobileLandscape?: boolean;
   tvMode?: boolean;
+  hoveredPrices?: Record<string, number | null> | null;
 }) {
   const isBinary = market.kind === "binary";
   const { percentages } = getPolymarketPercentages(market, outcomes);
+  const percentage = (tokenId: string) => hoveredPrices !== null
+    ? formatHistoricalPercentage(hoveredPrices[tokenId])
+    : formatPolymarketPercentage(percentages.get(tokenId));
 
   if (isBinary) {
-    const pct = percentages.get(outcomes[0].tokenId);
     return (
-      <div className="shrink-0 text-center pt-1">
+      <div className="shrink-0 text-center pt-1" data-readout-mode={hoveredPrices ? "historical" : "live"}>
         {!mobileLandscape && !tvMode && (
           <div
             className={
               compact
                 ? "text-xs text-white/60 mb-0.5 truncate px-2"
-                : "text-base md:text-xl text-white/60 mb-2"
+                : "text-base md:text-xl text-white/60 mb-2 truncate px-2"
             }
           >
             {market.title}
@@ -54,8 +59,9 @@ export default function OddsDisplay({
               : "text-6xl md:text-[10rem] leading-none font-bold tabular-nums"
           }
           style={{ color: colors[0] }}
+          data-outcome-value={outcomes[0].tokenId}
         >
-          {formatPolymarketPercentage(pct)}
+          {percentage(outcomes[0].tokenId)}
         </div>
         <div
           className={
@@ -77,13 +83,13 @@ export default function OddsDisplay({
   const selectedOutcomes = visibleOutcomes ?? getVisiblePolymarketOutcomes(outcomes, compact);
 
   return (
-    <div className="shrink-0">
+    <div className="shrink-0" data-readout-mode={hoveredPrices ? "historical" : "live"}>
       {!mobileLandscape && !tvMode && (
         <div
           className={
             compact
               ? "text-center text-xs text-white/50 mb-0.5 truncate px-2"
-              : "text-center text-sm md:text-lg text-white/50 mt-1"
+              : "text-center text-sm md:text-lg text-white/50 mt-1 truncate px-2"
           }
         >
           {market.title}
@@ -105,10 +111,11 @@ export default function OddsDisplay({
                   {o.name}
                 </span>
                 <span
-                  className="text-[11px] leading-none font-bold tabular-nums"
+                  className="text-[11px] leading-none font-bold tabular-nums shrink-0"
                   style={{ color: colors[i % colors.length] }}
+                  data-outcome-value={o.tokenId}
                 >
-                  {formatPolymarketPercentage(percentages.get(o.tokenId))}
+                  {percentage(o.tokenId)}
                 </span>
               </div>
             </div>
@@ -134,8 +141,9 @@ export default function OddsDisplay({
                     : "text-4xl md:text-[7rem] leading-none font-bold tabular-nums"
                 }
                 style={{ color: colors[i % colors.length] }}
+                data-outcome-value={o.tokenId}
               >
-                {formatPolymarketPercentage(percentages.get(o.tokenId))}
+                {percentage(o.tokenId)}
               </div>
             </div>
           ))}
