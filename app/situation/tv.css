@@ -47,7 +47,7 @@
 }
 
 .tv-slot-number { font-size: 0.7em; color: rgb(255 255 255 / 25%); padding-top: 0.2em; font-variant-numeric: tabular-nums; }
-.tv-odds-value { font-size: clamp(26px, 18cqw, 110px); }
+.tv-odds-value { font-size: clamp(18px, 12cqw, 74px); }
 .tv-stock-value { font-size: clamp(20px, 13cqw, 85px); }
 .tv-value-caption { font-size: clamp(10px, 4.2cqw, 24px); }
 .tv-outcomes {

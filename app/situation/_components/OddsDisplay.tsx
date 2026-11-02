@@ -36,9 +36,13 @@ export default function OddsDisplay({
 
   if (isBinary) {
     return (
-      <div className="shrink-0 text-center pt-1" data-readout-mode={hoveredPrices ? "historical" : "live"}>
+      <div
+        className={`shrink-0 text-center pt-1 ${tvMode ? "flex items-baseline justify-center gap-2" : ""}`}
+        data-readout-mode={hoveredPrices ? "historical" : "live"}
+      >
         {!mobileLandscape && !tvMode && (
           <div
+            data-readout-title
             className={
               compact
                 ? "text-xs text-white/60 mb-0.5 truncate px-2"
@@ -86,6 +90,7 @@ export default function OddsDisplay({
     <div className="shrink-0" data-readout-mode={hoveredPrices ? "historical" : "live"}>
       {!mobileLandscape && !tvMode && (
         <div
+          data-readout-title
           className={
             compact
               ? "text-center text-xs text-white/50 mb-0.5 truncate px-2"
@@ -122,10 +127,11 @@ export default function OddsDisplay({
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-2 px-2 md:flex md:justify-center md:items-center md:gap-12 md:px-0">
+        <div data-outcome-list className="grid grid-cols-2 gap-x-4 gap-y-2 pt-2 px-2 md:flex md:justify-center md:items-center md:gap-12 md:px-0">
           {selectedOutcomes.map((o, i) => (
             <div key={o.tokenId} className="text-center">
               <div
+                data-outcome-name
                 className={
                   mobileLandscape
                     ? "text-[8px] font-semibold text-white/70 truncate"

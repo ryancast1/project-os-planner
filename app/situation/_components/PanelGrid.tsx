@@ -79,6 +79,7 @@ export default function PanelGrid({
             timeRange={timeRange}
             compact
             tvMode
+            holdToExpand={mobileLandscape}
             moverRange={moverRange}
             mover={topMovers.find((mover) => mover.marketId === panels[i])}
             onMoverChange={handleMoverChange}
@@ -104,6 +105,7 @@ export default function PanelGrid({
             timeRange={timeRange}
             compact={true}
             mobileLandscape={true}
+            holdToExpand
             onChangeMarket={onChangeMarket}
             onManageMarkets={onManageMarkets}
           />
@@ -144,6 +146,8 @@ export default function PanelGrid({
             {Array.from({ length: config.panelCount }, (_, i) => (
               <button
                 key={i}
+                aria-label={`Show market ${i + 1}`}
+                aria-current={i === activeCard ? "true" : undefined}
                 onClick={() => scrollToCard(i)}
                 className={`w-1.5 h-1.5 rounded-full transition-colors ${
                   i === activeCard ? "bg-white/70" : "bg-white/20"

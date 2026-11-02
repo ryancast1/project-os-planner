@@ -1,0 +1,20 @@
+.holdable { touch-action: none; -webkit-touch-callout: none; user-select: none; }
+.preview {
+  position: fixed;
+  inset: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+  z-index: 60;
+  width: auto;
+  height: auto;
+  margin: 0;
+  background-color: #08090c;
+  border-radius: 12px;
+  border-color: rgb(255 255 255 / 20%);
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 85%);
+}
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 1em; flex-shrink: 0; padding: 7px 10px 3px; }
+.heading p { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgb(255 255 255 / 85%); font-size: 14px; font-weight: 600; }
+.heading span { flex-shrink: 0; color: rgb(255 255 255 / 40%); font-size: 10px; }
+.preview [data-readout-title] { display: none; }
+.preview [data-outcome-value] { font-size: clamp(24px, 7dvh, 42px); }
+.preview [data-outcome-name] { font-size: clamp(10px, 2.8dvh, 16px); }
+.preview [data-outcome-list] { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 4px 12px; max-height: 28dvh; overflow: auto; }

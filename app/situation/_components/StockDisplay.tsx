@@ -56,6 +56,7 @@ export default function StockDisplay({
       {/* Label hidden in landscape mobile — shown in panel title bar instead */}
       {!mobileLandscape && !tvMode && (
         <div
+          data-readout-title
           className={
             compact
               ? "text-xs text-white/60 mb-0.5 truncate px-2"

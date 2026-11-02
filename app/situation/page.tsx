@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import type { LayoutMode, TimeRangeLabel, PanelSlot, SavedMarket, SavedView, OutcomeColors } from "./_lib/types";
+import type { LayoutMode, TimeRangeLabel, PanelSlot, SavedMarket, SavedView, MarketUpdates } from "./_lib/types";
 import { LAYOUT_CONFIGS } from "./_lib/constants";
 import {
   loadLocalState,
@@ -170,10 +170,10 @@ export default function SituationDashboard() {
     });
   }, [userId]);
 
-  // -- Apply market-wide color preferences without reloading chart data --
-  const handleMarketColorsChange = useCallback((marketId: string, colors: OutcomeColors) => {
+  // -- Apply market labels and colors without reloading chart data --
+  const handleMarketSettingsChange = useCallback((marketId: string, changes: MarketUpdates) => {
     setSavedMarkets((previous) => previous.map((market) => market.id === marketId
-      ? { ...market, outcome_colors: colors }
+      ? { ...market, ...changes }
       : market));
   }, []);
 
@@ -297,7 +297,7 @@ export default function SituationDashboard() {
       ref={swipeRef}
       className={denseLayout
         ? "tv-dashboard bg-gradient-to-b from-black to-zinc-950 text-white flex flex-col h-dvh overflow-hidden"
-        : `bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2 ${isMobilePortrait ? "min-h-dvh overflow-y-auto" : "h-dvh overflow-hidden"}`}
+        : "bg-gradient-to-b from-black to-zinc-950 px-3 md:px-4 py-3 text-white flex flex-col gap-2 h-dvh overflow-hidden"}
     >
       <Header
         layout={layout}
@@ -339,7 +339,7 @@ export default function SituationDashboard() {
         savedMarkets={savedMarkets}
         userId={userId}
         onMarketsChange={handleMarketsChange}
-        onMarketColorsChange={handleMarketColorsChange}
+        onMarketSettingsChange={handleMarketSettingsChange}
       />
       {/* View-switch toast */}
       {transitionLabel && (

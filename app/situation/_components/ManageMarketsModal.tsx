@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { OutcomeColors, SavedMarket } from "../_lib/types";
+import type { MarketUpdates, SavedMarket } from "../_lib/types";
 import { extractSlug, fetchEvent } from "../_lib/api";
 import { addSavedMarket, removeSavedMarket } from "../_lib/markets";
-import OutcomeColorsEditor from "./OutcomeColorsEditor";
+import MarketEditor from "./MarketEditor";
+import { resolveMarketLabel } from "../_lib/marketLabel";
 
 export default function ManageMarketsModal({
   open,
@@ -12,20 +13,22 @@ export default function ManageMarketsModal({
   savedMarkets,
   userId,
   onMarketsChange,
-  onMarketColorsChange,
+  onMarketSettingsChange,
 }: {
   open: boolean;
   onClose: () => void;
   savedMarkets: SavedMarket[];
   userId: string;
   onMarketsChange: () => void;
-  onMarketColorsChange: (marketId: string, colors: OutcomeColors) => void;
+  onMarketSettingsChange: (marketId: string, changes: MarketUpdates) => void;
 }) {
   const [urlInput, setUrlInput] = useState("");
   const [labelInput, setLabelInput] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [colorsMarketId, setColorsMarketId] = useState<string | null>(null);
+  const [editingMarketId, setEditingMarketId] = useState<string | null>(null);
+  const [savingMarketId, setSavingMarketId] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<{ marketId: string; message: string } | null>(null);
 
   if (!open) return null;
 
@@ -45,7 +48,7 @@ export default function ManageMarketsModal({
     let label = labelInput.trim();
     if (!label) {
       const info = await fetchEvent(slug);
-      label = info?.title ?? slug;
+      label = resolveMarketLabel(label, info?.title) ?? slug;
     }
 
     const result = await addSavedMarket(userId, label, slug);
@@ -125,6 +128,7 @@ export default function ManageMarketsModal({
               {savedMarkets.map((m) => (
                 <li
                   key={m.id}
+                  data-market-id={m.id}
                   className="rounded-lg bg-white/5 px-3 py-2"
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -133,27 +137,40 @@ export default function ManageMarketsModal({
                       <div className="text-[10px] text-white/40 truncate">{m.slug}</div>
                     </div>
                     <button
-                      onClick={() => setColorsMarketId((current) => current === m.id ? null : m.id)}
-                      aria-expanded={colorsMarketId === m.id}
-                      aria-label={`Colors for ${m.label}`}
-                      className="shrink-0 rounded-md border border-white/15 px-2 py-1 text-xs text-white/70 hover:bg-white/10"
+                      type={editingMarketId === m.id ? "submit" : "button"}
+                      form={editingMarketId === m.id ? `market-editor-${m.id}` : undefined}
+                      onClick={editingMarketId === m.id ? undefined : (event) => { event.preventDefault(); setEditingMarketId(m.id); setSaveNotice(null); }}
+                      disabled={savingMarketId !== null}
+                      aria-expanded={editingMarketId === m.id}
+                      aria-label={editingMarketId === m.id ? `Save ${m.label}` : `Edit ${m.label}`}
+                      className="shrink-0 rounded-md border border-white/15 px-2 py-1 text-xs text-white/70 hover:bg-white/10 disabled:opacity-50"
                     >
-                      {colorsMarketId === m.id ? "Done" : "Colors"}
+                      {savingMarketId === m.id ? "Saving..." : editingMarketId === m.id ? "Save" : "Edit"}
                     </button>
                     <button
                       onClick={() => handleRemove(m.id)}
+                      disabled={savingMarketId !== null}
+                      aria-label={`Remove ${m.label}`}
                       className="text-red-400/70 hover:text-red-400 text-xs shrink-0 transition"
                     >
                       Remove
                     </button>
                   </div>
-                  {colorsMarketId === m.id && (
-                    <OutcomeColorsEditor
+                  {editingMarketId === m.id && (
+                    <MarketEditor
                       key={m.id}
                       market={m}
                       userId={userId}
-                      onColorsSaved={onMarketColorsChange}
+                      onSettingsSaved={onMarketSettingsChange}
+                      onSavingChange={(saving) => setSavingMarketId(saving ? m.id : null)}
+                      onSaved={(message) => {
+                        setEditingMarketId(null);
+                        setSaveNotice(message ? { marketId: m.id, message } : null);
+                      }}
                     />
+                  )}
+                  {editingMarketId !== m.id && saveNotice?.marketId === m.id && (
+                    <p role="status" className="mt-2 text-xs leading-relaxed text-white/60">{saveNotice.message}</p>
                   )}
                 </li>
               ))}

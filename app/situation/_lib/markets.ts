@@ -55,6 +55,23 @@ export async function saveMarketOutcomeColors(
   return savedLocally ? "local" : null;
 }
 
+export async function saveMarketLabel(userId: string, marketId: string, label: string): Promise<boolean> {
+  const trimmed = label.trim();
+  if (!trimmed) return false;
+  try {
+    const { data, error } = await supabase
+      .from("situation_markets")
+      .update({ label: trimmed })
+      .eq("id", marketId)
+      .eq("user_id", userId)
+      .select("id")
+      .maybeSingle();
+    return !error && !!data;
+  } catch {
+    return false;
+  }
+}
+
 export async function addSavedMarket(
   userId: string,
   label: string,

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { SavedView } from "./types";
+import { HOLD_PREVIEW_EVENT } from "./holdPreview";
 
 /* ── Thresholds ──────────────────────────────────────────── */
 const WHEEL_THRESHOLD = 150; // accumulated deltaX to trigger switch
@@ -199,11 +200,14 @@ export function useViewSwipe({
         doSwitch(dx < 0 ? "next" : "prev");
       }
     }
+    const cancelForPreview = () => { touchCancelled.current = true; };
 
+    el.addEventListener(HOLD_PREVIEW_EVENT, cancelForPreview);
     el.addEventListener("touchstart", handleTouchStart, { passive: true });
     el.addEventListener("touchmove", handleTouchMove, { passive: true });
     el.addEventListener("touchend", handleTouchEnd, { passive: true });
     return () => {
+      el.removeEventListener(HOLD_PREVIEW_EVENT, cancelForPreview);
       el.removeEventListener("touchstart", handleTouchStart);
       el.removeEventListener("touchmove", handleTouchMove);
       el.removeEventListener("touchend", handleTouchEnd);

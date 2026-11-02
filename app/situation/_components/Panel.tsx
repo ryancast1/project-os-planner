@@ -34,15 +34,18 @@ import headingStyles from "./MarketHeading.module.css";
 import MoverReporter from "./MoverReporter";
 import { describeMover, isMoverEligibleMarket, type MarketMover, type MoverCache, type MoverRange } from "../_lib/movers";
 import { getHistoricalPrices } from "../_lib/chartHover";
+import { useHoldPreview } from "../_lib/useHoldPreview";
+import previewStyles from "./HoldPreview.module.css";
 
 function Panel({
   slotIndex,
   marketId,
   savedMarkets,
   timeRange,
-  compact,
-  mobileLandscape = false,
-  tvMode = false,
+  compact: requestedCompact,
+  mobileLandscape: requestedLandscape = false,
+  tvMode: requestedTVMode = false,
+  holdToExpand = false,
   moverRange = null,
   mover,
   onMoverChange,
@@ -56,12 +59,17 @@ function Panel({
   compact: boolean;
   mobileLandscape?: boolean;
   tvMode?: boolean;
+  holdToExpand?: boolean;
   moverRange?: MoverRange | null;
   mover?: MarketMover;
   onMoverChange?: (slot: number, mover: MarketMover | null) => void;
   onChangeMarket: (slotIndex: number, marketId: string | null) => void;
   onManageMarkets: () => void;
 }) {
+  const preview = useHoldPreview(holdToExpand && marketId !== null, `${marketId}:${timeRange}`);
+  const compact = !preview.active && requestedCompact;
+  const mobileLandscape = !preview.active && requestedLandscape;
+  const tvMode = !preview.active && requestedTVMode;
   function trimHistoryToRange(history: Outcome["history"], startTs: number) {
     if (startTs <= 0) return history;
     return history.filter((pt) => pt.t >= startTs);
@@ -266,7 +274,7 @@ function Panel({
 
   // Chart outcomes for polymarket
   const isBinary = market?.kind === "binary";
-  const visibleMultiOutcomes = getVisiblePolymarketOutcomes(outcomes, compact);
+  const visibleMultiOutcomes = getVisiblePolymarketOutcomes(outcomes, preview.active || compact);
   const displayOutcomes = isBinary ? outcomes : visibleMultiOutcomes;
   const chartOutcomes = isBinary
     ? outcomes.slice(0, 1)
@@ -297,7 +305,14 @@ function Panel({
 
   return (
     <div
-      className={`flex flex-col h-full min-w-0 min-h-0 rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden ${tvMode ? "tv-market-panel" : ""} ${highConfidence ? "market-high-confidence" : ""} ${tvMode && mover ? "tv-market-mover" : ""}`}
+      ref={preview.elementRef}
+      onPointerDownCapture={preview.onPointerDownCapture}
+      onPointerMoveCapture={preview.onPointerMoveCapture}
+      onLostPointerCapture={preview.onLostPointerCapture}
+      onClickCapture={preview.onClickCapture}
+      onContextMenu={preview.onContextMenu}
+      data-hold-preview={preview.active ? "true" : undefined}
+      className={`flex flex-col h-full min-w-0 min-h-0 rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden ${tvMode ? "tv-market-panel" : ""} ${highConfidence ? "market-high-confidence" : ""} ${tvMode && mover ? "tv-market-mover" : ""} ${holdToExpand ? previewStyles.holdable : ""} ${preview.active ? previewStyles.preview : ""}`}
       style={{ position: tvMode ? "relative" : undefined, "--market-accent": highConfidence?.color } as CSSProperties}
       data-high-confidence-outcome={highConfidence?.outcome.tokenId}
       data-mover-market={tvMode && mover ? marketId : undefined}
@@ -320,7 +335,7 @@ function Panel({
         />
       )}
       {tvMode && mover && <span id={`tv-mover-${slotIndex}`} className="sr-only">{describeMover(mover)}</span>}
-      {tvMode && moverRange && marketId && !loading && !error && onMoverChange && (isBuiltin || (market && isMoverEligibleMarket(market, outcomes))) && (
+      {requestedTVMode && moverRange && marketId && !loading && !error && onMoverChange && (isBuiltin || (market && isMoverEligibleMarket(market, outcomes))) && (
         <MoverReporter
           key={`${marketId}:${moverRange}`}
           slotIndex={slotIndex}
@@ -336,7 +351,12 @@ function Panel({
         />
       )}
       {/* Landscape mobile: read-only title | Normal: interactive dropdown */}
-      {tvMode ? (
+      {preview.active ? (
+        <div className={previewStyles.heading}>
+          <p>{panelTitle}</p>
+          <span>Release to return</span>
+        </div>
+      ) : tvMode ? (
         <div className="tv-panel-heading">
           <span className="tv-slot-number">{String(slotIndex + 1).padStart(2, "0")}</span>
           <div className={headingStyles.picker} data-market-heading>
@@ -461,7 +481,7 @@ function Panel({
         {!isBuiltin && !loading && !error && market && outcomes.length > 0 && (
           <>
             <OddsDisplay
-              market={market}
+              market={{ ...market, title: savedMarket?.label || market.title }}
               outcomes={outcomes}
               visibleOutcomes={displayOutcomes}
               colors={outcomeColors}
@@ -477,7 +497,7 @@ function Panel({
                 colors={outcomeColors}
                 startTs={getStartTs(timeRange)}
                 valueFormat="percent"
-                showLegend={!compact}
+                showLegend={!compact && !preview.active}
                 mobileLandscape={mobileLandscape}
                 tvMode={tvMode}
                 onHoverTimeChange={handleHoverTimeChange}
