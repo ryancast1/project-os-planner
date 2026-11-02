@@ -5,6 +5,7 @@ import { fetchPriceHistory, fetchStockData } from "../_lib/api";
 import { BUILTIN_MARKETS, US_EQUITY_BUILTIN_IDS } from "../_lib/constants";
 import { combineMoverHistories, getMissingMoverTokens, getMoverBaseline, getMoverWindow, getPolymarketMover, getStockMover, hasStockMoverCoverage, mergeMoverHistory, MOVER_REFRESH_MS, type MarketMover, type MoverCache, type MoverRange } from "../_lib/movers";
 import type { MarketInfo, Outcome, OutcomeColors, StockSnapshot } from "../_lib/types";
+import { subscribeToVisiblePolling } from "../_lib/visiblePolling";
 
 export default function MoverReporter({ slotIndex, marketId, range, market, outcomes, chartOutcomes, stockSnapshot, cache, overrides, onChange }: {
   slotIndex: number;
@@ -54,7 +55,7 @@ export default function MoverReporter({ slotIndex, marketId, range, market, outc
     const marketCache = cache.current;
 
     async function refresh() {
-      if (pending) return;
+      if (pending || document.hidden || cancelled) return;
       pending = true;
       try {
         const now = Math.floor(Date.now() / 1000);
@@ -90,10 +91,10 @@ export default function MoverReporter({ slotIndex, marketId, range, market, outc
     }
 
     void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, MOVER_REFRESH_MS);
+    const stop = subscribeToVisiblePolling(refresh, MOVER_REFRESH_MS);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      stop();
       onChange(slotIndex, null);
     };
   }, [marketId, range, tokens, builtin, slotIndex, onChange, cache]);

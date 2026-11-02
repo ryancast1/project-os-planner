@@ -133,6 +133,7 @@ export function getPolymarketQuote(book: {
   function prices(levels: { price?: unknown; size?: unknown }[] | undefined): number[] {
     if (!Array.isArray(levels)) return [];
     return levels.flatMap((level) => {
+      if (!level || typeof level !== "object") return [];
       const price = parseProbability(level.price);
       const size = Number(level.size);
       return price != null && Number.isFinite(size) && size > 0 ? [price] : [];

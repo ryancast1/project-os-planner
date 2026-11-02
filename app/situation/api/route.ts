@@ -1,8 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPolymarketQuote } from "../_lib/polymarket";
+import { loadBatchQuotes, parseBatchTokenIds } from "../_lib/batchQuotes";
 
 const GAMMA_API = "https://gamma-api.polymarket.com";
 const CLOB_API = "https://clob.polymarket.com";
+
+export async function POST(req: NextRequest) {
+  if (req.nextUrl.searchParams.get("endpoint") !== "prices") {
+    return NextResponse.json({ error: "Unknown endpoint" }, { status: 400 });
+  }
+  try {
+    const body = await req.text();
+    if (body.length > 70_000) return NextResponse.json({ error: "Batch too large" }, { status: 413 });
+    const tokens = parseBatchTokenIds(JSON.parse(body));
+    if (!tokens) return NextResponse.json({ error: "Expected 1-500 valid token IDs" }, { status: 400 });
+    return NextResponse.json({ quotes: await loadBatchQuotes(tokens) }, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    return NextResponse.json({ error: "Invalid batch request" }, { status: 400 });
+  }
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;

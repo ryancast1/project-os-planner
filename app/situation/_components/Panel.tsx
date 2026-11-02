@@ -21,7 +21,8 @@ import {
   getMarketHoursForTs,
   getTradingSession,
 } from "../_lib/constants";
-import { fetchEvent, fetchPrice, fetchPriceHistory, fetchStockData } from "../_lib/api";
+import { chartHistory, fetchEvent, fetchBatchedPrice, fetchStockData } from "../_lib/api";
+import { subscribeToVisiblePolling } from "../_lib/visiblePolling";
 import { getVisiblePolymarketOutcomes } from "../_lib/outcomes";
 import { getCurrentPolymarketPrice, hasFreshPolymarketPrice } from "../_lib/polymarket";
 import { getOutcomeColors } from "../_lib/colors";
@@ -70,11 +71,6 @@ function Panel({
   const compact = !preview.active && requestedCompact;
   const mobileLandscape = !preview.active && requestedLandscape;
   const tvMode = !preview.active && requestedTVMode;
-  function trimHistoryToRange(history: Outcome["history"], startTs: number) {
-    if (startTs <= 0) return history;
-    return history.filter((pt) => pt.t >= startTs);
-  }
-
   // -- Polymarket state --
   const [market, setMarket] = useState<MarketInfo | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
@@ -92,63 +88,41 @@ function Panel({
   const hoverTimestamp = hoveredTime?.marketId === marketId && hoveredTime?.range === timeRange ? hoveredTime.timestamp : null;
 
   const outcomesRef = useRef<Outcome[]>([]);
-  const stockRef = useRef<StockSnapshot | null>(null);
   const moverCache = useRef<MoverCache>({ histories: {} });
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timeRangeRef = useRef<TimeRangeLabel>(timeRange);
+  const requestGeneration = useRef(0);
+  const loadedMarketId = useRef<string | null>(null);
 
   const isBuiltin = marketId?.startsWith("builtin:") ?? false;
   const savedMarket = savedMarkets.find((saved) => saved.id === marketId);
   const savedSlug = savedMarket?.slug;
 
-  // Keep timeRangeRef in sync
-  useEffect(() => {
-    timeRangeRef.current = timeRange;
-  }, [timeRange]);
-
   // ---- POLYMARKET refresh ----
   const refreshPolyData = useCallback(
-    async (current: Outcome[], range: TimeRangeLabel) => {
+    async (current: Outcome[], range: TimeRangeLabel, generation: number) => {
       const now = Math.floor(Date.now() / 1000);
       const startTs = getStartTs(range);
       const fidelity = getFidelity(range);
       const updated = await Promise.all(
         current.map(async (o) => {
           const [price, history] = await Promise.all([
-            fetchPrice(o.tokenId),
-            fetchPriceHistory(o.tokenId, startTs, now, fidelity),
+            fetchBatchedPrice(o.tokenId),
+            chartHistory.get(o.tokenId, range, startTs, now, fidelity),
           ]);
 
-          let nextHistory = history;
-
-          // Some Polymarket range queries intermittently return empty history.
-          // When that happens, reuse prior data only if it already covers the
-          // requested window; otherwise fall back to all history and trim it.
-          if (nextHistory.length === 0) {
-            const currentCoversRange =
-              o.history.length > 0 &&
-              (startTs <= 0 || o.history[0].t <= startTs);
-
-            if (currentCoversRange) {
-              nextHistory = trimHistoryToRange(o.history, startTs);
-            } else {
-              const allHistory = await fetchPriceHistory(o.tokenId, 0, now, fidelity);
-              nextHistory =
-                allHistory.length > 0
-                  ? trimHistoryToRange(allHistory, startTs)
-                  : o.history;
-            }
-          }
-
+          const receivedAt = Math.floor(Date.now() / 1000);
+          const nextHistory = price && receivedAt >= startTs
+            ? chartHistory.sample(o.tokenId, range, history, { t: receivedAt, p: price.price })
+            : history;
           return {
             ...o,
-            currentPrice: getCurrentPolymarketPrice(price, nextHistory, o.currentPrice, now),
+            currentPrice: getCurrentPolymarketPrice(price, nextHistory, o.currentPrice, receivedAt),
             normalizationSafe: price?.normalizationSafe === true,
-            priceIsFresh: hasFreshPolymarketPrice(price, nextHistory, now),
+            priceIsFresh: hasFreshPolymarketPrice(price, nextHistory, receivedAt),
             history: nextHistory,
           };
         })
       );
+      if (generation !== requestGeneration.current) return;
       outcomesRef.current = updated;
       setOutcomes(updated);
     },
@@ -161,6 +135,7 @@ function Panel({
       ticker: string,
       label: string,
       range: TimeRangeLabel,
+      generation: number,
       displayType?: "price" | "yield",
       includePrePost?: boolean
     ) => {
@@ -168,109 +143,71 @@ function Panel({
       const startTs =
         range === "1H" || range === "4H" || range === "Election Night" ? getStartTs(range) : undefined;
       const snap = await fetchStockData(ticker, yahooRange, yahooInterval, startTs, includePrePost, range === "Election Night");
-      if (snap) {
+      if (snap && generation === requestGeneration.current) {
         const withLabel: StockSnapshot = { ...snap, label, displayType };
-        stockRef.current = withLabel;
         setStockSnapshot(withLabel);
       }
     },
     []
   );
 
-  // ---- Load market when marketId changes ----
+  // Late requests may fill the shared cache, but cannot restore an old
+  // market or time window after the user has switched away.
   useEffect(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    const generation = ++requestGeneration.current;
 
     // Reset state
     setMarket(null);
     setOutcomes([]);
     outcomesRef.current = [];
     setStockSnapshot(null);
-    stockRef.current = null;
-    moverCache.current = { histories: {} };
+    if (loadedMarketId.current !== marketId) {
+      moverCache.current = { histories: {} };
+      loadedMarketId.current = marketId;
+    }
     setError(null);
     setHoveredTime(null);
 
-    if (!marketId) {
-      setLoading(false);
-      return;
-    }
-
-    // ---- Built-in stock ----
-    if (isBuiltin) {
-      const builtin = BUILTIN_MARKETS.find((m) => m.id === marketId);
-      if (!builtin) { setLoading(false); return; }
-
-      let cancelled = false;
-      setLoading(true);
-
-      const prepost = !US_EQUITY_BUILTIN_IDS.has(builtin.id);
-      refreshStockData(builtin.ticker, builtin.label, timeRangeRef.current, builtin.displayType, prepost).then(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-      return () => { cancelled = true; };
-    }
-
-    // ---- Polymarket ----
-    if (!savedSlug) { setLoading(false); return; }
-    const slug = savedSlug;
-
-    let cancelled = false;
-
     async function init() {
-      setLoading(true);
-      const info = await fetchEvent(slug);
-      if (cancelled) return;
-      if (!info) {
-        setError("Could not load market");
-        setLoading(false);
-        return;
+      setLoading(!!marketId);
+      try {
+        if (isBuiltin) {
+          const builtin = BUILTIN_MARKETS.find((option) => option.id === marketId);
+          if (builtin) await refreshStockData(builtin.ticker, builtin.label, timeRange, generation,
+            builtin.displayType, !US_EQUITY_BUILTIN_IDS.has(builtin.id));
+        } else if (marketId && savedSlug) {
+          const info = await fetchEvent(savedSlug);
+          if (generation !== requestGeneration.current) return;
+          if (!info) { setError("Could not load market"); return; }
+          setMarket(info);
+          await refreshPolyData(info.outcomes, timeRange, generation);
+        }
+      } catch {
+        if (generation === requestGeneration.current) setError("Could not load market data");
+      } finally {
+        if (generation === requestGeneration.current) setLoading(false);
       }
-      setMarket(info);
-      await refreshPolyData(info.outcomes, timeRangeRef.current);
-      if (!cancelled) setLoading(false);
     }
-
-    init();
-    return () => { cancelled = true; };
-  }, [marketId, savedSlug, refreshPolyData, refreshStockData, isBuiltin]);
-
-  // ---- Re-fetch when time range changes ----
-  useEffect(() => {
-    if (isBuiltin) {
-      if (!stockRef.current) return;
-      const builtin = BUILTIN_MARKETS.find((m) => m.id === marketId);
-      if (builtin) refreshStockData(builtin.ticker, builtin.label, timeRange, builtin.displayType, !US_EQUITY_BUILTIN_IDS.has(builtin.id));
-    } else {
-      if (outcomesRef.current.length === 0) return;
-      refreshPolyData(outcomesRef.current, timeRange);
-    }
-  }, [timeRange, isBuiltin, marketId, refreshPolyData, refreshStockData]);
+    void init();
+    return () => { requestGeneration.current = generation + 1; };
+  }, [marketId, savedSlug, timeRange, refreshPolyData, refreshStockData, isBuiltin]);
 
   // ---- Polling ----
+  const hasData = isBuiltin ? !!stockSnapshot : outcomes.length > 0;
   useEffect(() => {
-    const hasData = isBuiltin ? !!stockSnapshot : outcomes.length > 0;
-    if (!hasData) return;
-
+    if (loading || !hasData) return;
     const ms = isBuiltin ? STOCK_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS;
 
-    intervalRef.current = setInterval(() => {
+    return subscribeToVisiblePolling(async () => {
+      const generation = requestGeneration.current;
       if (isBuiltin) {
         const builtin = BUILTIN_MARKETS.find((m) => m.id === marketId);
-        if (builtin) refreshStockData(builtin.ticker, builtin.label, timeRangeRef.current, builtin.displayType, !US_EQUITY_BUILTIN_IDS.has(builtin.id));
+        if (builtin) await refreshStockData(builtin.ticker, builtin.label, timeRange, generation, builtin.displayType, !US_EQUITY_BUILTIN_IDS.has(builtin.id));
       } else {
-        refreshPolyData(outcomesRef.current, timeRangeRef.current);
+        await refreshPolyData(outcomesRef.current, timeRange, generation);
       }
     }, ms);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [isBuiltin ? !!stockSnapshot : outcomes.length > 0, isBuiltin, marketId, refreshPolyData, refreshStockData]);
+  }, [loading, hasData, isBuiltin, marketId, timeRange, refreshPolyData, refreshStockData]);
 
   // Chart outcomes for polymarket
   const isBinary = market?.kind === "binary";
