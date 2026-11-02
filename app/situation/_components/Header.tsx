@@ -6,6 +6,7 @@ import type { MoverRange } from "../_lib/movers";
 import LayoutControls from "./LayoutControls";
 import TimeRangeControls from "./TimeRangeControls";
 import MoversControls from "./MoversControls";
+import NeedleToggle from "./NeedleToggle";
 import ViewsBar from "./ViewsBar";
 import styles from "./Toolbar.module.css";
 
@@ -26,6 +27,8 @@ export default function Header({
   moverCount,
   onMoverRangeChange,
   mobilePortrait,
+  needleMode,
+  onToggleNeedle,
 }: {
   layout: LayoutMode;
   timeRange: TimeRangeLabel;
@@ -43,6 +46,8 @@ export default function Header({
   moverCount: number;
   onMoverRangeChange: (range: MoverRange | null) => void;
   mobilePortrait: boolean;
+  needleMode: boolean;
+  onToggleNeedle: () => void;
 }) {
   return (
     <header className={`${styles.toolbar} ${mobilePortrait ? styles.portrait : ""}`} data-no-view-swipe>
@@ -67,6 +72,7 @@ export default function Header({
           onDeleteView={onDeleteView}
         />
         <button className={`${styles.button} ${styles.action}`} onClick={onManage}>Manage</button>
+        {layout === "7x4" && !mobilePortrait && <NeedleToggle enabled={needleMode} onToggle={onToggleNeedle} />}
       </div>
     </header>
   );

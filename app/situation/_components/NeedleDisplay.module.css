@@ -1,0 +1,40 @@
+.needle {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  padding: 0 2cqw 1cqw;
+  color: #666c70;
+}
+.dial { display: block; width: 100%; flex: 1; min-height: 0; max-height: 65cqw; overflow: visible; }
+.bandLabel { fill: #7d878a; font-family: inherit; font-size: 9px; font-weight: 500; letter-spacing: -0.15px; }
+.hand { transform-origin: 180px 173px; transition: transform 650ms cubic-bezier(0.2, 0.7, 0.3, 1); }
+.sides { display: flex; justify-content: space-between; gap: 1em; margin-top: 1cqw; font-size: clamp(8px, 3cqw, 16px); line-height: 1.15; font-weight: 600; }
+.sides span { min-width: 0; max-width: 46%; overflow: hidden; text-overflow: clip; white-space: nowrap; }
+.sides span:last-child { text-align: right; }
+.readout { flex-shrink: 0; min-width: 0; text-align: center; padding-top: 2cqw; }
+.headline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: clamp(13px, 6cqw, 32px); font-weight: 700; line-height: 1.15; }
+.detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1cqw; font-size: clamp(10px, 4.2cqw, 23px); line-height: 1.15; }
+.context { margin-top: 1cqw; color: #92999c; font-size: clamp(7px, 2.7cqw, 14px); line-height: 1.15; }
+
+.panel.panel { background: #fff; border-color: #dfe2e3; }
+.panel.panel [data-market-heading] p { color: #252a2d; }
+.panel [data-market-heading] > span { border-color: #8b9296; }
+.panel [data-market-heading]:focus-within { outline-color: #6b7280; }
+.panel :global(.tv-slot-number) { color: #9aa1a4; }
+.panel[data-high-confidence-outcome] { box-shadow: inset 0 3px 0 var(--market-accent); }
+.status { color: #7b8387; }
+
+.distributionHeading { flex-shrink: 0; text-align: center; margin: 1.2cqw 0; color: #626a6f; font-size: clamp(10px, 3.8cqw, 20px); line-height: 1.15; font-weight: 600; }
+.sliceValue { font-size: 14px; font-weight: 700; font-family: inherit; }
+.multiLabel { fill: #939a9d; font-size: 9px; letter-spacing: 1px; font-family: inherit; }
+.distributionLegend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1cqw 2cqw; flex-shrink: 0; min-width: 0; font-size: clamp(8px, 3.3cqw, 17px); }
+.legendItem { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: center; gap: 0.8cqw; min-width: 0; line-height: 1.2; }
+.legendName { min-width: 0; overflow: hidden; text-overflow: clip; white-space: nowrap; font-weight: 600; }
+.legendValue { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.distribution .context { flex-shrink: 0; text-align: center; margin-top: 1.5cqw; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hand { transition: none; }
+}

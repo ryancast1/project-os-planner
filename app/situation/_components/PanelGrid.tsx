@@ -17,6 +17,7 @@ export default function PanelGrid({
   mobileLandscape = false,
   moverRange = null,
   onMoverCountChange,
+  needleMode = false,
 }: {
   layout: LayoutMode;
   panels: PanelSlot[];
@@ -28,6 +29,7 @@ export default function PanelGrid({
   mobileLandscape?: boolean;
   moverRange?: MoverRange | null;
   onMoverCountChange?: (count: number) => void;
+  needleMode?: boolean;
 }) {
   const config = LAYOUT_CONFIGS[layout];
   const compact = config.panelCount >= 4;
@@ -79,6 +81,7 @@ export default function PanelGrid({
             timeRange={timeRange}
             compact
             tvMode
+            needleMode={needleMode}
             holdToExpand={mobileLandscape}
             moverRange={moverRange}
             mover={topMovers.find((mover) => mover.marketId === panels[i])}

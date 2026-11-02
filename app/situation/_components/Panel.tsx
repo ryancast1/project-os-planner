@@ -38,6 +38,10 @@ import { getHistoricalPrices } from "../_lib/chartHover";
 import { useHoldPreview } from "../_lib/useHoldPreview";
 import previewStyles from "./HoldPreview.module.css";
 import panelStyles from "./Panel.module.css";
+import NeedleDisplay from "./NeedleDisplay";
+import needleStyles from "./NeedleDisplay.module.css";
+import { getNeedleModel } from "../_lib/needle";
+import { getNeedleDistribution, isNeedleDistributionMarket } from "../_lib/needleDistribution";
 
 function Panel({
   slotIndex,
@@ -48,6 +52,7 @@ function Panel({
   mobileLandscape: requestedLandscape = false,
   tvMode: requestedTVMode = false,
   holdToExpand = false,
+  needleMode = false,
   moverRange = null,
   mover,
   onMoverChange,
@@ -62,6 +67,7 @@ function Panel({
   mobileLandscape?: boolean;
   tvMode?: boolean;
   holdToExpand?: boolean;
+  needleMode?: boolean;
   moverRange?: MoverRange | null;
   mover?: MarketMover;
   onMoverChange?: (slot: number, mover: MarketMover | null) => void;
@@ -72,6 +78,7 @@ function Panel({
   const compact = !preview.active && requestedCompact;
   const mobileLandscape = !preview.active && requestedLandscape;
   const tvMode = !preview.active && requestedTVMode;
+  const needleActive = needleMode && tvMode;
   // -- Polymarket state --
   const [market, setMarket] = useState<MarketInfo | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
@@ -226,6 +233,8 @@ function Panel({
   const highConfidence = !isBuiltin && !loading && !error
     ? getHighConfidenceOutcome(market, outcomes, chartOutcomes, savedMarket?.outcome_colors)
     : null;
+  const needleDistribution = needleActive && market ? getNeedleDistribution(market, outcomes, savedMarket?.outcome_colors, savedMarket?.label) : null;
+  const needleModel = needleActive && market && !isNeedleDistributionMarket(market, outcomes) ? getNeedleModel(market, outcomes, savedMarket?.outcome_colors) : null;
 
   // Stock outcome shaped for OddsChart (reuses chart component)
   const stockChartOutcomes: Outcome[] = stockSnapshot
@@ -254,7 +263,7 @@ function Panel({
       onContextMenu={preview.onContextMenu}
       data-market-panel
       data-hold-preview={preview.active ? "true" : undefined}
-      className={`flex flex-col h-full min-w-0 min-h-0 border border-white/10 bg-white/[0.02] overflow-hidden ${tvMode ? "tv-market-panel" : preview.active ? "" : panelStyles.panel} ${highConfidence ? "market-high-confidence" : ""} ${tvMode && mover ? "tv-market-mover" : ""} ${holdToExpand ? previewStyles.holdable : ""} ${preview.active ? previewStyles.preview : ""}`}
+      className={`flex flex-col h-full min-w-0 min-h-0 border border-white/10 bg-white/[0.02] overflow-hidden ${tvMode ? "tv-market-panel" : preview.active ? "" : panelStyles.panel} ${highConfidence ? "market-high-confidence" : ""} ${tvMode && mover ? "tv-market-mover" : ""} ${holdToExpand ? previewStyles.holdable : ""} ${preview.active ? previewStyles.preview : ""} ${needleActive ? needleStyles.panel : ""}`}
       style={{ position: tvMode ? "relative" : undefined, "--market-accent": highConfidence?.color } as CSSProperties}
       data-high-confidence-outcome={highConfidence?.outcome.tokenId}
       data-mover-market={tvMode && mover ? marketId : undefined}
@@ -331,7 +340,8 @@ function Panel({
 
       {/* Content */}
       <div className="flex-1 min-h-0 flex flex-col px-2 pb-2">
-        {!marketId && (
+        {!marketId && needleActive && <NeedleDisplay model={null} fallbackLabel="Select a market" fallbackValue="Choose a market using the title above" fallbackContext="" />}
+        {!marketId && !needleActive && (
           <div className="flex-1 flex flex-col items-center justify-center text-white/30 text-sm gap-2">
             <p>{tvMode ? "Select a market above" : "No market selected"}</p>
             {savedMarkets.length === 0 && (
@@ -347,7 +357,7 @@ function Panel({
 
         {marketId && loading && (
           <div className="flex-1 flex items-center justify-center">
-            <p className="text-white/40 text-sm">Loading...</p>
+            <p className={`text-white/40 text-sm ${needleActive ? needleStyles.status : ""}`}>Loading...</p>
           </div>
         )}
 
@@ -399,6 +409,11 @@ function Panel({
           // Override previousClose with period start so StockDisplay shows period change
           const displaySnapshot = { ...stockSnapshot, previousClose: periodStart };
 
+          if (needleActive) return <NeedleDisplay model={null} fallbackLabel="Price market"
+            fallbackValue={stockSnapshot.displayType === "yield" ? `${stockSnapshot.currentPrice.toFixed(2)}% yield`
+              : stockSnapshot.currentPrice.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })}
+            fallbackContext="Price, not win probability" />;
+
           return (
             <>
               <StockDisplay snapshot={displaySnapshot} compact={compact} mobileLandscape={mobileLandscape} tvMode={tvMode} showTitle={false} hoveredPrice={hoveredStockPrice} />
@@ -422,7 +437,8 @@ function Panel({
         })()}
 
         {/* Polymarket panel */}
-        {!isBuiltin && !loading && !error && market && outcomes.length > 0 && (
+        {!isBuiltin && !loading && !error && market && outcomes.length > 0 && needleActive && <NeedleDisplay model={needleModel} distribution={needleDistribution} />}
+        {!isBuiltin && !loading && !error && market && outcomes.length > 0 && !needleActive && (
           <>
             <OddsDisplay
               market={{ ...market, title: savedMarket?.label || market.title }}

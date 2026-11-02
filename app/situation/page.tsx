@@ -19,6 +19,7 @@ import ManageMarketsModal from "./_components/ManageMarketsModal";
 import { useViewSwipe } from "./_lib/useViewSwipe";
 import { ELECTION_NIGHT_LABEL, isElectionNightAvailable } from "./_lib/electionNight";
 import type { MoverRange } from "./_lib/movers";
+import { loadNeedleMode, saveNeedleMode } from "./_lib/needle";
 import "./tv.css";
 
 export default function SituationDashboard() {
@@ -34,6 +35,7 @@ export default function SituationDashboard() {
   const [timeRange, setTimeRange] = useState<TimeRangeLabel>("1D");
   const [moverRange, setMoverRange] = useState<MoverRange | null>(null);
   const [moverCount, setMoverCount] = useState(0);
+  const [needleMode, setNeedleMode] = useState(false);
 
   // Views
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
@@ -73,6 +75,7 @@ export default function SituationDashboard() {
     setTimeRange(local.timeRange);
     saveLayout(local.layout);
     saveTimeRange(local.timeRange);
+    setNeedleMode(loadNeedleMode());
 
     (async () => {
       const uid = await getUserId();
@@ -316,6 +319,12 @@ export default function SituationDashboard() {
         moverCount={moverCount}
         onMoverRangeChange={setMoverRange}
         mobilePortrait={isMobilePortrait}
+        needleMode={needleMode}
+        onToggleNeedle={() => {
+          const enabled = !needleMode;
+          setNeedleMode(enabled);
+          saveNeedleMode(enabled);
+        }}
       />
 
       {viewError && <p role="alert" className="shrink-0 text-sm text-amber-300">{viewError}</p>}
@@ -331,6 +340,7 @@ export default function SituationDashboard() {
         mobileLandscape={isMobileLandscape}
         moverRange={layout === "7x4" ? moverRange : null}
         onMoverCountChange={setMoverCount}
+        needleMode={needleMode}
       />
 
       <ManageMarketsModal
