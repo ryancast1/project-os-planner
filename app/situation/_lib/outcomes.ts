@@ -41,8 +41,20 @@ export function formatPolymarketPercentage(value: number | null | undefined): st
 
 export function getVisiblePolymarketOutcomes(
   outcomes: Outcome[],
-  compact: boolean
+  compact: boolean,
+  context?: { title?: string; label?: string; outcomeNames?: readonly string[] },
 ): Outcome[] {
+  const isMargin = [context?.title, context?.label].some((title) => /\bmargin\b/i.test(title ?? ""))
+    && Math.max(outcomes.length, context?.outcomeNames?.length ?? 0) > 2;
+  if (isMargin) {
+    const ranked = outcomes.filter((outcome) => isProbability(outcome.currentPrice))
+      .sort((a, b) => b.currentPrice - a.currentPrice);
+    const qualifying = ranked.filter((outcome) => outcome.currentPrice >= 0.1);
+    // Select the strongest choices first, then order only their display labels.
+    const visible = qualifying.length > 0 ? qualifying.slice(0, 4) : ranked.slice(0, 1);
+    return visible.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base", numeric: true }));
+  }
+
   if (!compact) return outcomes.slice(0, 4);
 
   const visible = outcomes.filter((outcome) => isProbability(outcome.currentPrice) && outcome.currentPrice >= 0.05);

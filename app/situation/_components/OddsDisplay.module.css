@@ -1,0 +1,46 @@
+.dense.dense {
+  display: grid;
+  grid-auto-flow: row;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65cqw;
+  padding: 4px 0 0;
+  min-width: 0;
+  max-height: 30cqw;
+  overflow-y: auto;
+}
+
+.dense .chip {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0.6cqw 0.9cqw;
+}
+
+.dense .row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 0.75cqw;
+  min-width: 0;
+}
+
+.dense .row .name {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+  letter-spacing: 0;
+  font-size: clamp(9px, 3.8cqw, 20px);
+  line-height: 1.25;
+}
+
+.dense .row .value {
+  justify-self: end;
+  margin: 0;
+  white-space: nowrap;
+  font-size: clamp(11px, 5cqw, 28px);
+  line-height: 1;
+}

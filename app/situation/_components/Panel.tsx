@@ -274,7 +274,11 @@ function Panel({
 
   // Chart outcomes for polymarket
   const isBinary = market?.kind === "binary";
-  const visibleMultiOutcomes = getVisiblePolymarketOutcomes(outcomes, preview.active || compact);
+  const visibleMultiOutcomes = getVisiblePolymarketOutcomes(outcomes, preview.active || compact, {
+    title: market?.title,
+    label: savedMarket?.label,
+    outcomeNames: market?.outcomeNames,
+  });
   const displayOutcomes = isBinary ? outcomes : visibleMultiOutcomes;
   const chartOutcomes = isBinary
     ? outcomes.slice(0, 1)

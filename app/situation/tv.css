@@ -52,13 +52,14 @@
 .tv-value-caption { font-size: clamp(10px, 4.2cqw, 24px); }
 .tv-outcomes {
   display: grid;
+  grid-auto-flow: row;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1cqw;
+  gap: 0.65cqw;
+  padding-inline: 0;
   max-height: 30cqw;
   overflow-y: auto;
 }
-.tv-outcomes > div { padding: 0.6cqw 1.5cqw; }
+.tv-outcomes > div { padding: 0.6cqw 0.9cqw; }
 .tv-outcomes > div > div { min-width: 0; }
 .tv-outcomes span { font-size: clamp(9px, 3.8cqw, 20px); }
 .tv-outcomes span:last-child { margin-left: auto; flex-shrink: 0; font-size: clamp(11px, 5cqw, 28px); }
-.tv-outcomes span:first-of-type { max-width: 26cqw; }

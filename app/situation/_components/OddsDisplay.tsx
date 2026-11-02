@@ -3,6 +3,8 @@
 import type { MarketInfo, Outcome } from "../_lib/types";
 import { COLORS } from "../_lib/constants";
 import { formatHistoricalPercentage } from "../_lib/chartHover";
+import { getCompactOutcomeName, getTVOutcomeName } from "../_lib/outcomeLabels";
+import styles from "./OddsDisplay.module.css";
 import {
   formatPolymarketPercentage,
   getPolymarketPercentages,
@@ -84,7 +86,8 @@ export default function OddsDisplay({
     );
   }
 
-  const selectedOutcomes = visibleOutcomes ?? getVisiblePolymarketOutcomes(outcomes, compact);
+  const selectedOutcomes = visibleOutcomes ?? getVisiblePolymarketOutcomes(outcomes, compact, market);
+  const outcomeNames = market.outcomeNames ?? outcomes.map((outcome) => outcome.name);
 
   return (
     <div className="shrink-0" data-readout-mode={hoveredPrices ? "historical" : "live"}>
@@ -101,22 +104,27 @@ export default function OddsDisplay({
         </div>
       )}
       {compact ? (
-        <div className={`flex flex-wrap justify-center gap-x-2 gap-y-1 px-1 pt-1 ${tvMode ? "tv-outcomes" : ""}`}>
+        <div className={`flex flex-wrap justify-center gap-x-2 gap-y-1 px-1 pt-1 ${tvMode ? `tv-outcomes ${styles.dense}` : ""}`}>
           {selectedOutcomes.map((o, i) => (
             <div
               key={o.tokenId}
-              className="min-w-0 max-w-full rounded-md border border-white/8 bg-white/[0.03] px-1.5 py-1"
+              className={`min-w-0 max-w-full rounded-md border border-white/8 bg-white/[0.03] px-1.5 py-1 ${tvMode ? styles.chip : ""}`}
             >
-              <div className="flex items-center gap-1">
-                <div
+              <div className={`flex items-center gap-1 ${tvMode ? `tv-outcome-row ${styles.row}` : ""}`}>
+                {!tvMode && <div
                   className="h-1.5 w-1.5 shrink-0 rounded-full"
                   style={{ backgroundColor: colors[i % colors.length] }}
-                />
-                <span className="max-w-[90px] truncate text-[9px] font-semibold uppercase tracking-[0.03em] text-white/65">
-                  {o.name}
+                />}
+                <span
+                  className={`text-[9px] font-semibold uppercase ${tvMode ? `tv-outcome-name ${styles.name}` : "max-w-[90px] truncate tracking-[0.03em] text-white/65"}`}
+                  style={tvMode ? { color: colors[i % colors.length] } : undefined}
+                  title={o.name}
+                  aria-label={o.name}
+                >
+                  {tvMode ? getTVOutcomeName(o.name, outcomeNames) : getCompactOutcomeName(o.name, outcomeNames)}
                 </span>
                 <span
-                  className="text-[11px] leading-none font-bold tabular-nums shrink-0"
+                  className={`text-[11px] leading-none font-bold tabular-nums shrink-0 ${tvMode ? styles.value : ""}`}
                   style={{ color: colors[i % colors.length] }}
                   data-outcome-value={o.tokenId}
                 >
