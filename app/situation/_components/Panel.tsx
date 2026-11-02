@@ -37,6 +37,7 @@ import { describeMover, isMoverEligibleMarket, type MarketMover, type MoverCache
 import { getHistoricalPrices } from "../_lib/chartHover";
 import { useHoldPreview } from "../_lib/useHoldPreview";
 import previewStyles from "./HoldPreview.module.css";
+import panelStyles from "./Panel.module.css";
 
 function Panel({
   slotIndex,
@@ -239,10 +240,9 @@ function Panel({
     : [];
   const hoveredStockPrice = hoverTimestamp == null ? undefined : getHistoricalPrices(stockChartOutcomes, hoverTimestamp)[stockSnapshot?.ticker ?? ""] ?? null;
 
-  // Title shown in landscape mobile instead of the interactive dropdown
   const panelTitle = isBuiltin
     ? (BUILTIN_MARKETS.find((m) => m.id === marketId)?.label ?? "")
-    : (savedMarkets.find((m) => m.id === marketId)?.label ?? "");
+    : (savedMarket?.label || market?.title || "");
 
   return (
     <div
@@ -252,8 +252,9 @@ function Panel({
       onLostPointerCapture={preview.onLostPointerCapture}
       onClickCapture={preview.onClickCapture}
       onContextMenu={preview.onContextMenu}
+      data-market-panel
       data-hold-preview={preview.active ? "true" : undefined}
-      className={`flex flex-col h-full min-w-0 min-h-0 rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden ${tvMode ? "tv-market-panel" : ""} ${highConfidence ? "market-high-confidence" : ""} ${tvMode && mover ? "tv-market-mover" : ""} ${holdToExpand ? previewStyles.holdable : ""} ${preview.active ? previewStyles.preview : ""}`}
+      className={`flex flex-col h-full min-w-0 min-h-0 border border-white/10 bg-white/[0.02] overflow-hidden ${tvMode ? "tv-market-panel" : preview.active ? "" : panelStyles.panel} ${highConfidence ? "market-high-confidence" : ""} ${tvMode && mover ? "tv-market-mover" : ""} ${holdToExpand ? previewStyles.holdable : ""} ${preview.active ? previewStyles.preview : ""}`}
       style={{ position: tvMode ? "relative" : undefined, "--market-accent": highConfidence?.color } as CSSProperties}
       data-high-confidence-outcome={highConfidence?.outcome.tokenId}
       data-mover-market={tvMode && mover ? marketId : undefined}
@@ -291,7 +292,7 @@ function Panel({
           onChange={onMoverChange}
         />
       )}
-      {/* Landscape mobile: read-only title | Normal: interactive dropdown */}
+      {/* The title is the market picker in every layout. */}
       {preview.active ? (
         <div className={previewStyles.heading}>
           <p>{panelTitle}</p>
@@ -312,17 +313,19 @@ function Panel({
             <span className={headingStyles.chevron} aria-hidden="true" />
           </div>
         </div>
-      ) : mobileLandscape ? (
-        <div className="shrink-0 px-2 pt-1.5 pb-0">
-          <p className="text-[10px] text-white/40 truncate">{panelTitle}</p>
-        </div>
       ) : (
-        <div className="shrink-0 p-2">
-          <MarketDropdown
-            savedMarkets={savedMarkets}
-            selectedId={marketId}
-            onSelect={(id) => onChangeMarket(slotIndex, id)}
-          />
+        <div className={`${panelStyles.heading} ${mobileLandscape ? panelStyles.landscapeHeading : ""}`}>
+          <div className={headingStyles.picker} data-market-heading>
+            <p className={headingStyles.title} aria-hidden="true">{panelTitle || "Select a market..."}</p>
+            <MarketDropdown
+              className={headingStyles.overlay}
+              title={panelTitle || "Select a market"}
+              savedMarkets={savedMarkets}
+              selectedId={marketId}
+              onSelect={(id) => onChangeMarket(slotIndex, id)}
+            />
+            <span className={headingStyles.chevron} aria-hidden="true" />
+          </div>
         </div>
       )}
 
@@ -398,7 +401,7 @@ function Panel({
 
           return (
             <>
-              <StockDisplay snapshot={displaySnapshot} compact={compact} mobileLandscape={mobileLandscape} tvMode={tvMode} hoveredPrice={hoveredStockPrice} />
+              <StockDisplay snapshot={displaySnapshot} compact={compact} mobileLandscape={mobileLandscape} tvMode={tvMode} showTitle={false} hoveredPrice={hoveredStockPrice} />
               <div className="mt-1 flex-1 min-h-0">
                 <OddsChart
                   key={`${marketId}:${timeRange}`}
@@ -429,6 +432,7 @@ function Panel({
               compact={compact}
               mobileLandscape={mobileLandscape}
               tvMode={tvMode}
+              showTitle={false}
               hoveredPrices={hoveredPrices}
             />
             <div className="mt-1 flex-1 min-h-0">

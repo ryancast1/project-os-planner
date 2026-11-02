@@ -19,6 +19,7 @@ export default function OddsDisplay({
   compact,
   mobileLandscape = false,
   tvMode = false,
+  showTitle = true,
   hoveredPrices = null,
 }: {
   market: MarketInfo;
@@ -28,6 +29,7 @@ export default function OddsDisplay({
   compact: boolean;
   mobileLandscape?: boolean;
   tvMode?: boolean;
+  showTitle?: boolean;
   hoveredPrices?: Record<string, number | null> | null;
 }) {
   const isBinary = market.kind === "binary";
@@ -42,7 +44,7 @@ export default function OddsDisplay({
         className={`shrink-0 text-center pt-1 ${tvMode ? "flex items-baseline justify-center gap-2" : ""}`}
         data-readout-mode={hoveredPrices ? "historical" : "live"}
       >
-        {!mobileLandscape && !tvMode && (
+        {showTitle && !mobileLandscape && !tvMode && (
           <div
             data-readout-title
             className={
@@ -91,7 +93,7 @@ export default function OddsDisplay({
 
   return (
     <div className="shrink-0" data-readout-mode={hoveredPrices ? "historical" : "live"}>
-      {!mobileLandscape && !tvMode && (
+      {showTitle && !mobileLandscape && !tvMode && (
         <div
           data-readout-title
           className={

@@ -69,7 +69,7 @@ export default function PanelGrid({
 
   if (layout === "7x4" && !mobilePortrait) {
     return (
-      <div className="tv-grid" aria-label="Market grid: 7 columns, 4 rows">
+      <div className="tv-grid" data-market-grid aria-label="Market grid: 7 columns, 4 rows">
         {Array.from({ length: config.panelCount }, (_, i) => (
           <Panel
             key={`${i}:${panels[i] ?? "empty"}`}
@@ -91,11 +91,11 @@ export default function PanelGrid({
     );
   }
 
-  // Landscape mobile: force correct col/row counts without md: dependency, hide dropdowns
+  // Landscape mobile: force correct col/row counts without md: dependency.
   if (mobileLandscape) {
     const landscapeGridClass = `grid-cols-${config.cols} grid-rows-${config.rows}`;
     return (
-      <div className={`grid ${landscapeGridClass} gap-1.5 flex-1 min-h-0`}>
+      <div className={`grid ${landscapeGridClass} gap-0 flex-1 min-h-0`} data-market-grid>
         {Array.from({ length: config.panelCount }, (_, i) => (
           <Panel
             key={i}
@@ -162,7 +162,7 @@ export default function PanelGrid({
 
   // Landscape / desktop: CSS grid
   return (
-    <div className={`grid ${config.gridClass} gap-2 flex-1 min-h-0`}>
+    <div className={`grid ${config.gridClass} gap-0 flex-1 min-h-0`} data-market-grid>
       {Array.from({ length: config.panelCount }, (_, i) => (
         <Panel
           key={i}

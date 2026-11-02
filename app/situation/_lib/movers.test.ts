@@ -148,19 +148,127 @@ test("a falling market still qualifies when the opposite book has not repriced",
   }, now)!;
   assert.equal(mover.score, 1);
   assert.equal(mover.change, -1);
-  assert.equal(mover.color, COLORS[1]);
-  assert.equal(describeMover(mover), "Top mover over 10 min: Candidate (D) -1.00 percentage points.");
+  assert.equal(mover.color, COLORS[3]);
+  assert.equal(mover.towardOutcomeName, "Candidate (R)");
+  assert.equal(describeMover(mover), "Top mover over 10 min: Candidate (D) -1.00 percentage points. Direction: away from Candidate (D), toward Candidate (R).");
 });
 
-test("ranking uses the biggest absolute move while the ring prefers the gaining side", () => {
+test("ranking and description use the same actual move, with the ring directed toward the other side", () => {
   const outcomes = [outcome("a", "A", 0.4), outcome("b", "B", 0.55)];
   const mover = getPolymarketMover("race", "1H", market(outcomes), outcomes, outcomes, {
     a: history("1H", 0.5), b: history("1H", 0.5),
   }, now)!;
   assert.equal(mover.score, 10);
-  assert.equal(mover.change, 5);
-  assert.equal(mover.outcomeName, "B");
+  assert.equal(mover.change, -10);
+  assert.equal(mover.outcomeName, "A");
+  assert.equal(mover.towardOutcomeName, "B");
   assert.equal(mover.color, COLORS[1]);
+});
+
+test("a three-point Republican decline with a flat Democrat draws a blue ring without inventing a gain", () => {
+  const outcomes = [outcome("r", "Republican", 0.52), outcome("d", "Democrat", 0.48)];
+  const mover = getPolymarketMover("race", "1H", market(outcomes), outcomes, outcomes, {
+    r: history("1H", 0.55), d: history("1H", 0.48),
+  }, now)!;
+  assert.equal(mover.color, COLORS[1]);
+  assert.equal(mover.outcomeName, "Republican");
+  assert.equal(mover.change, -3);
+  assert.equal(mover.score, 3);
+  assert.equal(mover.towardOutcomeName, "Democrat");
+  assert.equal(getTopMovers([mover], "1H", ["race"], now).length, 1);
+  assert.equal(outcomes[1].currentPrice, 0.48);
+  assert(!describeMover(mover).includes("Democrat +3"));
+});
+
+test("opposite-side inference respects manual colors and single-line Yes/No charts", () => {
+  const outcomes = [outcome("yes", "Yes", 0.7), outcome("no", "No", 0.27)];
+  const mover = getPolymarketMover("binary", "10M", market(outcomes, "binary"), outcomes, outcomes.slice(0, 1), {
+    yes: history("10M", 0.7), no: history("10M", 0.3),
+  }, now, { yes: "pink" })!;
+  assert.equal(mover.color, COLORS[5]);
+  assert.equal(mover.towardOutcomeName, "Yes");
+  assert.equal(mover.change, -3);
+});
+
+test("independent or incomplete choices never infer a unique beneficiary for a decline", () => {
+  const outcomes = [outcome("a", "A", 0.4), outcome("b", "B", 0.5)];
+  const histories = { a: history("1H", 0.5), b: history("1H", 0.5) };
+  for (const info of [
+    { ...market(outcomes), mutuallyExclusive: false },
+    { ...market(outcomes), outcomeNames: ["A", "B", "Hidden C"] },
+    market(outcomes.slice(0, 1)),
+  ]) assert.equal(getPolymarketMover("race", "1H", info, outcomes, outcomes, histories, now), null);
+});
+
+test("a two-outcome decline cannot infer direction from a missing or stale opposite quote", () => {
+  const outcomes = [outcome("a", "A", 0.4), outcome("b", "B", 0.5)];
+  const histories = { a: history("1H", 0.5), b: history("1H", 0.5) };
+  assert.equal(getPolymarketMover("race", "1H", market(outcomes), outcomes, outcomes, { a: histories.a }, now), null);
+  outcomes[1].priceIsFresh = false;
+  assert.equal(getPolymarketMover("race", "1H", market(outcomes), outcomes, outcomes, histories, now), null);
+});
+
+test("simultaneous declines do not produce a misleading directional ring", () => {
+  const outcomes = [outcome("a", "A", 0.4), outcome("b", "B", 0.45)];
+  assert.equal(getPolymarketMover("race", "1H", market(outcomes), outcomes, outcomes, {
+    a: history("1H", 0.5), b: history("1H", 0.5),
+  }, now), null);
+});
+
+test("three-way markets rank actual gains, not another choice's larger decline", () => {
+  const outcomes = [outcome("a", "A", 0.3), outcome("b", "B", 0.23), outcome("c", "C", 0.41)];
+  const histories = { a: history("1H", 0.5), b: history("1H", 0.2), c: history("1H", 0.4) };
+  const mover = getPolymarketMover("race", "1H", market(outcomes), outcomes, outcomes, histories, now)!;
+  assert.equal(mover.outcomeName, "B");
+  assert.equal(mover.score, 3);
+  assert.equal(mover.change, 3);
+  assert.equal(mover.color, COLORS[1]);
+  outcomes[1].currentPrice = 0.21;
+  const small = getPolymarketMover("race", "1H", market(outcomes), outcomes, outcomes, histories, now)!;
+  assert.equal(small.score, 1);
+  assert.deepEqual(getTopMovers([small], "1H", ["race"], now), []);
+});
+
+test("equal opposing moves prefer the observed gain with deterministic results", () => {
+  const outcomes = [outcome("a", "A", 0.47), outcome("b", "B", 0.53)];
+  const histories = { a: history("1H", 0.5), b: history("1H", 0.5) };
+  for (const ordered of [outcomes, [...outcomes].reverse()]) {
+    const mover = getPolymarketMover("race", "1H", market(outcomes), ordered, outcomes, histories, now)!;
+    assert.equal(mover.outcomeName, "B");
+    assert.equal(mover.change, 3);
+    assert.equal(mover.score, 3);
+    assert.equal(mover.towardOutcomeName, undefined);
+  }
+});
+
+test("corrected chart history replaces cached baselines at the same timestamp", () => {
+  const outcomes = [outcome("a", "A", 0.6)];
+  outcomes[0].history = history("1H", 0.57);
+  const histories = combineMoverHistories(outcomes, { a: history("1H", 0.5) });
+  assert.equal(histories.a.length, 1);
+  assert.equal(getPolymarketMover("race", "1H", market(outcomes), outcomes, outcomes, histories, now)?.score, 3);
+});
+
+test("calculation and supplemental fetches agree on one-minute or five-minute baseline precision", () => {
+  const outcomes = [outcome("a", "A", 0.6)];
+  for (const range of ["10M", "1H", "1D"] as const) {
+    const { target } = getMoverWindow(range, now);
+    const precision = range === "1D" ? 300 : 60;
+    const old = { a: [{ t: target - precision - 1, p: 0.5 }] };
+    assert.deepEqual(getMissingMoverTokens(outcomes, old, range, now), ["a"]);
+    assert.equal(getPolymarketMover("race", range, market(outcomes), outcomes, outcomes, old, now), null);
+    const valid = { a: [{ t: target - precision, p: 0.5 }] };
+    assert.deepEqual(getMissingMoverTokens(outcomes, valid, range, now), []);
+    assert.equal(getPolymarketMover("race", range, market(outcomes), outcomes, outcomes, valid, now)?.score, 10);
+  }
+});
+
+test("a malformed newer probability does not hide a valid earlier comparison", () => {
+  const outcomes = [outcome("a", "A", 0.6)];
+  const { target } = getMoverWindow("1H", now);
+  const histories = { a: [{ t: target - 30, p: 0.5 }, { t: target, p: 2 }] };
+  assert.deepEqual(getMissingMoverTokens(outcomes, histories, "1H", now), []);
+  assert.equal(getPolymarketMover("race", "1H", market(outcomes), outcomes, outcomes, histories, now)?.score, 10);
 });
 
 test("stock scores use absolute percent moves, green for rises and red for declines", () => {

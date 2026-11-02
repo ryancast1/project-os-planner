@@ -24,7 +24,9 @@ export function isMoverEligibleMarket(market: MarketInfo, outcomes: Outcome[] = 
 }
 
 export function combineMoverHistories(outcomes: Outcome[], cached: Record<string, PricePoint[]>): Record<string, PricePoint[]> {
-  return Object.fromEntries(outcomes.map((outcome) => [outcome.tokenId, [...(cached[outcome.tokenId] ?? []), ...outcome.history]]));
+  return Object.fromEntries(outcomes.map((outcome) => [outcome.tokenId,
+    [...new Map([...(cached[outcome.tokenId] ?? []), ...outcome.history].map((point) => [point.t, point])).values()],
+  ]));
 }
 
 export function mergeMoverHistory(cached: PricePoint[], incoming: PricePoint[]): PricePoint[] {
@@ -36,12 +38,8 @@ export function mergeMoverHistory(cached: PricePoint[], incoming: PricePoint[]):
 }
 
 export function getMissingMoverTokens(outcomes: Outcome[], histories: Record<string, PricePoint[]>, range: MoverRange, now: number): string[] {
-  const { target, tolerance } = getMoverWindow(range, now);
-  const precision = range === "1D" ? 300 : 60;
-  return outcomes.filter((outcome) => {
-    const baseline = getMoverBaseline(histories[outcome.tokenId] ?? [], target, tolerance);
-    return !baseline || !isProbability(baseline.p) || target - baseline.t > precision;
-  }).map((outcome) => outcome.tokenId);
+  return outcomes.filter((outcome) => !getPolymarketBaseline(histories[outcome.tokenId] ?? [], range, now))
+    .map((outcome) => outcome.tokenId);
 }
 
 export type MarketMover = {
@@ -53,6 +51,8 @@ export type MarketMover = {
   color: string;
   unit: "pp" | "%";
   asOf: number;
+  /** Direction inferred from the other side's decline, not a fabricated gain. */
+  towardOutcomeName?: string;
 };
 
 export function getMoverWindow(range: MoverRange, now: number) {
@@ -72,6 +72,12 @@ export function getMoverBaseline(history: PricePoint[], target: number, toleranc
   return baseline;
 }
 
+function getPolymarketBaseline(history: PricePoint[], range: MoverRange, now: number): PricePoint | null {
+  const { target } = getMoverWindow(range, now);
+  const precision = range === "1D" ? 300 : 60;
+  return getMoverBaseline(history.filter((point) => isProbability(point.p)), target, precision);
+}
+
 export function getPolymarketMover(
   marketId: string,
   range: MoverRange,
@@ -83,30 +89,37 @@ export function getPolymarketMover(
   overrides?: OutcomeColors,
 ): MarketMover | null {
   if (!isMoverEligibleMarket(market, outcomes)) return null;
-  const { target, tolerance } = getMoverWindow(range, now);
-  let biggestMove: MarketMover | null = null;
-  let biggestRise: MarketMover | null = null;
+  const moves: (MarketMover & { tokenId: string })[] = [];
   for (const outcome of outcomes) {
     if (!outcome.priceIsFresh || !isProbability(outcome.currentPrice)) continue;
-    const baseline = getMoverBaseline(histories[outcome.tokenId] ?? [], target, tolerance);
-    if (!baseline || !isProbability(baseline.p)) continue;
+    const baseline = getPolymarketBaseline(histories[outcome.tokenId] ?? [], range, now);
+    if (!baseline) continue;
     // Use raw percentage points, not relative growth or display normalization.
     const change = Math.round((outcome.currentPrice - baseline.p) * 100 * 1e9) / 1e9;
-    if (change === 0) continue;
     const visibleIndex = chartOutcomes.findIndex((visible) => visible.tokenId === outcome.tokenId);
     const index = visibleIndex >= 0 ? visibleIndex : outcomes.indexOf(outcome);
-    const candidate: MarketMover = {
+    moves.push({
       marketId, range, score: Math.abs(change), change, outcomeName: outcome.name,
+      tokenId: outcome.tokenId,
       color: getOutcomeColor(outcome, index, overrides, market.outcomeNames ?? outcomes.map((o) => o.name)),
       unit: "pp", asOf: now,
-    };
-    if (!biggestMove || candidate.score > biggestMove.score) biggestMove = candidate;
-    if (change > 0 && (!biggestRise || change > biggestRise.change)) biggestRise = candidate;
+    });
   }
-  if (!biggestMove) return null;
-  // Rank the market's full move, but prefer the gaining side's chart color.
-  // Independent books can reprice one side first, so declines must still count.
-  return { ...(biggestRise ?? biggestMove), score: biggestMove.score };
+  moves.sort((a, b) => b.score - a.score || b.change - a.change || a.tokenId.localeCompare(b.tokenId));
+  const completePair = market.mutuallyExclusive && outcomes.length === 2
+    && Math.max(market.outcomeNames?.length ?? 0, market.outcomes.length) === 2
+    && new Set(outcomes.map((outcome) => outcome.tokenId)).size === 2
+    && outcomes.every((outcome) => market.outcomes.some((original) => original.tokenId === outcome.tokenId));
+  if (!completePair) {
+    // With multiple/independent choices, a decline has no unique beneficiary.
+    return moves.find((move) => move.change > 0) ?? null;
+  }
+  const strongest = moves[0];
+  if (!strongest || strongest.change === 0) return null;
+  if (strongest.change > 0) return strongest;
+  const opposite = moves.find((move) => move.tokenId !== strongest.tokenId);
+  if (!opposite || opposite.change < 0) return null;
+  return { ...strongest, color: opposite.color, towardOutcomeName: opposite.outcomeName };
 }
 
 export function hasStockMoverCoverage(range: MoverRange, snapshot: StockSnapshot, now: number): boolean {
@@ -145,5 +158,6 @@ export function getTopMovers(candidates: (MarketMover | null)[], range: MoverRan
 
 export function describeMover(mover: MarketMover): string {
   const label = MOVER_RANGES.find((option) => option.value === mover.range)!.label;
-  return `Top mover over ${label}: ${mover.outcomeName} ${mover.change > 0 ? "+" : ""}${mover.change.toFixed(2)}${mover.unit === "pp" ? " percentage points" : "%"}.`;
+  const direction = mover.towardOutcomeName ? ` Direction: away from ${mover.outcomeName}, toward ${mover.towardOutcomeName}.` : "";
+  return `Top mover over ${label}: ${mover.outcomeName} ${mover.change > 0 ? "+" : ""}${mover.change.toFixed(2)}${mover.unit === "pp" ? " percentage points" : "%"}.${direction}`;
 }

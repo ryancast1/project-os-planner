@@ -17,7 +17,7 @@ export default function MoversControls({ value, count, onChange }: {
           className={styles.button}
           aria-label={`Movers: ${option.label}`}
           aria-pressed={value === option.value}
-          title={`Highlight up to ${MOVER_MAX_HIGHLIGHTS} displayed markets over ${option.label}, with a minimum move of ${MOVER_MIN_CHANGE} percentage points (cents) for prediction markets or ${MOVER_MIN_CHANGE}% for other prices. Markets with more than 3 outcomes are excluded. Click again to turn off. Updates every 30 seconds.`}
+          title={`Highlight up to ${MOVER_MAX_HIGHLIGHTS} displayed markets over ${option.label}, with a minimum move of ${MOVER_MIN_CHANGE} percentage points (cents) for prediction markets or ${MOVER_MIN_CHANGE}% for other prices. Prediction-market rings point toward the gaining side; a decline in a confirmed two-outcome market uses the opposite side's color. Markets with more than 3 outcomes are excluded. Click again to turn off. Updates every 30 seconds.`}
           onClick={() => onChange(value === option.value ? null : option.value)}
         >
           {option.label}

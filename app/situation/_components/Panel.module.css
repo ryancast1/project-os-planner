@@ -1,0 +1,22 @@
+.panel {
+  border-radius: 0;
+  container-type: inline-size;
+}
+
+.panel:not([data-high-confidence-outcome]) {
+  background: linear-gradient(155deg, rgb(255 255 255 / 4%), rgb(255 255 255 / 1%));
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 10px 10px 4px;
+  font-size: clamp(18px, 3.4cqw, 26px);
+}
+
+.landscapeHeading {
+  padding: 5px 7px 2px;
+  font-size: clamp(10px, 5cqw, 16px);
+}

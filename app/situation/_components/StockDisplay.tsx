@@ -29,12 +29,14 @@ export default function StockDisplay({
   compact,
   mobileLandscape = false,
   tvMode = false,
+  showTitle = true,
   hoveredPrice,
 }: {
   snapshot: StockSnapshot;
   compact: boolean;
   mobileLandscape?: boolean;
   tvMode?: boolean;
+  showTitle?: boolean;
   hoveredPrice?: number | null;
 }) {
   const { label, currentPrice, previousClose, displayType } = snapshot;
@@ -53,8 +55,7 @@ export default function StockDisplay({
 
   return (
     <div className="shrink-0 text-center pt-1" data-readout-mode={hoveredPrice === undefined ? "live" : "historical"}>
-      {/* Label hidden in landscape mobile — shown in panel title bar instead */}
-      {!mobileLandscape && !tvMode && (
+      {showTitle && !mobileLandscape && !tvMode && (
         <div
           data-readout-title
           className={
