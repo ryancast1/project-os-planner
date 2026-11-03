@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LAYOUT_CONFIGS, LAYOUT_OPTIONS } from "./constants";
-import { ELECTION_NIGHT_LABEL, ELECTION_NIGHT_START_TS } from "./electionNight";
+import { ELECTION_DAY_START_TS, ELECTION_NIGHT_LABEL } from "./electionNight";
 import { normalizeLayout, normalizeSavedView, storedLayout } from "./layouts";
 import { loadActiveViewId, loadLocalState, saveLayout, saveTimeRange } from "./storage";
 
@@ -67,7 +67,7 @@ test("legacy local TV state restores all panels and the same saved-view selectio
 });
 
 test("legacy Election Night preference migrates into the shared time range without forcing future selections", () => {
-  const afterStart = ELECTION_NIGHT_START_TS * 1000 + 1000;
+  const afterStart = ELECTION_DAY_START_TS * 1000 + 1000;
   withStorage({ "situation-layout": "TV", "situation-tv-election-night": "true", "situation-timerange": "1D" }, (data) => {
     assert.equal(loadLocalState(afterStart - 2000).timeRange, "1D");
     assert.equal(loadLocalState(afterStart).timeRange, ELECTION_NIGHT_LABEL);

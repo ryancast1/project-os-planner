@@ -1,5 +1,5 @@
 import type { TimeRangeLabel, LayoutMode, BuiltinMarket } from "./types";
-import { ELECTION_NIGHT_LABEL, ELECTION_NIGHT_START_TS } from "./electionNight";
+import { ELECTION_NIGHT_LABEL, getElectionNightStartTs } from "./electionNight";
 
 export const PROXY = "/situation/api";
 export const REFRESH_INTERVAL_MS = 12_000;
@@ -18,7 +18,7 @@ export const TIME_RANGES = [
 ];
 
 export function getStartTs(label: TimeRangeLabel, nowMs: number = Date.now()): number {
-  if (label === ELECTION_NIGHT_LABEL) return ELECTION_NIGHT_START_TS;
+  if (label === ELECTION_NIGHT_LABEL) return getElectionNightStartTs(nowMs);
   const range = TIME_RANGES.find((r) => r.label === label)!;
   if (range.seconds === 0) return 0;
   return Math.floor(nowMs / 1000) - range.seconds;
