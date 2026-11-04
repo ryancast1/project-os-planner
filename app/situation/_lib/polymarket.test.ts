@@ -90,11 +90,27 @@ test("omitting a closed or malformed choice disables normalization", () => {
 });
 
 test("one remaining candidate stays a multi-choice market with its actual price", () => {
-  const market = exclusive([0.63, 0.004]);
+  const market = buildPolymarketInfo({ negRisk: true, markets: [subMarket("0", 0.63), { ...subMarket("1", 0.004), closed: true }] }, "test");
+  assert(market);
   assert.equal(market.kind, "multi");
   assert.equal(market.outcomes.length, 1);
   assert.equal(market.outcomes[0].name, "0");
   assert.deepEqual(values(market), [63]);
+});
+
+test("two live candidates retain sub-half-percent and zero-priced outcomes on initial load", () => {
+  for (const price of [0.004, 0]) {
+    const market = exclusive([1 - price, price]);
+    assert.equal(market.kind, "multi");
+    assert.equal(market.outcomes.length, 2);
+    assert.equal(market.outcomes[1].currentPrice, price);
+    assert.deepEqual(getVisiblePolymarketOutcomes(market.outcomes, true, market), market.outcomes);
+    const native = buildPolymarketInfo({ markets: [{
+      outcomes: ["Alice", "Bob"], clobTokenIds: ["alice", "bob"], outcomePrices: [1 - price, price],
+    }] }, "test");
+    assert(native);
+    assert.deepEqual(getVisiblePolymarketOutcomes(native.outcomes, true, native), native.outcomes);
+  }
 });
 
 test("augmented events with potential unnamed choices use raw prices", () => {
@@ -221,7 +237,7 @@ test("invalid and unavailable prices show unavailable rather than NaN or a fabri
 test("compact 5% cutoff uses raw prices regardless of the event's total", () => {
   const market = exclusive([0.92, 0.5, 0.06]);
   assert.equal(getVisiblePolymarketOutcomes(market.outcomes, true).length, 3);
-  const low = exclusive([0.75, 0.045]);
+  const low = exclusive([0.75, 0.045, 0.01]);
   assert.equal(getVisiblePolymarketOutcomes(low.outcomes, true).length, 1);
 });
 

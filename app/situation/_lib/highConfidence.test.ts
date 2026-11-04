@@ -86,9 +86,10 @@ test("a decided margin bucket uses its party background while the chart keeps pa
   ] as const) {
     const market = race([0.995, 0.004]);
     market.outcomes[0].name = names[0];
+    market.outcomes[1].name = names[1];
     market.outcomeNames = [...names];
     const outcomes = fresh(market);
-    assert.deepEqual(getOutcomeColors(outcomes, undefined, market.outcomeNames), [COLORS[0]]);
+    assert.deepEqual(getOutcomeColors(outcomes, undefined, market.outcomeNames), [COLORS[0], COLORS[1]]);
     assert.equal(getHighConfidenceOutcome(market, outcomes, outcomes)?.color, color);
     assert.equal(getHighConfidenceOutcome(market, outcomes, outcomes, { "0-yes": "purple" })?.color, COLORS[4]);
   }

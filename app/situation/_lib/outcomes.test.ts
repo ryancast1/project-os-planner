@@ -61,3 +61,25 @@ test("margin markets retain a strongest-choice fallback if nothing reaches the t
   const choices = [outcome("A", 0.05), outcome("B", 0.09), outcome("C", 0.08)];
   assert.deepEqual(getVisiblePolymarketOutcomes(choices, true, { title: "Election Margin" }), [choices[1]]);
 });
+
+test("named two-choice races keep both chart lines below 5%, including 100/0", () => {
+  for (const price of [0.049, 0.001, 0]) {
+    const choices = [outcome("Alice", 1 - price), outcome("Bob", price)];
+    for (const compact of [true, false]) {
+      assert.deepEqual(getVisiblePolymarketOutcomes(choices, compact, { outcomeNames: ["Alice", "Bob"] }), choices);
+    }
+  }
+});
+
+test("a larger field reduced to two visible choices retains the 5% floor", () => {
+  const choices = [outcome("Alice", 0.96), outcome("Bob", 0.04)];
+  assert.deepEqual(getVisiblePolymarketOutcomes(choices, true, { outcomeNames: ["Alice", "Bob", "Carol"] }), [choices[0]]);
+  assert.deepEqual(getVisiblePolymarketOutcomes([...choices, outcome("Carol", 0)], true), [choices[0]]);
+});
+
+test("the two-choice exception leaves Yes/No filtering and invalid-price handling unchanged", () => {
+  const binary = [outcome(" Yes ", 0.99), outcome("NO", 0.01)];
+  assert.deepEqual(getVisiblePolymarketOutcomes(binary, true), [binary[0]]);
+  const invalid = [outcome("Alice", 0.99), outcome("Bob", NaN)];
+  assert.deepEqual(getVisiblePolymarketOutcomes(invalid, true), [invalid[0]]);
+});

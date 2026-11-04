@@ -57,6 +57,13 @@ export function getVisiblePolymarketOutcomes(
 
   if (!compact) return outcomes.slice(0, 4);
 
+  const outcomeCount = Math.max(outcomes.length, context?.outcomeNames?.length ?? 0);
+  const isYesNo = outcomes.some((outcome) => outcome.name.trim().toLowerCase() === "yes")
+    && outcomes.some((outcome) => outcome.name.trim().toLowerCase() === "no");
+  if (outcomeCount === 2 && outcomes.length === 2 && !isYesNo) {
+    return outcomes.filter((outcome) => isProbability(outcome.currentPrice));
+  }
+
   const visible = outcomes.filter((outcome) => isProbability(outcome.currentPrice) && outcome.currentPrice >= 0.05);
 
   return visible.length > 0 ? visible : outcomes.slice(0, 1);

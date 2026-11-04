@@ -92,8 +92,8 @@ export function buildPolymarketInfo(event: GammaEvent, slug: string): MarketInfo
   const outcomes: Outcome[] = [];
   const outcomeNames: string[] = [];
   const activeMarkets = markets.filter((market) => market.active !== false);
-  for (const market of activeMarkets) {
-    if (market.closed || market.archived) continue;
+  const liveMarkets = activeMarkets.filter((market) => !market.closed && !market.archived);
+  for (const market of liveMarkets) {
     const choices = marketOutcomes(market);
     if (!isYesNo(choices)) continue;
     const yes = choices.find((choice) => choice.name.trim().toLowerCase() === "yes")!;
@@ -102,9 +102,9 @@ export function buildPolymarketInfo(event: GammaEvent, slug: string): MarketInfo
       .replace(/\?$/, "")
       .replace(/ win .+$/, "") || "Outcome";
     outcomeNames.push(name);
-    // Keep the existing low-price cutoff, but never normalize the remaining
-    // choices as if an omitted tail (or a closed choice) did not exist.
-    if (!isProbability(yes.currentPrice) || yes.currentPrice <= 0.005) continue;
+    // Keep both sides of a two-choice race, including a zero-priced longshot.
+    // Larger fields retain their existing low-price cutoff.
+    if (!isProbability(yes.currentPrice) || (liveMarkets.length !== 2 && yes.currentPrice <= 0.005)) continue;
     outcomes.push({
       ...yes,
       name,
