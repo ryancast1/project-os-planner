@@ -2,7 +2,7 @@ import type { MarketInfo, Outcome, OutcomeColors } from "./types";
 import { getOutcomeColor } from "./colors";
 import { isProbability } from "./polymarket";
 
-export const HIGH_CONFIDENCE_THRESHOLD = 0.99;
+export const HIGH_CONFIDENCE_THRESHOLD = 0.985;
 
 export function getHighConfidenceOutcome(
   market: MarketInfo | null,
@@ -19,7 +19,7 @@ export function getHighConfidenceOutcome(
   const outcome = leaders[0];
   const chartIndex = chartOutcomes.findIndex((choice) => choice.tokenId === outcome.tokenId);
   const index = chartIndex >= 0 ? chartIndex : outcomes.indexOf(outcome);
-  // At 99%+, the background follows this outcome's party even when the
+  // Above the threshold, the background follows this outcome's party even when the
   // chart uses distinct palette colors for several same-party alternatives.
   return { outcome, color: getOutcomeColor(outcome, index, overrides) };
 }

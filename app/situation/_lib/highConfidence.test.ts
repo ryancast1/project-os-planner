@@ -22,22 +22,22 @@ function fresh(market: MarketInfo): Outcome[] {
   return market.outcomes.map((outcome) => ({ ...outcome, priceIsFresh: true, normalizationSafe: true }));
 }
 
-test("the highlight starts at raw 99%, not a headline rounded to 99%", () => {
-  const market = race([0.985, 0.01]);
+test("the highlight starts at raw 98.5%, not a headline rounded to 99%", () => {
+  const market = race([0.9849, 0.01]);
   const outcomes = fresh(market);
   assert.equal(getPolymarketPercentages(market, outcomes).percentages.get(outcomes[0].tokenId), 99);
   assert.equal(getHighConfidenceOutcome(market, outcomes, outcomes), null);
-  for (const price of [0.99, 0.999, 1]) {
+  for (const price of [0.985, 0.99, 0.999, 1]) {
     const updated = [{ ...outcomes[0], currentPrice: price }, outcomes[1]];
     assert.equal(getHighConfidenceOutcome(market, updated, updated)?.outcome.tokenId, outcomes[0].tokenId);
   }
 });
 
-test("highlight follows assigned colors and clears if the price falls back below 99%", () => {
+test("highlight follows assigned colors and clears if the price falls back below 98.5%", () => {
   const market = race([0.995, 0.01]);
   const outcomes = fresh(market);
   assert.equal(getHighConfidenceOutcome(market, outcomes, outcomes, { "0-yes": "red" })?.color, COLORS[3]);
-  outcomes[0].currentPrice = 0.98;
+  outcomes[0].currentPrice = 0.9849;
   assert.equal(getHighConfidenceOutcome(market, outcomes, outcomes), null);
 });
 
