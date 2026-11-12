@@ -769,7 +769,7 @@ function HourlyPullsDialog({ date, userId, olderDay, newerDay, onNavigate, onClo
         const dx = event.clientX - start.x;
         const dy = event.clientY - start.y;
         if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-        const nextDay = dx < 0 ? olderDay : newerDay;
+        const nextDay = dx < 0 ? newerDay : olderDay;
         if (nextDay) onNavigate(nextDay);
       }}
       aria-labelledby="hourly-title"
@@ -791,7 +791,6 @@ function HourlyPullsDialog({ date, userId, olderDay, newerDay, onNavigate, onClo
           <button type="button" aria-label="Newer day" disabled={!newerDay} onClick={() => newerDay && onNavigate(newerDay)} className="size-11 rounded-xl border border-white/15 text-lg hover:enabled:bg-white/10 disabled:opacity-35"><span aria-hidden="true">&rarr;</span></button>
         </div>
         <HourlyPullsChart key={date} date={date} userId={userId} />
-        <p className="mt-4 hidden text-center text-xs text-white/50 pointer-coarse:block">Swipe outside the bars to change days.</p>
       </div>
     </dialog>
   );
@@ -799,6 +798,7 @@ function HourlyPullsDialog({ date, userId, olderDay, newerDay, onNavigate, onClo
 
 function HourlyPullsChart({ date, userId }: { date: string; userId: string }) {
   const [counts, setCounts] = useState<number[] | null>(null);
+  const [hasUntimedPulls, setHasUntimedPulls] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeHour, setActiveHour] = useState<number | null>(null);
 
@@ -836,6 +836,19 @@ function HourlyPullsChart({ date, userId }: { date: string; userId: string }) {
       }
     }
     void load();
+
+    async function checkForUntimedPulls() {
+      const { data } = await supabase.from("trich_events")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("occurred_on", date)
+        .in("trich", [1, 2])
+        .is("submitted_at", null)
+        .limit(1);
+      if (!cancelled) setHasUntimedPulls(Boolean(data?.length));
+    }
+    void checkForUntimedPulls();
+
     return () => { cancelled = true; };
   }, [date, userId]);
 
@@ -876,8 +889,9 @@ function HourlyPullsChart({ date, userId }: { date: string; userId: string }) {
               {Array.from({ length: 8 }, (_, i) => <span key={i}>{hourLabel((3 + i * 3) % 24)}</span>)}
             </div>
           </div>
-          <p className="mt-5 text-center text-xs text-white/40">T1 + T2 combined. Tap or drag across the bars for counts. Offline entries only appear in daily totals and indexes.</p>
-          {total === 0 && <p className="mt-3 text-center text-sm text-white/60">No timed pulls recorded in this window.</p>}
+          {hasUntimedPulls && (
+            <p className="mt-5 text-center text-xs text-white/40">Offline entries only appear in daily totals and indexes.</p>
+          )}
         </>
       )}
     </>

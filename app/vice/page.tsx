@@ -295,7 +295,7 @@ function ViceDayDialog({ date, days, onNavigate, onClose, kind, children }: DayD
         const dx = event.clientX - start.x;
         const dy = event.clientY - start.y;
         if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-        const nextDay = dx < 0 ? olderDay : newerDay;
+        const nextDay = dx < 0 ? newerDay : olderDay;
         if (nextDay) onNavigate(nextDay);
       }}
       className={`fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] overflow-y-auto rounded-3xl border border-neutral-800 bg-neutral-950 p-0 text-neutral-100 shadow-2xl backdrop:bg-black/75 ${kind === "Alcohol" ? "max-w-2xl" : "max-w-md"}`}
