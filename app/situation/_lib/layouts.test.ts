@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LAYOUT_CONFIGS, LAYOUT_OPTIONS } from "./constants";
-import { ELECTION_DAY_START_TS, ELECTION_NIGHT_LABEL } from "./electionNight";
 import { normalizeLayout, normalizeSavedView, storedLayout } from "./layouts";
 import { loadActiveViewId, loadLocalState, saveLayout, saveTimeRange } from "./storage";
 
@@ -66,17 +65,28 @@ test("legacy local TV state restores all panels and the same saved-view selectio
   });
 });
 
-test("legacy Election Night preference migrates into the shared time range without forcing future selections", () => {
-  const afterStart = ELECTION_DAY_START_TS * 1000 + 1000;
-  withStorage({ "situation-layout": "TV", "situation-tv-election-night": "true", "situation-timerange": "1D" }, (data) => {
-    assert.equal(loadLocalState(afterStart - 2000).timeRange, "1D");
-    assert.equal(loadLocalState(afterStart).timeRange, ELECTION_NIGHT_LABEL);
-    saveTimeRange(ELECTION_NIGHT_LABEL);
+test("retired time ranges fall back to 1D without losing layouts, panels, or saved-view selection", () => {
+  const panels = Array.from({ length: 28 }, (_, i) => `market-${i}`);
+  withStorage({ "situation-layout": "TV", "situation-panels": JSON.stringify(panels), "situation-active-view": "original-tv", "situation-tv-election-night": "true", "situation-timerange": "Election Night" }, (data) => {
+    assert.deepEqual(loadLocalState(), { layout: "7x4", panels, timeRange: "1D" });
+    assert.equal(loadActiveViewId(), "original-tv");
+    saveTimeRange(loadLocalState().timeRange);
+    assert.equal(data.get("situation-timerange"), "1D");
     assert.equal(data.has("situation-tv-election-night"), false);
     saveLayout("3x2");
-    assert.equal(loadLocalState(afterStart).timeRange, ELECTION_NIGHT_LABEL);
+    assert.equal(loadLocalState().timeRange, "1D");
     saveTimeRange("1H");
     saveLayout("7x4");
-    assert.equal(loadLocalState(afterStart).timeRange, "1H");
+    assert.equal(loadLocalState().timeRange, "1H");
   });
+});
+
+test("a legacy election flag cannot override a supported saved time range in any layout", () => {
+  for (const layout of ["1", "2", "2x2", "3x2", "4x2", "7x4"]) {
+    for (const range of ["1H", "4H", "1D", "1W", "1M", "3M", "1Y", "5Y", "All"] as const) {
+      withStorage({ "situation-layout": layout, "situation-tv-election-night": "true", "situation-timerange": range }, () => {
+        assert.equal(loadLocalState().timeRange, range);
+      });
+    }
+  }
 });

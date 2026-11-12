@@ -17,7 +17,6 @@ import Header from "./_components/Header";
 import PanelGrid from "./_components/PanelGrid";
 import ManageMarketsModal from "./_components/ManageMarketsModal";
 import { useViewSwipe } from "./_lib/useViewSwipe";
-import { ELECTION_NIGHT_LABEL, isElectionNightAvailable } from "./_lib/electionNight";
 import type { MoverRange } from "./_lib/movers";
 import { loadNeedleMode, saveNeedleMode } from "./_lib/needle";
 import "./tv.css";
@@ -152,9 +151,6 @@ export default function SituationDashboard() {
 
   // -- Time range change (doesn't dirty a view — it's a display pref) --
   const handleTimeRangeChange = useCallback((tr: TimeRangeLabel) => {
-    if (tr === ELECTION_NIGHT_LABEL) {
-      if (!isElectionNightAvailable()) return;
-    }
     setTimeRange(tr);
     saveTimeRange(tr);
   }, []);

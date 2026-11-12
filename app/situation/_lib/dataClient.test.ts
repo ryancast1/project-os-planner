@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fetchBatchedPrice, fetchPriceHistory } from "./api";
+import { fetchBatchedPrice, fetchPriceHistory, fetchStockData } from "./api";
 
 test("the batched client validates each quote independently and retains normalization quality", async () => {
   const original = globalThis.fetch;
@@ -21,6 +21,21 @@ test("the batched client validates each quote independently and retains normaliz
       { price: 0.55, normalizationSafe: true }, { price: 0.45, normalizationSafe: false }, null,
     ]);
     assert.equal(calls, 1);
+  } finally { globalThis.fetch = original; }
+});
+
+test("stock history still trims rolling windows and rejects windows without chart data", async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => Response.json({ chart: { result: [{
+      timestamp: [900, 1100], indicators: { quote: [{ close: [100, 101] }] },
+      meta: { regularMarketPrice: 102, previousClose: 99 },
+    }] } });
+    const snapshot = await fetchStockData("rolling-stock", "1d", "2m", 1000, true);
+    assert.deepEqual(snapshot?.history, [{ t: 1100, p: 101 }]);
+    assert.equal(snapshot?.currentPrice, 101);
+    assert.equal(snapshot?.previousClose, 99);
+    assert.equal(await fetchStockData("empty-stock", "1d", "2m", 1200), null);
   } finally { globalThis.fetch = original; }
 });
 

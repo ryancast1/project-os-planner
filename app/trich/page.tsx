@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 const PACIFIC_TZ = "America/Los_Angeles";
@@ -145,7 +145,10 @@ export default function Home() {
   const [dailyRows, setDailyRows] = useState<DailyRow[]>([]);
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
+  const [offlineEntryOpen, setOfflineEntryOpen] = useState(false);
+  const [offlineEntryNotice, setOfflineEntryNotice] = useState("");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const selectedDayIndex = selectedDay ? dailyRows.findIndex((row) => row.date === selectedDay) : -1;
 
   // Calculate weighted rolling indices separately for T1 and T2.
   // Weights: today = 1.0, yesterday = 0.95, -2d = 0.90, ..., -18d = 0.10, -19d = 0.05, -20d = 0.025
@@ -293,7 +296,7 @@ export default function Home() {
 
   async function fetchEventsForExport(uid: string) {
     // Try to include a timestamp column. Fall back if the project used a different name.
-    const timestampCandidates = ["created_at", "submitted_at", "inserted_at", "timestamp", "ts"];
+    const timestampCandidates = ["submitted_at", "created_at", "inserted_at", "timestamp", "ts"];
 
     // Page through results to avoid row limits.
     const pageSize = 1000;
@@ -522,6 +525,16 @@ export default function Home() {
             {exporting ? "Exporting…" : "Export CSV"}
           </button>
 
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            disabled={!userId || status === "saving" || status === "loading"}
+            onClick={() => { setOfflineEntryNotice(""); setOfflineEntryOpen(true); }}
+            className="mt-3 min-h-11 w-full rounded-xl border border-white/10 bg-white/5 text-sm font-semibold hover:bg-white/10 disabled:opacity-50"
+          >
+            Offline Entry
+          </button>
+          {offlineEntryNotice && <p role="status" className="mt-3 text-center text-sm text-white/70">{offlineEntryNotice}</p>}
           {exportErr && <div className="mt-3 text-center text-sm text-red-300">{exportErr}</div>}
         </section>
 
@@ -597,18 +610,131 @@ export default function Home() {
           </section>
         )}
       </div>
+      {offlineEntryOpen && userId && (
+        <OfflineEntryDialog
+          userId={userId}
+          today={today}
+          onClose={() => setOfflineEntryOpen(false)}
+          onSaved={(count, type, date) => {
+            setOfflineEntryNotice(`Added ${count} ${type} ${count === 1 ? "pull" : "pulls"} to ${isoToMDY(date)}.`);
+            void loadDailyAndToday(userId);
+          }}
+        />
+      )}
       {selectedDay && userId && (
-        <HourlyPullsDialog key={selectedDay} date={selectedDay} userId={userId} onClose={() => setSelectedDay(null)} />
+        <HourlyPullsDialog
+          date={selectedDay}
+          userId={userId}
+          olderDay={selectedDayIndex >= 0 ? dailyRows[selectedDayIndex + 1]?.date : undefined}
+          newerDay={selectedDayIndex > 0 ? dailyRows[selectedDayIndex - 1]?.date : undefined}
+          onNavigate={setSelectedDay}
+          onClose={() => setSelectedDay(null)}
+        />
       )}
     </main>
   );
 }
 
-function HourlyPullsDialog({ date, userId, onClose }: { date: string; userId: string; onClose: () => void }) {
+function OfflineEntryDialog({ userId, today, onClose, onSaved }: {
+  userId: string;
+  today: string;
+  onClose: () => void;
+  onSaved: (count: number, type: "T1" | "T2", date: string) => void;
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [counts, setCounts] = useState<number[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [activeHour, setActiveHour] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const fieldClass = "mt-1 h-11 w-full min-w-0 rounded-xl border border-white/15 bg-zinc-900 px-3 text-base text-white";
+  const maxCount = 1000;
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) return;
+    const form = new FormData(event.currentTarget);
+    const date = String(form.get("date") ?? "");
+    const type = form.get("type");
+    const count = Number(form.get("count"));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today || (type !== "T1" && type !== "T2") ||
+      !Number.isInteger(count) || count < 1 || count > maxCount) {
+      setError("Choose today or an earlier date, a pull type, and a whole count from 1 to 1,000.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    try {
+      const { error: insertError } = await supabase.from("trich_events").insert(
+        Array.from({ length: count }, () => ({
+          user_id: userId,
+          trich: type === "T1" ? 1 : 2,
+          occurred_on: date,
+          submitted_at: null,
+        })),
+      );
+      if (insertError) throw new Error(insertError.message);
+      onSaved(count, type, date);
+      dialogRef.current?.close();
+    } catch (err) {
+      setError(getErrorMessage(err, "Unable to save these pulls."));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="offline-entry-title"
+      onClose={onClose}
+      onCancel={(event) => { if (saving) event.preventDefault(); }}
+      className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-sm overflow-y-auto rounded-2xl border border-white/15 bg-zinc-950 p-5 text-white shadow-2xl backdrop:bg-black/75 [color-scheme:dark]"
+    >
+      <h2 id="offline-entry-title" className="text-xl font-semibold">Offline Entry</h2>
+      <p className="mt-2 text-sm text-white/60">Add pulls from your notes to a day without assigning a time.</p>
+      <form onSubmit={save} className="mt-5 space-y-4">
+        <fieldset disabled={saving} className="space-y-4 disabled:opacity-60">
+          <label className="block text-sm">
+            Date
+            <input type="date" name="date" defaultValue={today} max={today} required className={fieldClass} />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm">
+              Pull type
+              <select name="type" className={fieldClass}>
+                <option value="T1">T1</option>
+                <option value="T2">T2</option>
+              </select>
+            </label>
+            <label className="text-sm">
+              Count
+              <input type="number" name="count" inputMode="numeric" min={1} max={maxCount} step={1} required className={fieldClass} />
+            </label>
+          </div>
+        </fieldset>
+        {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" disabled={saving} onClick={() => dialogRef.current?.close()} className="min-h-11 rounded-xl border border-white/15 px-4 text-sm disabled:opacity-50">Cancel</button>
+          <button type="submit" disabled={saving} className="min-h-11 rounded-xl bg-white px-4 text-sm font-semibold text-black disabled:opacity-50">{saving ? "Saving..." : "Add pulls"}</button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+function HourlyPullsDialog({ date, userId, olderDay, newerDay, onNavigate, onClose }: {
+  date: string;
+  userId: string;
+  olderDay?: string;
+  newerDay?: string;
+  onNavigate: (date: string) => void;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const swipeStart = useRef<{ id: number; x: number; y: number } | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -620,6 +746,61 @@ function HourlyPullsDialog({ date, userId, onClose }: { date: string; userId: st
       document.body.style.overflow = previousOverflow;
     };
   }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      onCancel={onClose}
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onPointerDown={(event) => {
+        if (event.pointerType !== "touch" || !event.isPrimary) return;
+        const target = event.target;
+        swipeStart.current = target instanceof Element && target.closest("button, [data-hourly-bars]")
+          ? null
+          : { id: event.pointerId, x: event.clientX, y: event.clientY };
+      }}
+      onPointerCancel={(event) => {
+        if (swipeStart.current?.id === event.pointerId) swipeStart.current = null;
+      }}
+      onPointerUp={(event) => {
+        const start = swipeStart.current;
+        if (!start || start.id !== event.pointerId) return;
+        swipeStart.current = null;
+        const dx = event.clientX - start.x;
+        const dy = event.clientY - start.y;
+        if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+        const nextDay = dx < 0 ? olderDay : newerDay;
+        if (nextDay) onNavigate(nextDay);
+      }}
+      aria-labelledby="hourly-title"
+      className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-xl touch-pan-y overflow-y-auto rounded-2xl border border-white/15 bg-zinc-950 text-white shadow-2xl backdrop:bg-black/75"
+    >
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 id="hourly-title" aria-live="polite" className="text-xl font-semibold">
+              {new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: EASTERN_TZ }).format(dateFromISO(date))}
+              <span className="mt-1 block text-base font-normal text-white/60">{isoToMDY(date)}</span>
+            </h2>
+            <p className="mt-1 text-sm text-white/50">Hourly pulls · 3am to 3am ET</p>
+          </div>
+          <button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-white/15 px-3 text-sm hover:bg-white/10">Close</button>
+        </div>
+        <div role="group" aria-label="Browse days" className="mt-4 flex justify-between gap-2">
+          <button type="button" aria-label="Older day" disabled={!olderDay} onClick={() => olderDay && onNavigate(olderDay)} className="size-11 rounded-xl border border-white/15 text-lg hover:enabled:bg-white/10 disabled:opacity-35"><span aria-hidden="true">&larr;</span></button>
+          <button type="button" aria-label="Newer day" disabled={!newerDay} onClick={() => newerDay && onNavigate(newerDay)} className="size-11 rounded-xl border border-white/15 text-lg hover:enabled:bg-white/10 disabled:opacity-35"><span aria-hidden="true">&rarr;</span></button>
+        </div>
+        <HourlyPullsChart key={date} date={date} userId={userId} />
+        <p className="mt-4 hidden text-center text-xs text-white/50 pointer-coarse:block">Swipe outside the bars to change days.</p>
+      </div>
+    </dialog>
+  );
+}
+
+function HourlyPullsChart({ date, userId }: { date: string; userId: string }) {
+  const [counts, setCounts] = useState<number[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [activeHour, setActiveHour] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -664,18 +845,8 @@ function HourlyPullsDialog({ date, userId, onClose }: { date: string; userId: st
   const startHour = (selected + 3) % 24;
 
   return (
-    <dialog ref={dialogRef} onCancel={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} aria-labelledby="hourly-title" className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-2xl border border-white/15 bg-zinc-950 p-5 text-white shadow-2xl backdrop:bg-black/75 sm:p-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 id="hourly-title" className="text-xl font-semibold">
-            {new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: EASTERN_TZ }).format(dateFromISO(date))}
-            <span className="mt-1 block text-base font-normal text-white/60">{isoToMDY(date)}</span>
-          </h2>
-          <p className="mt-1 text-sm text-white/50">Hourly pulls · 3am to 3am ET</p>
-        </div>
-        <button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-white/15 px-3 text-sm hover:bg-white/10">Close</button>
-      </div>
-      {error ? <p role="alert" className="mt-6 text-sm text-red-300">{error}</p> : !counts ? <p role="status" className="py-16 text-center text-white/50">Loading hourly pulls...</p> : (
+    <>
+      {error ? <p role="alert" className="mt-6 text-sm text-red-300">{error}</p> : !counts ? <p role="status" className="grid h-[21rem] place-items-center text-white/50">Loading hourly pulls...</p> : (
         <>
           <div className="mb-5 mt-6 flex items-center justify-between gap-2 text-sm tabular-nums">
             <span className="text-white/60">Total: <strong className="text-white">{total}</strong></span>
@@ -684,7 +855,7 @@ function HourlyPullsDialog({ date, userId, onClose }: { date: string; userId: st
           <div className="relative pl-7">
             <span className="absolute left-0 top-0 text-xs text-white/40">{max}</span>
             <span className="absolute bottom-0 left-0 text-xs text-white/40">0</span>
-            <div className="grid h-56 touch-none grid-cols-[repeat(24,minmax(0,1fr))] items-end gap-[2px] border-b border-white/20 bg-[linear-gradient(to_top,transparent_49.5%,rgba(255,255,255,0.06)_50%,transparent_50.5%)]"
+            <div data-hourly-bars className="grid h-56 touch-none grid-cols-[repeat(24,minmax(0,1fr))] items-end gap-[2px] border-b border-white/20 bg-[linear-gradient(to_top,transparent_49.5%,rgba(255,255,255,0.06)_50%,transparent_50.5%)]"
               onPointerDown={(event) => {
                 event.currentTarget.setPointerCapture(event.pointerId);
                 const rect = event.currentTarget.getBoundingClientRect();
@@ -705,11 +876,11 @@ function HourlyPullsDialog({ date, userId, onClose }: { date: string; userId: st
               {Array.from({ length: 8 }, (_, i) => <span key={i}>{hourLabel((3 + i * 3) % 24)}</span>)}
             </div>
           </div>
-          <p className="mt-5 text-center text-xs text-white/40">T1 + T2 combined. Tap or drag across the bars for counts.</p>
-          {total === 0 && <p className="mt-3 text-center text-sm text-white/60">No pulls recorded in this time window.</p>}
+          <p className="mt-5 text-center text-xs text-white/40">T1 + T2 combined. Tap or drag across the bars for counts. Offline entries only appear in daily totals and indexes.</p>
+          {total === 0 && <p className="mt-3 text-center text-sm text-white/60">No timed pulls recorded in this window.</p>}
         </>
       )}
-    </dialog>
+    </>
   );
 }
 

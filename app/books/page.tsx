@@ -297,6 +297,7 @@ export default function BooksPage() {
                       tabIndex={0}
                       onClick={() => setExpandedId((current) => current === book.id ? null : book.id)}
                       onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return;
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
                           setExpandedId((current) => current === book.id ? null : book.id);
@@ -374,6 +375,7 @@ export default function BooksPage() {
                           tabIndex={0}
                           onClick={() => setExpandedId((current) => (current === book.id ? null : book.id))}
                           onKeyDown={(event) => {
+                            if (event.target !== event.currentTarget) return;
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
                               setExpandedId((current) => (current === book.id ? null : book.id));

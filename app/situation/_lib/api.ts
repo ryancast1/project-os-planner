@@ -76,11 +76,9 @@ export async function fetchStockData(
   startTs?: number,
   /** Include extended / pre-post market data (futures, yields, crypto trade wider hours) */
   includePrePost?: boolean,
-  /** Keep a quote available while waiting for the first point in a fixed window. */
-  allowEmptyHistory: boolean = false,
 ): Promise<StockSnapshot | null> {
-  const key = JSON.stringify([ticker, yahooRange, yahooInterval, startTs, includePrePost, allowEmptyHistory]);
-  return stocks.get(key, 4000, () => requestStockData(ticker, yahooRange, yahooInterval, startTs, includePrePost, allowEmptyHistory), (value) => value !== null);
+  const key = JSON.stringify([ticker, yahooRange, yahooInterval, startTs, includePrePost]);
+  return stocks.get(key, 4000, () => requestStockData(ticker, yahooRange, yahooInterval, startTs, includePrePost), (value) => value !== null);
 }
 
 async function requestStockData(
@@ -89,7 +87,6 @@ async function requestStockData(
   yahooInterval: string,
   startTs?: number,
   includePrePost?: boolean,
-  allowEmptyHistory = false,
 ): Promise<StockSnapshot | null> {
   try {
     const prepost = includePrePost ? "&prepost=true" : "";
@@ -115,15 +112,14 @@ async function requestStockData(
       history.push({ t: timestamps[i], p });
     }
 
-    const lastAvailablePrice = history[history.length - 1]?.p;
-    // Intraday and fixed-start windows share the same timestamp filter.
+    // Trim rolling intraday windows to the requested start.
     if (startTs && startTs > 0) {
       history = history.filter((pt) => pt.t >= startTs);
     }
 
-    if (history.length === 0 && !allowEmptyHistory) return null;
+    if (history.length === 0) return null;
 
-    const currentPrice = history[history.length - 1]?.p ?? meta.regularMarketPrice ?? lastAvailablePrice;
+    const currentPrice = history[history.length - 1]?.p ?? meta.regularMarketPrice;
     if (typeof currentPrice !== "number" || !Number.isFinite(currentPrice)) return null;
     const previousClose: number | null =
       meta.chartPreviousClose ?? meta.previousClose ?? null;

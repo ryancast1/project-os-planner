@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 const APP_TIME_ZONE = "America/New_York";
 const TRACKING_DAY_START_HOUR = 4;
 const PAGE_SIZE = 1000;
 const ML_PER_OUNCE = 29.5735;
+const PRESET_LABEL_PREFIX = "[preset] ";
+const PLAIN_LABEL_PREFIX = "[label] ";
+const MAX_ALCOHOL_LABEL_LENGTH = 120;
 
 type AmountUnit = "oz" | "mL";
 
@@ -27,6 +30,11 @@ type DailyValue = { date: string; value: number };
 
 function formatDrinks(value: number) {
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+function displayAlcoholLabel(label: string | null) {
+  const prefix = [PRESET_LABEL_PREFIX, PLAIN_LABEL_PREFIX].find((marker) => label?.startsWith(marker));
+  return prefix ? label?.slice(prefix.length) : label;
 }
 
 function dateKey(date: Date) {
@@ -240,8 +248,24 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
   );
 }
 
-function AlcoholDayDialog({ date, entries, onClose }: { date: string; entries: AlcoholEntry[]; onClose: () => void }) {
+type DayDialogProps = {
+  date: string;
+  days: { date: string }[];
+  onNavigate: (date: string) => void;
+  onClose: () => void;
+};
+
+function ViceDayDialog({ date, days, onNavigate, onClose, kind, children }: DayDialogProps & {
+  kind: "Alcohol" | "Weed";
+  children: ReactNode;
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const swipeStart = useRef<{ id: number; x: number; y: number } | null>(null);
+  const dayIndex = days.findIndex((day) => day.date === date);
+  const olderDay = dayIndex >= 0 ? days[dayIndex + 1]?.date : undefined;
+  const newerDay = dayIndex > 0 ? days[dayIndex - 1]?.date : undefined;
+  const titleId = `${kind.toLowerCase()}-day-title`;
+  const arrowClass = "size-11 rounded-xl border border-neutral-800 text-lg hover:enabled:bg-neutral-900 disabled:opacity-35 focus-visible:outline-2 focus-visible:outline-emerald-400";
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -251,28 +275,69 @@ function AlcoholDayDialog({ date, entries, onClose }: { date: string; entries: A
   return (
     <dialog
       ref={dialogRef}
-      aria-labelledby="alcohol-day-title"
+      aria-labelledby={titleId}
       onClose={onClose}
       onClick={(event) => { if (event.target === event.currentTarget) dialogRef.current?.close(); }}
-      className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-3xl border border-neutral-800 bg-neutral-950 p-0 text-neutral-100 shadow-2xl backdrop:bg-black/75"
+      onPointerDown={(event) => {
+        if (event.pointerType !== "touch" || !event.isPrimary) return;
+        const target = event.target;
+        swipeStart.current = target instanceof Element && target.closest("[data-day-swipe]") && !target.closest("button")
+          ? { id: event.pointerId, x: event.clientX, y: event.clientY }
+          : null;
+      }}
+      onPointerCancel={(event) => {
+        if (swipeStart.current?.id === event.pointerId) swipeStart.current = null;
+      }}
+      onPointerUp={(event) => {
+        const start = swipeStart.current;
+        if (!start || start.id !== event.pointerId) return;
+        swipeStart.current = null;
+        const dx = event.clientX - start.x;
+        const dy = event.clientY - start.y;
+        if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+        const nextDay = dx < 0 ? olderDay : newerDay;
+        if (nextDay) onNavigate(nextDay);
+      }}
+      className={`fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] overflow-y-auto rounded-3xl border border-neutral-800 bg-neutral-950 p-0 text-neutral-100 shadow-2xl backdrop:bg-black/75 ${kind === "Alcohol" ? "max-w-2xl" : "max-w-md"}`}
     >
       <div className="p-4 sm:p-5">
-        <header className="flex items-center justify-between gap-3">
-          <h2 id="alcohol-day-title" className="text-lg font-semibold">Alcohol · {shortDate(date)}/{date.slice(0, 4)} · {weekday(date)}</h2>
-          <button type="button" autoFocus onClick={() => dialogRef.current?.close()} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-neutral-900 focus-visible:outline-2 focus-visible:outline-emerald-400">Close</button>
+        <header data-day-swipe className="touch-pan-y">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id={titleId} aria-live="polite" className="text-lg font-semibold">{kind} · {shortDate(date)}/{date.slice(0, 4)} · {weekday(date)}</h2>
+            <button type="button" autoFocus onClick={() => dialogRef.current?.close()} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-neutral-900 focus-visible:outline-2 focus-visible:outline-emerald-400">Close</button>
+          </div>
+          <div role="group" aria-label="Browse days" className="mt-3 flex justify-between gap-2">
+            <button type="button" aria-label="Older day" disabled={!olderDay} onClick={() => olderDay && onNavigate(olderDay)} className={arrowClass}><span aria-hidden="true">&larr;</span></button>
+            <button type="button" aria-label="Newer day" disabled={!newerDay} onClick={() => newerDay && onNavigate(newerDay)} className={arrowClass}><span aria-hidden="true">&rarr;</span></button>
+          </div>
         </header>
+        {children}
+      </div>
+    </dialog>
+  );
+}
+
+function AlcoholDayDialog({ entries, ...dialogProps }: DayDialogProps & { entries: AlcoholEntry[] }) {
+  const { date } = dialogProps;
+  const totalDrinks = entries.reduce((sum, entry) => sum + Number(entry.standard_drinks), 0);
+  return (
+    <ViceDayDialog {...dialogProps} kind="Alcohol">
+        <p data-day-swipe className="mt-4 touch-pan-y text-sm text-neutral-400">
+          Total: <span className="font-semibold tabular-nums text-neutral-100">{formatDrinks(totalDrinks)}</span> standard {totalDrinks === 1 ? "drink" : "drinks"}
+        </p>
         {entries.length === 0 ? (
-          <p className="py-8 text-center text-sm text-neutral-500">No alcohol entries for this day.</p>
+          <p data-day-swipe className="touch-pan-y py-8 text-center text-sm text-neutral-500">No alcohol entries for this day.</p>
         ) : (
-          <div className="mt-4 overflow-x-auto rounded-xl border border-neutral-800">
-            <table className="w-full min-w-[460px] text-left text-sm tabular-nums">
+          <div className="mt-4 overflow-hidden rounded-xl border border-neutral-800 sm:overflow-x-auto">
+            <table className="w-full table-fixed text-left text-sm tabular-nums sm:min-w-[460px] sm:table-auto">
               <thead className="bg-neutral-900/60 text-xs text-neutral-500">
                 <tr>
-                  <th scope="col" className="px-3 py-3 font-semibold">Time</th>
-                  <th scope="col" className="px-3 py-3 font-semibold">Label</th>
-                  <th scope="col" className="px-3 py-3 text-right font-semibold">oz</th>
-                  <th scope="col" className="px-3 py-3 text-right font-semibold">ABV</th>
-                  <th scope="col" className="px-3 py-3 text-right font-semibold">Drinks</th>
+                  <th scope="col" className="w-24 px-2 py-3 font-semibold sm:w-auto sm:px-3">Time</th>
+                  <th scope="col" className="w-16 px-2 py-3 text-right font-semibold sm:hidden">Drinks</th>
+                  <th scope="col" className="px-2 py-3 font-semibold sm:px-3">Label</th>
+                  <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">oz</th>
+                  <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">ABV</th>
+                  <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">Drinks</th>
                 </tr>
               </thead>
               <tbody>
@@ -280,16 +345,18 @@ function AlcoholDayDialog({ date, entries, onClose }: { date: string; entries: A
                   const [hour, minute] = entry.occurred_at.split(":");
                   const hourNumber = Number(hour);
                   const time = `${hourNumber % 12 || 12}:${minute} ${hourNumber < 12 ? "AM" : "PM"}`;
+                  const drinks = formatDrinks(Number(entry.standard_drinks));
                   return (
                     <tr key={entry.id} className="border-t border-neutral-800 text-neutral-300">
-                      <td className="whitespace-nowrap px-3 py-3">
+                      <td className="whitespace-nowrap px-2 py-3 sm:px-3">
                         {time}
                         {entry.occurred_on !== date ? <span className="mt-0.5 block text-xs text-neutral-500">{shortDate(entry.occurred_on)}</span> : null}
                       </td>
-                      <td className="max-w-48 break-words px-3 py-3">{entry.label || "—"}</td>
-                      <td className="px-3 py-3 text-right">{Number(entry.amount_oz).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                      <td className="px-3 py-3 text-right">{Number(entry.abv)}%</td>
-                      <td className="px-3 py-3 text-right">{formatDrinks(Number(entry.standard_drinks))}</td>
+                      <td className="px-2 py-3 text-right sm:hidden">{drinks}</td>
+                      <td className="px-2 py-3 [overflow-wrap:anywhere] sm:max-w-48 sm:px-3">{displayAlcoholLabel(entry.label) || "—"}</td>
+                      <td className="hidden px-3 py-3 text-right sm:table-cell">{Number(entry.amount_oz).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td className="hidden px-3 py-3 text-right sm:table-cell">{Number(entry.abv)}%</td>
+                      <td className="hidden px-3 py-3 text-right sm:table-cell">{drinks}</td>
                     </tr>
                   );
                 })}
@@ -297,8 +364,7 @@ function AlcoholDayDialog({ date, entries, onClose }: { date: string; entries: A
             </table>
           </div>
         )}
-      </div>
-    </dialog>
+    </ViceDayDialog>
   );
 }
 
@@ -335,27 +401,11 @@ function WeedDayTimeline({ hits }: { hits: WeedHit[] }) {
   );
 }
 
-function WeedDayDialog({ date, hits, onClose }: { date: string; hits: WeedHit[]; onClose: () => void }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog && !dialog.open) dialog.showModal();
-  }, []);
-
+function WeedDayDialog({ hits, ...dialogProps }: DayDialogProps & { hits: WeedHit[] }) {
+  const { date } = dialogProps;
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby="weed-day-title"
-      onClose={onClose}
-      onClick={(event) => { if (event.target === event.currentTarget) dialogRef.current?.close(); }}
-      className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-3xl border border-neutral-800 bg-neutral-950 p-0 text-neutral-100 shadow-2xl backdrop:bg-black/75"
-    >
-      <div className="p-4 sm:p-5">
-        <header className="flex items-center justify-between gap-3">
-          <h2 id="weed-day-title" className="text-lg font-semibold">Weed · {shortDate(date)}/{date.slice(0, 4)} · {weekday(date)}</h2>
-          <button type="button" autoFocus onClick={() => dialogRef.current?.close()} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-neutral-900 focus-visible:outline-2 focus-visible:outline-emerald-400">Close</button>
-        </header>
+    <ViceDayDialog {...dialogProps} kind="Weed">
+      <div data-day-swipe className="touch-pan-y">
         {hits.length === 0 ? (
           <p className="py-8 text-center text-sm text-neutral-500">No hits for this day.</p>
         ) : (
@@ -377,7 +427,7 @@ function WeedDayDialog({ date, hits, onClose }: { date: string; hits: WeedHit[];
           </>
         )}
       </div>
-    </dialog>
+    </ViceDayDialog>
   );
 }
 
@@ -388,6 +438,7 @@ export default function VicePage() {
   const [amountUnit, setAmountUnit] = useState<AmountUnit>("oz");
   const [abv, setAbv] = useState("");
   const [label, setLabel] = useState("");
+  const [saveAsPreset, setSaveAsPreset] = useState(false);
   const [loading, setLoading] = useState(true);
   const [weedSaving, setWeedSaving] = useState(false);
   const [alcoholSaving, setAlcoholSaving] = useState(false);
@@ -444,17 +495,16 @@ export default function VicePage() {
     return () => window.clearTimeout(timer);
   }, [confirmation]);
 
-  const recentDrinks = useMemo(() => {
-    const seen = new Set<string>();
-    const result: AlcoholEntry[] = [];
-    for (const entry of alcoholEntries) {
-      const drinkLabel = entry.label?.trim();
-      if (!drinkLabel || seen.has(drinkLabel)) continue;
-      seen.add(drinkLabel);
-      result.push(entry);
-      if (result.length === 5) break;
+  const drinkPresets = useMemo(() => {
+    const byLabel = new Map<string, AlcoholEntry>();
+    const newestFirst = alcoholEntries
+      .filter((entry) => entry.label?.startsWith(PRESET_LABEL_PREFIX))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    for (const entry of newestFirst) {
+      const name = displayAlcoholLabel(entry.label)?.trim();
+      if (name && !byLabel.has(name)) byLabel.set(name, entry);
     }
-    return result;
+    return [...byLabel].map(([name, entry]) => ({ name, entry }));
   }, [alcoholEntries]);
 
   const weedDates = useMemo(() => chartDatesFor(weedHits.map((hit) => trackingDate(hit.occurred_on, hit.occurred_at))), [weedHits]);
@@ -540,6 +590,18 @@ export default function VicePage() {
       setError("Enter an amount greater than 0 and an ABV from 0 to 100.");
       return;
     }
+    const trimmedLabel = label.trim();
+    if (saveAsPreset && !trimmedLabel) {
+      setError("Enter a label to save this drink as a preset.");
+      return;
+    }
+    // Escape ordinary labels that start with a marker so they stay ordinary labels.
+    const labelPrefix = saveAsPreset ? PRESET_LABEL_PREFIX
+      : trimmedLabel.startsWith(PRESET_LABEL_PREFIX) || trimmedLabel.startsWith(PLAIN_LABEL_PREFIX) ? PLAIN_LABEL_PREFIX : "";
+    if ([...trimmedLabel].length + labelPrefix.length > MAX_ALCOHOL_LABEL_LENGTH) {
+      setError(`Use a label of ${MAX_ALCOHOL_LABEL_LENGTH - labelPrefix.length} characters or fewer.`);
+      return;
+    }
     const ounces = amountUnit === "mL" ? enteredAmount / ML_PER_OUNCE : enteredAmount;
     const storedOunces = Math.round(ounces * 100) / 100;
     const standardDrinks = storedOunces * (abvPercent / 100) / 0.6;
@@ -547,7 +609,7 @@ export default function VicePage() {
     setError(null);
     const { data, error: saveError } = await supabase
       .from("alcohol_entries")
-      .insert({ amount_oz: storedOunces, abv: abvPercent, label: label.trim() || null, standard_drinks: standardDrinks })
+      .insert({ amount_oz: storedOunces, abv: abvPercent, label: trimmedLabel ? `${labelPrefix}${trimmedLabel}` : null, standard_drinks: standardDrinks })
       .select("id,user_id,created_at,occurred_on,occurred_at,amount_oz,abv,label,standard_drinks")
       .single();
     setAlcoholSaving(false);
@@ -559,6 +621,7 @@ export default function VicePage() {
     setAmountOz("");
     setAbv("");
     setLabel("");
+    setSaveAsPreset(false);
     setPageNow(Date.now());
     setConfirmation(`${formatDrinks(standardDrinks)} standard drinks logged`);
   }
@@ -593,6 +656,24 @@ export default function VicePage() {
         {error ? <div className="mt-2 rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-sm text-red-200">{error}</div> : null}
 
         <form id="alcohol-form" onSubmit={logAlcohol} className="mt-4 rounded-3xl border border-neutral-800 bg-neutral-950/40 p-4 sm:p-5">
+          <select
+            aria-label="Drink presets"
+            value=""
+            disabled={drinkPresets.length === 0 || alcoholSaving}
+            onChange={(event) => {
+              const preset = drinkPresets.find(({ entry }) => entry.id === event.target.value);
+              if (!preset) return;
+              setLabel(preset.name);
+              setAmountOz(String(Number(preset.entry.amount_oz)));
+              setAmountUnit("oz");
+              setAbv(String(Number(preset.entry.abv)));
+              setSaveAsPreset(true);
+            }}
+            className="mb-3 block w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5 text-base text-neutral-100 outline-none focus:border-neutral-400 disabled:text-neutral-500"
+          >
+            <option value="" disabled>{loading ? "Loading presets…" : drinkPresets.length ? "Choose a preset" : "No saved presets"}</option>
+            {drinkPresets.map(({ name, entry }) => <option key={entry.id} value={entry.id}>{name}</option>)}
+          </select>
           <div className="grid grid-cols-2 gap-3">
             <label className="text-xs font-semibold text-neutral-400">Amount
               <div className="mt-1.5 flex">
@@ -607,17 +688,15 @@ export default function VicePage() {
               <input required type="number" inputMode="decimal" min="0.01" max="100" step="0.01" value={abv} onChange={(event) => setAbv(event.target.value)} className="mt-1.5 block w-full rounded-xl border border-neutral-700 bg-black/40 px-3 py-3 text-base text-neutral-100 outline-none focus:border-neutral-400" />
             </label>
           </div>
-          <label className="mt-3 block text-xs font-semibold text-neutral-400">Label <span className="font-normal text-neutral-600">(optional)</span>
-            <input type="text" maxLength={120} value={label} onChange={(event) => setLabel(event.target.value)} className="mt-1.5 block w-full rounded-xl border border-neutral-700 bg-black/40 px-3 py-3 text-base text-neutral-100 outline-none focus:border-neutral-400" />
-          </label>
-          {recentDrinks.length > 0 ? (
-            <div className="mt-4">
-              <div className="text-xs font-semibold text-neutral-500">Recent drinks</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {recentDrinks.map((drink) => <button key={drink.label} type="button" onClick={() => { setLabel(drink.label ?? ""); setAmountOz(String(Number(drink.amount_oz))); setAmountUnit("oz"); setAbv(String(Number(drink.abv))); }} className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-neutral-300 active:scale-[0.98]">{drink.label}</button>)}
-              </div>
-            </div>
-          ) : null}
+          <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+            <label className="block text-xs font-semibold text-neutral-400">Label {!saveAsPreset ? <span className="font-normal text-neutral-600">(optional)</span> : null}
+              <input type="text" required={saveAsPreset} maxLength={MAX_ALCOHOL_LABEL_LENGTH - (saveAsPreset ? PRESET_LABEL_PREFIX.length : 0)} value={label} onChange={(event) => setLabel(event.target.value)} className="mt-1.5 block w-full rounded-xl border border-neutral-700 bg-black/40 px-3 py-3 text-base text-neutral-100 outline-none focus:border-neutral-400" />
+            </label>
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 px-1 text-sm text-neutral-300">
+              <input type="checkbox" checked={saveAsPreset} onChange={(event) => setSaveAsPreset(event.target.checked)} className="size-4 accent-emerald-400" />
+              Preset
+            </label>
+          </div>
         </form>
 
         <div className="mt-8 grid gap-5 lg:grid-cols-2">
@@ -690,8 +769,8 @@ export default function VicePage() {
           </button>
         </div>
       </div>
-      {selectedAlcoholDate ? <AlcoholDayDialog date={selectedAlcoholDate} entries={selectedAlcoholEntries} onClose={() => setSelectedAlcoholDate(null)} /> : null}
-      {selectedWeedDate ? <WeedDayDialog date={selectedWeedDate} hits={selectedWeedHits} onClose={() => setSelectedWeedDate(null)} /> : null}
+      {selectedAlcoholDate ? <AlcoholDayDialog date={selectedAlcoholDate} days={dailyTotals} entries={selectedAlcoholEntries} onNavigate={setSelectedAlcoholDate} onClose={() => setSelectedAlcoholDate(null)} /> : null}
+      {selectedWeedDate ? <WeedDayDialog date={selectedWeedDate} days={dailyTotals} hits={selectedWeedHits} onNavigate={setSelectedWeedDate} onClose={() => setSelectedWeedDate(null)} /> : null}
     </main>
   );
 }

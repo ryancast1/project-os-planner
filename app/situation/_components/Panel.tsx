@@ -149,8 +149,8 @@ function Panel({
     ) => {
       const { range: yahooRange, interval: yahooInterval } = getYahooParams(range);
       const startTs =
-        range === "1H" || range === "4H" || range === "Election Night" ? getStartTs(range) : undefined;
-      const snap = await fetchStockData(ticker, yahooRange, yahooInterval, startTs, includePrePost, range === "Election Night");
+        range === "1H" || range === "4H" ? getStartTs(range) : undefined;
+      const snap = await fetchStockData(ticker, yahooRange, yahooInterval, startTs, includePrePost);
       if (snap && generation === requestGeneration.current) {
         const withLabel: StockSnapshot = { ...snap, label, displayType };
         setStockSnapshot(withLabel);

@@ -1,6 +1,5 @@
 import type { LayoutMode, TimeRangeLabel, PanelSlot } from "./types";
 import { TIME_RANGES, LAYOUT_CONFIGS } from "./constants";
-import { ELECTION_NIGHT_LABEL, isElectionNightAvailable } from "./electionNight";
 import { normalizeLayout } from "./layouts";
 
 const STORAGE_KEYS = {
@@ -17,7 +16,7 @@ export type LocalState = {
   timeRange: TimeRangeLabel;
 };
 
-export function loadLocalState(nowMs: number = Date.now()): LocalState {
+export function loadLocalState(): LocalState {
   if (typeof window === "undefined") {
     return { layout: "1", panels: [null], timeRange: "1D" };
   }
@@ -41,10 +40,7 @@ export function loadLocalState(nowMs: number = Date.now()): LocalState {
 
   // Time range
   const rawTR = localStorage.getItem(STORAGE_KEYS.timeRange);
-  const electionNight = isElectionNightAvailable(nowMs) &&
-    (rawTR === ELECTION_NIGHT_LABEL || (layout === "7x4" && localStorage.getItem(STORAGE_KEYS.tvElectionNight) === "true"));
-  const timeRange: TimeRangeLabel = electionNight ? ELECTION_NIGHT_LABEL
-    : rawTR && TIME_RANGES.some((r) => r.label === rawTR) ? rawTR as TimeRangeLabel : "1D";
+  const timeRange: TimeRangeLabel = rawTR && TIME_RANGES.some((r) => r.label === rawTR) ? rawTR as TimeRangeLabel : "1D";
 
   return { layout, panels, timeRange };
 }
