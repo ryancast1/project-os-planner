@@ -7,8 +7,13 @@ import { localTrackingTime, TRICH_DAY_START_HOUR, trichLogFields } from "@/lib/l
 
 const EASTERN_TZ = "America/New_York";
 
-type DailyRow = { date: string; t1: number; t2: number };
+type DailyRow = { date: string; t1: number; t2: number; hourly: number[] };
+type PullEvent = { occurred_on: string; trich: number; submitted_at: string | null; local_time: string | null };
 type IndexPoint = { date: string; index: number };
+
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const TRACKING_HOURS = Array.from({ length: 24 }, (_, i) => (i + TRICH_DAY_START_HOUR) % 24);
+const EASTERN_HOUR_FORMAT = new Intl.DateTimeFormat("en-US", { timeZone: EASTERN_TZ, hour: "numeric", hourCycle: "h23" });
 
 function currentTrackingDate() {
   return localTrackingTime(TRICH_DAY_START_HOUR).trackingDate;
@@ -36,6 +41,12 @@ function easternDayStart(iso: string) {
 
 function hourLabel(hour: number) {
   return `${hour % 12 || 12}${hour < 12 ? "am" : "pm"}`;
+}
+
+function pullHour(event: Pick<PullEvent, "submitted_at" | "local_time">) {
+  if (!event.submitted_at) return null;
+  if (event.local_time) return Number(event.local_time.split(":")[0]);
+  return Number(EASTERN_HOUR_FORMAT.format(new Date(event.submitted_at)));
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -200,25 +211,24 @@ export default function Home() {
     const pageSize = 1000;
     let from = 0;
 
-    const all: { occurred_on: string; trich: number }[] = [];
+    const all: PullEvent[] = [];
 
     while (true) {
       const { data, error } = await supabase
         .from("trich_events")
-        .select("occurred_on, trich")
+        .select("occurred_on, trich, submitted_at, local_time")
         .eq("user_id", uid)
         .order("occurred_on", { ascending: false })
+        .order("id", { ascending: false })
         .range(from, from + pageSize - 1);
 
       if (error) throw error;
 
-      const rows = (data ?? []) as { occurred_on: string; trich: number }[];
+      const rows = data ?? [];
       all.push(...rows);
 
       if (rows.length < pageSize) break;
       from += pageSize;
-
-      if (from > 50000) break; // safety valve
     }
 
     return all;
@@ -232,12 +242,15 @@ export default function Home() {
       const events = await fetchAllEvents(uid);
 
       // Preserve each event's saved tracking day, including legacy events.
-      const byDay = new Map<string, { t1: number; t2: number }>();
+      const byDay = new Map<string, DailyRow>();
       for (const e of events) {
         const day = e.occurred_on;
-        const cur = byDay.get(day) ?? { t1: 0, t2: 0 };
+        const cur = byDay.get(day) ?? { date: day, t1: 0, t2: 0, hourly: Array<number>(24).fill(0) };
         if (Number(e.trich) === 1) cur.t1 += 1;
         else if (Number(e.trich) === 2) cur.t2 += 1;
+        else continue;
+        const hour = pullHour(e);
+        if (hour !== null) cur.hourly[hour] += 1;
         byDay.set(day, cur);
       }
 
@@ -253,8 +266,7 @@ export default function Home() {
 
       for (; d >= start; d = new Date(d.getTime() - 86400000)) {
         const iso = d.toISOString().slice(0, 10);
-        const agg = byDay.get(iso) ?? { t1: 0, t2: 0 };
-        out.push({ date: iso, t1: agg.t1, t2: agg.t2 });
+        out.push(byDay.get(iso) ?? { date: iso, t1: 0, t2: 0, hourly: [] });
       }
 
       setDailyRows(out);
@@ -614,6 +626,12 @@ export default function Home() {
             <TrichIndexChart data={t2RegrowthIndexData} />
           </section>
         )}
+        {dailyRows.length > 0 && (
+          <>
+            <PullDistributionChart rows={dailyRows} today={today} groupBy="weekday" />
+            <PullDistributionChart rows={dailyRows} today={today} groupBy="hour" />
+          </>
+        )}
       </div>
       {offlineEntryOpen && userId && (
         <OfflineEntryDialog
@@ -637,6 +655,81 @@ export default function Home() {
         />
       )}
     </main>
+  );
+}
+
+function PullDistributionChart({ rows, today, groupBy }: { rows: DailyRow[]; today: string; groupBy: "weekday" | "hour" }) {
+  const [range, setRange] = useState("30");
+  const [activeBar, setActiveBar] = useState<number | null>(null);
+  const byHour = groupBy === "hour";
+  const title = byHour ? "Pulls per hour" : "Pulls per day of the week";
+  const counts = useMemo(() => {
+    const counts = Array<number>(byHour ? 24 : 7).fill(0);
+    const start = dateFromISO(today);
+    const firstDay = range === "all" ? null : new Date(start.setUTCDate(start.getUTCDate() - Number(range) + 1)).toISOString().slice(0, 10);
+    for (const row of rows) {
+      if (firstDay && (row.date < firstDay || row.date > today)) continue;
+      if (byHour) {
+        TRACKING_HOURS.forEach((hour, i) => { counts[i] += row.hourly[hour] ?? 0; });
+      } else {
+        const weekday = (dateFromISO(row.date).getUTCDay() + 6) % 7;
+        counts[weekday] += row.t1 + row.t2;
+      }
+    }
+    return counts;
+  }, [byHour, range, rows, today]);
+  const max = Math.max(1, ...counts);
+  const label = (i: number) => byHour
+    ? `${hourLabel(TRACKING_HOURS[i])}–${hourLabel((TRACKING_HOURS[i] + 1) % 24)}`
+    : WEEKDAYS[i];
+
+  return (
+    <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        <select
+          aria-label={`Date range for ${title.toLowerCase()}`}
+          value={range}
+          onChange={(event) => { setRange(event.target.value); setActiveBar(null); }}
+          className="min-h-10 rounded-lg border border-white/15 bg-zinc-900 px-2 text-sm text-white"
+        >
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <p className="my-2 text-right text-xs tabular-nums text-white/70">
+        {activeBar === null ? `Total: ${counts.reduce((sum, count) => sum + count, 0)}` : `${label(activeBar)}: ${counts[activeBar]}`}
+      </p>
+      <div
+        className="grid gap-0.5 rounded-xl border border-white/10 bg-black/30 px-2 pb-2 pt-3"
+        style={{ gridTemplateColumns: `repeat(${counts.length}, minmax(0, 1fr))` }}
+        onMouseLeave={() => setActiveBar(null)}
+      >
+        {counts.map((count, i) => (
+          <button
+            key={i}
+            type="button"
+            aria-label={`${label(i)}: ${count} pulls`}
+            onMouseEnter={() => setActiveBar(i)}
+            onFocus={() => setActiveBar(i)}
+            onClick={() => setActiveBar(i)}
+            className="min-w-0 rounded focus-visible:outline-2 focus-visible:outline-orange-200"
+          >
+            <span className="flex h-32 items-end justify-center border-b border-white/15">
+              <span
+                className={`w-4/5 rounded-t-sm ${activeBar === i ? "bg-orange-300" : "bg-orange-500/80"}`}
+                style={{ height: `${count / max * 100}%`, minHeight: count > 0 ? 2 : 0 }}
+              />
+            </span>
+            <span aria-hidden="true" className="mt-1 block h-4 whitespace-nowrap text-left text-[10px] text-white/60">
+              {byHour ? i % 4 === 0 ? hourLabel(TRACKING_HOURS[i]) : "" : WEEKDAYS[i].slice(0, 3)}
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -815,7 +908,6 @@ function HourlyPullsChart({ date, userId }: { date: string; userId: string }) {
         const start = easternDayStart(date);
         const end = easternDayStart(nextDate);
         const hourly = Array<number>(24).fill(0);
-        const formatter = new Intl.DateTimeFormat("en-US", { timeZone: EASTERN_TZ, hour: "numeric", hourCycle: "h23" });
         const pageSize = 1000;
         for (let from = 0; ; from += pageSize) {
           const { data, error: queryError } = await supabase.from("trich_events")
@@ -829,11 +921,8 @@ function HourlyPullsChart({ date, userId }: { date: string; userId: string }) {
           if (queryError) throw new Error(queryError.message);
           if (cancelled) return;
           for (const event of data ?? []) {
-            if (!event.submitted_at) continue;
-            const hour = event.time_zone && event.local_time
-              ? Number(event.local_time.split(":")[0])
-              : Number(formatter.format(new Date(event.submitted_at)));
-            hourly[(hour + 21) % 24] += 1;
+            const hour = pullHour(event);
+            if (hour !== null) hourly[(hour + 24 - TRICH_DAY_START_HOUR) % 24] += 1;
           }
           if ((data?.length ?? 0) < pageSize) break;
         }

@@ -4,6 +4,7 @@ create table if not exists public.weed_hits (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   created_at timestamptz not null default now(),
+  time_zone text,
   occurred_on date not null default ((now() at time zone 'America/New_York')::date),
   occurred_at time without time zone not null default ((now() at time zone 'America/New_York')::time(0))
 );
@@ -41,6 +42,7 @@ create table if not exists public.alcohol_entries (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   created_at timestamptz not null default now(),
+  time_zone text,
   occurred_on date not null default ((now() at time zone 'America/New_York')::date),
   occurred_at time without time zone not null default ((now() at time zone 'America/New_York')::time(0)),
   amount_oz numeric(7, 2) not null check (amount_oz > 0),

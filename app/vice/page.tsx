@@ -39,6 +39,13 @@ function displayAlcoholLabel(label: string | null) {
   return prefix ? label?.slice(prefix.length) : label;
 }
 
+function viceErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message || fallback;
+  }
+  return fallback;
+}
+
 function previousISODate(iso: string) {
   const date = new Date(`${iso}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() - 1);
@@ -437,6 +444,8 @@ export default function VicePage() {
   const [label, setLabel] = useState("");
   const [saveAsPreset, setSaveAsPreset] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [weedSaving, setWeedSaving] = useState(false);
   const [alcoholSaving, setAlcoholSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -447,16 +456,17 @@ export default function VicePage() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
       const [allWeedHits, allAlcoholEntries] = await Promise.all([
         (async () => {
           const rows: WeedHit[] = [];
           for (let from = 0; ; from += PAGE_SIZE) {
-            const { data, error: queryError } = await supabase.from("weed_hits").select("id,user_id,created_at,occurred_on,occurred_at,time_zone").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
+            // Selecting existing columns allows history to load before the optional timezone migration is applied.
+            const { data, error: queryError } = await supabase.from("weed_hits").select("*").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, from + PAGE_SIZE - 1);
             if (queryError) throw queryError;
             const page = (data ?? []) as WeedHit[];
-            rows.push(...page);
+            rows.push(...page.map((row) => ({ ...row, time_zone: row.time_zone ?? null })));
             if (page.length < PAGE_SIZE) break;
           }
           return rows;
@@ -464,10 +474,10 @@ export default function VicePage() {
         (async () => {
           const rows: AlcoholEntry[] = [];
           for (let from = 0; ; from += PAGE_SIZE) {
-            const { data, error: queryError } = await supabase.from("alcohol_entries").select("id,user_id,created_at,occurred_on,occurred_at,time_zone,amount_oz,abv,label,standard_drinks").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
+            const { data, error: queryError } = await supabase.from("alcohol_entries").select("*").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, from + PAGE_SIZE - 1);
             if (queryError) throw queryError;
             const page = (data ?? []) as AlcoholEntry[];
-            rows.push(...page);
+            rows.push(...page.map((row) => ({ ...row, time_zone: row.time_zone ?? null })));
             if (page.length < PAGE_SIZE) break;
           }
           return rows;
@@ -475,8 +485,10 @@ export default function VicePage() {
       ]);
       setWeedHits(allWeedHits);
       setAlcoholEntries(allAlcoholEntries);
+      setHasLoaded(true);
+      setPageNow(Date.now());
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load vice data.");
+      setLoadError(viceErrorMessage(loadError, "Could not load vice data."));
     }
     setLoading(false);
   }, []);
@@ -635,21 +647,27 @@ export default function VicePage() {
             <button type="submit" form="alcohol-form" disabled={alcoholSaving} className="h-28 w-full rounded-3xl bg-white text-5xl font-bold text-neutral-950 shadow-sm transition active:scale-[0.98] disabled:opacity-60" aria-label="Log alcohol entry">
               {alcoholSaving ? "…" : "A"}
             </button>
-            <div className="mt-2 text-center text-sm text-neutral-400"><span className="font-semibold tabular-nums text-neutral-100">{formatDrinks(todayStandardDrinks)}</span> standard drinks today</div>
-            <div className="mt-1 text-center text-xs text-neutral-500"><span className="tabular-nums">{formatDrinks(weeklyStandardDrinks)}</span> drinks in last week</div>
+            <div className="mt-2 text-center text-sm text-neutral-400"><span className="font-semibold tabular-nums text-neutral-100">{hasLoaded ? formatDrinks(todayStandardDrinks) : "—"}</span> standard drinks today</div>
+            <div className="mt-1 text-center text-xs text-neutral-500"><span className="tabular-nums">{hasLoaded ? formatDrinks(weeklyStandardDrinks) : "—"}</span> drinks in last week</div>
             {timeSinceLastDrink ? <div className="mt-1 text-center text-xs tabular-nums text-neutral-500">{timeSinceLastDrink}</div> : null}
           </div>
           <div>
             <button type="button" onClick={logWeedHit} disabled={weedSaving} className="h-28 w-full rounded-3xl bg-white text-5xl font-bold text-neutral-950 shadow-sm transition active:scale-[0.98] disabled:opacity-60" aria-label="Log one weed hit">
               {weedSaving ? "…" : "W"}
             </button>
-            <div className="mt-2 text-center text-sm text-neutral-400"><span className="font-semibold tabular-nums text-neutral-100">{todayWeedHits}</span> hits today</div>
-            <div className="mt-1 text-center text-xs text-neutral-500"><span className="tabular-nums">{weeklyWeedHits}</span> hits in last week</div>
+            <div className="mt-2 text-center text-sm text-neutral-400"><span className="font-semibold tabular-nums text-neutral-100">{hasLoaded ? todayWeedHits : "—"}</span> hits today</div>
+            <div className="mt-1 text-center text-xs text-neutral-500"><span className="tabular-nums">{hasLoaded ? weeklyWeedHits : "—"}</span> hits in last week</div>
             {timeSinceLastHit ? <div className="mt-1 text-center text-xs tabular-nums text-neutral-500">{timeSinceLastHit}</div> : null}
           </div>
         </div>
 
         <div className="mt-3 min-h-6 text-center text-sm text-neutral-400" aria-live="polite">{confirmation}</div>
+        {loadError ? (
+          <div role="alert" className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+            <span>{loadError}</span>
+            <button type="button" disabled={loading} onClick={() => void loadData()} className="shrink-0 rounded-lg border border-red-900/60 px-3 py-1.5 disabled:opacity-50">{loading ? "Loading…" : "Retry"}</button>
+          </div>
+        ) : null}
         {error ? <div className="mt-2 rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-sm text-red-200">{error}</div> : null}
 
         <form id="alcohol-form" onSubmit={logAlcohol} className="mt-4 rounded-3xl border border-neutral-800 bg-neutral-950/40 p-4 sm:p-5">
@@ -668,7 +686,7 @@ export default function VicePage() {
             }}
             className="mb-3 block w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5 text-base text-neutral-100 outline-none focus:border-neutral-400 disabled:text-neutral-500"
           >
-            <option value="" disabled>{loading ? "Loading presets…" : drinkPresets.length ? "Choose a preset" : "No saved presets"}</option>
+            <option value="" disabled>{loading ? "Loading presets…" : !hasLoaded ? "Presets unavailable" : drinkPresets.length ? "Choose a preset" : "No saved presets"}</option>
             {drinkPresets.map(({ name, entry }) => <option key={entry.id} value={entry.id}>{name}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-3">
@@ -699,11 +717,11 @@ export default function VicePage() {
         <div className="mt-8 grid gap-5 lg:grid-cols-2">
           <section className="rounded-3xl border border-neutral-800 bg-neutral-950/30 p-4 sm:p-5">
             <h2 className="text-lg font-semibold">Standard drinks per day</h2>
-            <div className="mt-4">{loading ? <div className="py-20 text-center text-sm text-neutral-500">Loading…</div> : <DailyBarChart data={alcoholChart} color="#34d399" unit="drinks" averageDays={30} />}</div>
+            <div className="mt-4">{loading ? <div className="py-20 text-center text-sm text-neutral-500">Loading…</div> : !hasLoaded ? <div className="py-20 text-center text-sm text-neutral-500">Data unavailable.</div> : <DailyBarChart data={alcoholChart} color="#34d399" unit="drinks" averageDays={30} />}</div>
           </section>
           <section className="rounded-3xl border border-neutral-800 bg-neutral-950/30 p-4 sm:p-5">
             <h2 className="text-lg font-semibold">Weed hits per day</h2>
-            <div className="mt-4">{loading ? <div className="py-20 text-center text-sm text-neutral-500">Loading…</div> : <DailyBarChart data={weedChart} color="#34d399" unit="hits" />}</div>
+            <div className="mt-4">{loading ? <div className="py-20 text-center text-sm text-neutral-500">Loading…</div> : !hasLoaded ? <div className="py-20 text-center text-sm text-neutral-500">Data unavailable.</div> : <DailyBarChart data={weedChart} color="#34d399" unit="hits" />}</div>
           </section>
         </div>
 
@@ -711,6 +729,8 @@ export default function VicePage() {
           <h2 id="daily-totals-title" className="text-center text-lg font-semibold">Daily totals</h2>
           {loading ? (
             <div className="py-12 text-center text-sm text-neutral-500">Loading…</div>
+          ) : !hasLoaded ? (
+            <div className="py-12 text-center text-sm text-neutral-500">Data unavailable.</div>
           ) : (
             <div className="mt-4 max-h-[28rem] overflow-y-auto rounded-2xl border border-neutral-800">
               <table className="w-full table-fixed border-collapse text-sm tabular-nums">
@@ -744,7 +764,7 @@ export default function VicePage() {
         <div className="mt-6 flex justify-center gap-2 pb-2">
           <button
             type="button"
-            disabled={loading}
+            disabled={loading || !hasLoaded}
             onClick={() => downloadCSV("alcohol_entries.csv", [
               ["id", "user_id", "created_at", "amount_oz", "abv", "label", "standard_drinks", "occurred_on", "occurred_at", "time_zone"],
               ...alcoholEntries.map((entry) => [entry.id, entry.user_id, entry.created_at, entry.amount_oz, entry.abv, entry.label, entry.standard_drinks, entry.occurred_on, entry.occurred_at, entry.time_zone]),
@@ -755,7 +775,7 @@ export default function VicePage() {
           </button>
           <button
             type="button"
-            disabled={loading}
+            disabled={loading || !hasLoaded}
             onClick={() => downloadCSV("weed_hits.csv", [
               ["id", "user_id", "created_at", "occurred_on", "occurred_at", "time_zone"],
               ...weedHits.map((hit) => [hit.id, hit.user_id, hit.created_at, hit.occurred_on, hit.occurred_at, hit.time_zone]),
