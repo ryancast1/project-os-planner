@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { localTrackingTime, VICE_DAY_START_HOUR, viceLogFields } from "@/lib/localTrackingTime";
 
 const APP_TIME_ZONE = "America/New_York";
-const TRACKING_DAY_START_HOUR = 4;
+const TRACKING_DAY_START_HOUR = VICE_DAY_START_HOUR;
 const PAGE_SIZE = 1000;
 const ML_PER_OUNCE = 29.5735;
 const PRESET_LABEL_PREFIX = "[preset] ";
@@ -14,13 +15,14 @@ const MAX_ALCOHOL_LABEL_LENGTH = 120;
 
 type AmountUnit = "oz" | "mL";
 
-type WeedHit = { id: string; user_id: string; created_at: string; occurred_on: string; occurred_at: string };
+type WeedHit = { id: string; user_id: string; created_at: string; occurred_on: string; occurred_at: string; time_zone: string | null };
 type AlcoholEntry = {
   id: string;
   user_id: string;
   created_at: string;
   occurred_on: string;
   occurred_at: string;
+  time_zone: string | null;
   amount_oz: number;
   abv: number;
   label: string | null;
@@ -35,15 +37,6 @@ function formatDrinks(value: number) {
 function displayAlcoholLabel(label: string | null) {
   const prefix = [PRESET_LABEL_PREFIX, PLAIN_LABEL_PREFIX].find((marker) => label?.startsWith(marker));
   return prefix ? label?.slice(prefix.length) : label;
-}
-
-function dateKey(date: Date) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: APP_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
 }
 
 function previousISODate(iso: string) {
@@ -63,14 +56,7 @@ function trackingDate(occurredOn: string, occurredAt: string) {
 }
 
 function currentTrackingDate() {
-  const now = new Date();
-  const calendarDate = dateKey(now);
-  const hour = Number(new Intl.DateTimeFormat("en-US", {
-    timeZone: APP_TIME_ZONE,
-    hour: "2-digit",
-    hourCycle: "h23",
-  }).format(now));
-  return hour < TRACKING_DAY_START_HOUR ? previousISODate(calendarDate) : calendarDate;
+  return localTrackingTime(TRACKING_DAY_START_HOUR).trackingDate;
 }
 
 function chartDatesFor(datesWithData: string[]) {
@@ -113,6 +99,17 @@ function nycLocalTimeToTimestamp(occurredOn: string, occurredAt: string) {
   return guess;
 }
 
+function lastEntryTimestamp(entries: WeedHit[]) {
+  // New logs retain the real instant; legacy entries retain their Eastern interpretation.
+  const latestLegacy = entries.find((entry) => !entry.time_zone);
+  const legacyTimestamp = latestLegacy
+    ? nycLocalTimeToTimestamp(latestLegacy.occurred_on, latestLegacy.occurred_at)
+    : -Infinity;
+  return entries.reduce((latest, entry) => entry.time_zone
+    ? Math.max(latest, Date.parse(entry.created_at))
+    : latest, legacyTimestamp);
+}
+
 function formatElapsed(milliseconds: number) {
   const totalMinutes = Math.max(0, Math.floor(milliseconds / 60_000));
   const days = Math.floor(totalMinutes / 1_440);
@@ -147,7 +144,7 @@ function weekday(iso: string) {
   return new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
 }
 
-function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: string; unit: string }) {
+function DailyBarChart({ data, color, unit, averageDays = 7 }: { data: DailyValue[]; color: string; unit: string; averageDays?: number }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const width = 640;
   const height = 230;
@@ -161,10 +158,10 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
   const barWidth = Math.max(1, Math.min(28, slotWidth * 0.62));
   const plotHeight = height - top - bottom;
   const ticks = [max, max / 2, 0];
-  const rollingAverages = data.slice(6).map((item, offset) => ({
+  const rollingAverages = data.slice(averageDays - 1).map((item, offset) => ({
     date: item.date,
-    index: offset + 6,
-    value: data.slice(offset, offset + 7).reduce((sum, day) => sum + day.value, 0) / 7,
+    index: offset + averageDays - 1,
+    value: data.slice(offset, offset + averageDays).reduce((sum, day) => sum + day.value, 0) / averageDays,
   }));
   const xCenter = (index: number) => left + index * slotWidth + slotWidth / 2;
   const yValue = (value: number) => top + (1 - value / max) * plotHeight;
@@ -215,7 +212,7 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
         {rollingAverages.length > 1 ? <path d={averagePath} fill="none" stroke="#f5f5f5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /> : null}
         {rollingAverages.map((item) => (
           <circle key={`average-${item.date}`} cx={xCenter(item.index)} cy={yValue(item.value)} r="2.5" fill="#f5f5f5">
-            <title>{`${shortDate(item.date)}: ${unit === "drinks" ? formatDrinks(item.value) : item.value.toFixed(2)} ${unit} 7-day average`}</title>
+            <title>{`${shortDate(item.date)}: ${unit === "drinks" ? formatDrinks(item.value) : item.value.toFixed(2)} ${unit} ${averageDays}-day average`}</title>
           </circle>
         ))}
         {activeItem ? (
@@ -224,7 +221,7 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
             <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={activeAverage === undefined ? 49 : 66} rx="8" fill="#171717" stroke="#525252" />
             <text x={tooltipX + 10} y={tooltipY + 17} fill="#d4d4d4" fontSize="11" fontWeight="600">{shortDate(activeItem.date)}</text>
             <text x={tooltipX + 10} y={tooltipY + 35} fill="#f5f5f5" fontSize="12">{unit === "drinks" ? formatDrinks(activeItem.value) : activeItem.value.toFixed(0)} {unit}</text>
-            {activeAverage !== undefined ? <text x={tooltipX + 10} y={tooltipY + 53} fill="#a3a3a3" fontSize="11">7-day avg: {unit === "drinks" ? formatDrinks(activeAverage) : activeAverage.toFixed(2)}</text> : null}
+            {activeAverage !== undefined ? <text x={tooltipX + 10} y={tooltipY + 53} fill="#a3a3a3" fontSize="11">{averageDays}-day avg: {unit === "drinks" ? formatDrinks(activeAverage) : activeAverage.toFixed(2)}</text> : null}
           </g>
         ) : null}
         <rect
@@ -243,7 +240,7 @@ function DailyBarChart({ data, color, unit }: { data: DailyValue[]; color: strin
           }}
         />
       </svg>
-      {rollingAverages.length > 0 ? <div className="flex items-center justify-end gap-1.5 pr-1 text-[11px] text-neutral-500"><span className="block h-0.5 w-5 bg-neutral-100" />7-day avg</div> : null}
+      {rollingAverages.length > 0 ? <div className="flex items-center justify-end gap-1.5 pr-1 text-[11px] text-neutral-500"><span className="block h-0.5 w-5 bg-neutral-100" />{averageDays}-day avg</div> : null}
     </div>
   );
 }
@@ -376,7 +373,7 @@ function WeedDayTimeline({ hits }: { hits: WeedHit[] }) {
 
   return (
     <figure className="mt-5 rounded-xl border border-neutral-800 bg-neutral-900/30 px-3 pt-3 pb-2">
-      <svg viewBox={`0 0 ${width} 110`} className="mt-2 block h-auto w-full" role="img" aria-label={`${hits.length} hits across the New York tracking day, from 4 AM to 4 AM. Each green mark represents one hit.`}>
+      <svg viewBox={`0 0 ${width} 110`} className="mt-2 block h-auto w-full" role="img" aria-label={`${hits.length} hits across the tracking day, from 4 AM to 4 AM local time. Each green mark represents one hit.`}>
         {Array.from({ length: 25 }, (_, hour) => (
           <line key={hour} x1={x(hour)} x2={x(hour)} y1="20" y2="65" stroke="#262626" />
         ))}
@@ -456,7 +453,7 @@ export default function VicePage() {
         (async () => {
           const rows: WeedHit[] = [];
           for (let from = 0; ; from += PAGE_SIZE) {
-            const { data, error: queryError } = await supabase.from("weed_hits").select("id,user_id,created_at,occurred_on,occurred_at").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
+            const { data, error: queryError } = await supabase.from("weed_hits").select("id,user_id,created_at,occurred_on,occurred_at,time_zone").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
             if (queryError) throw queryError;
             const page = (data ?? []) as WeedHit[];
             rows.push(...page);
@@ -467,7 +464,7 @@ export default function VicePage() {
         (async () => {
           const rows: AlcoholEntry[] = [];
           for (let from = 0; ; from += PAGE_SIZE) {
-            const { data, error: queryError } = await supabase.from("alcohol_entries").select("id,user_id,created_at,occurred_on,occurred_at,amount_oz,abv,label,standard_drinks").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
+            const { data, error: queryError } = await supabase.from("alcohol_entries").select("id,user_id,created_at,occurred_on,occurred_at,time_zone,amount_oz,abv,label,standard_drinks").order("occurred_on", { ascending: false }).order("occurred_at", { ascending: false }).order("created_at", { ascending: false }).range(from, from + PAGE_SIZE - 1);
             if (queryError) throw queryError;
             const page = (data ?? []) as AlcoholEntry[];
             rows.push(...page);
@@ -560,17 +557,17 @@ export default function VicePage() {
     return day >= weekStart && day <= today ? total + Number(entry.standard_drinks) : total;
   }, 0);
   const timeSinceLastHit = weedHits.length > 0
-    ? formatElapsed(pageNow - nycLocalTimeToTimestamp(weedHits[0].occurred_on, weedHits[0].occurred_at))
+    ? formatElapsed(pageNow - lastEntryTimestamp(weedHits))
     : null;
   const timeSinceLastDrink = alcoholEntries.length > 0
-    ? formatElapsed(pageNow - nycLocalTimeToTimestamp(alcoholEntries[0].occurred_on, alcoholEntries[0].occurred_at))
+    ? formatElapsed(pageNow - lastEntryTimestamp(alcoholEntries))
     : null;
 
   async function logWeedHit() {
     if (weedSaving) return;
     setWeedSaving(true);
     setError(null);
-    const { data, error: saveError } = await supabase.from("weed_hits").insert({}).select("id,user_id,created_at,occurred_on,occurred_at").single();
+    const { data, error: saveError } = await supabase.from("weed_hits").insert(viceLogFields()).select("id,user_id,created_at,occurred_on,occurred_at,time_zone").single();
     setWeedSaving(false);
     if (saveError) {
       setError(saveError.message);
@@ -609,8 +606,8 @@ export default function VicePage() {
     setError(null);
     const { data, error: saveError } = await supabase
       .from("alcohol_entries")
-      .insert({ amount_oz: storedOunces, abv: abvPercent, label: trimmedLabel ? `${labelPrefix}${trimmedLabel}` : null, standard_drinks: standardDrinks })
-      .select("id,user_id,created_at,occurred_on,occurred_at,amount_oz,abv,label,standard_drinks")
+      .insert({ ...viceLogFields(), amount_oz: storedOunces, abv: abvPercent, label: trimmedLabel ? `${labelPrefix}${trimmedLabel}` : null, standard_drinks: standardDrinks })
+      .select("id,user_id,created_at,occurred_on,occurred_at,time_zone,amount_oz,abv,label,standard_drinks")
       .single();
     setAlcoholSaving(false);
     if (saveError) {
@@ -702,7 +699,7 @@ export default function VicePage() {
         <div className="mt-8 grid gap-5 lg:grid-cols-2">
           <section className="rounded-3xl border border-neutral-800 bg-neutral-950/30 p-4 sm:p-5">
             <h2 className="text-lg font-semibold">Standard drinks per day</h2>
-            <div className="mt-4">{loading ? <div className="py-20 text-center text-sm text-neutral-500">Loading…</div> : <DailyBarChart data={alcoholChart} color="#34d399" unit="drinks" />}</div>
+            <div className="mt-4">{loading ? <div className="py-20 text-center text-sm text-neutral-500">Loading…</div> : <DailyBarChart data={alcoholChart} color="#34d399" unit="drinks" averageDays={30} />}</div>
           </section>
           <section className="rounded-3xl border border-neutral-800 bg-neutral-950/30 p-4 sm:p-5">
             <h2 className="text-lg font-semibold">Weed hits per day</h2>
@@ -749,8 +746,8 @@ export default function VicePage() {
             type="button"
             disabled={loading}
             onClick={() => downloadCSV("alcohol_entries.csv", [
-              ["id", "user_id", "created_at", "amount_oz", "abv", "label", "standard_drinks", "occurred_on", "occurred_at"],
-              ...alcoholEntries.map((entry) => [entry.id, entry.user_id, entry.created_at, entry.amount_oz, entry.abv, entry.label, entry.standard_drinks, entry.occurred_on, entry.occurred_at]),
+              ["id", "user_id", "created_at", "amount_oz", "abv", "label", "standard_drinks", "occurred_on", "occurred_at", "time_zone"],
+              ...alcoholEntries.map((entry) => [entry.id, entry.user_id, entry.created_at, entry.amount_oz, entry.abv, entry.label, entry.standard_drinks, entry.occurred_on, entry.occurred_at, entry.time_zone]),
             ])}
             className="rounded-lg border border-neutral-800 bg-neutral-950/30 px-3 py-1.5 text-xs text-neutral-500 transition hover:text-neutral-300 active:scale-[0.98] disabled:opacity-50"
           >
@@ -760,8 +757,8 @@ export default function VicePage() {
             type="button"
             disabled={loading}
             onClick={() => downloadCSV("weed_hits.csv", [
-              ["id", "user_id", "created_at", "occurred_on", "occurred_at"],
-              ...weedHits.map((hit) => [hit.id, hit.user_id, hit.created_at, hit.occurred_on, hit.occurred_at]),
+              ["id", "user_id", "created_at", "occurred_on", "occurred_at", "time_zone"],
+              ...weedHits.map((hit) => [hit.id, hit.user_id, hit.created_at, hit.occurred_on, hit.occurred_at, hit.time_zone]),
             ])}
             className="rounded-lg border border-neutral-800 bg-neutral-950/30 px-3 py-1.5 text-xs text-neutral-500 transition hover:text-neutral-300 active:scale-[0.98] disabled:opacity-50"
           >

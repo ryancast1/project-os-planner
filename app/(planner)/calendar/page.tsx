@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { supabase } from "../../../lib/supabaseClient";
+import { planEndDate, planTimelineTimes, resizePlanEnd } from "@/lib/planSchedule";
 type Plan = {
   id: string;
   title: string;
@@ -75,7 +76,7 @@ function isoMin(a: string, b: string) {
 }
 
 function planEndIso(p: Plan) {
-  return (p.end_date ?? p.scheduled_for) || p.scheduled_for;
+  return planEndDate(p) ?? p.scheduled_for;
 }
 
 function startOfWeekMonday(d: Date) {
@@ -457,7 +458,7 @@ function ScheduleEditModal({
 function CalPlanItemBlock({
   plan, position, onResize, pixelsPerHour, siblingItems, column,
 }: {
-  plan: { id: string; title: string; starts_at: string; ends_at: string; isPlan: true; hasEndTime: boolean };
+  plan: { id: string; title: string; starts_at: string; ends_at: string; canResize: boolean };
   position: { top: number; height: number };
   onResize: (newEndTime: string) => void;
   pixelsPerHour: number;
@@ -541,12 +542,14 @@ function CalPlanItemBlock({
       <div className="px-2 py-1">
         <div className="text-sm text-neutral-200 truncate text-center">{plan.title}</div>
       </div>
-      <div
-        className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize touch-none bg-gradient-to-t from-neutral-600/40"
-        onTouchStart={handleResizeStart}
-        onMouseDown={handleResizeStart}
-        onClick={(e) => e.stopPropagation()}
-      />
+      {plan.canResize && (
+        <div
+          className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize touch-none bg-gradient-to-t from-neutral-600/40"
+          onTouchStart={handleResizeStart}
+          onMouseDown={handleResizeStart}
+          onClick={(e) => e.stopPropagation()}
+        />
+      )}
     </div>
   );
 }
@@ -590,23 +593,12 @@ function CalDayScheduleView({
   const rightItems = items.filter(item => { const hour = parseInt(item.starts_at.split(':')[0]); return hour >= 15 && hour < 23; });
 
   const plansWithTime = useMemo(() => {
-    return plans
-      .filter(p => p.starts_at && (p.status === 'open' || !p.status))
-      .map(p => {
-        const startsAtDate = new Date(p.starts_at!);
-        const startHour = startsAtDate.getHours();
-        const startMin = startsAtDate.getMinutes();
-        const startsAtTime = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`;
-        let endsAtTime: string;
-        if (p.ends_at) {
-          const endsAtDate = new Date(p.ends_at);
-          endsAtTime = `${String(endsAtDate.getHours()).padStart(2, '0')}:${String(endsAtDate.getMinutes()).padStart(2, '0')}:00`;
-        } else {
-          endsAtTime = `${String(startHour + 1).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`;
-        }
-        return { id: p.id, title: p.title, starts_at: startsAtTime, ends_at: endsAtTime, isPlan: true as const, hasEndTime: !!p.ends_at };
-      });
-  }, [plans]);
+    return plans.flatMap((plan) => {
+      if (plan.scheduled_for !== date || (plan.status && plan.status !== "open")) return [];
+      const times = planTimelineTimes(plan);
+      return times ? [{ id: plan.id, title: plan.title, ...times }] : [];
+    });
+  }, [plans, date]);
 
   const leftPlans = plansWithTime.filter(p => { const hour = parseInt(p.starts_at.split(':')[0]); return hour >= 7 && hour < 15; });
   const rightPlans = plansWithTime.filter(p => { const hour = parseInt(p.starts_at.split(':')[0]); return hour >= 15 && hour < 23; });
@@ -926,6 +918,8 @@ export default function CalendarPage() {
   }, [yearView, weeks]);
 
   const [plans, setPlans] = useState<Plan[]>([]);
+  const planWriteVersion = useRef(0);
+  const [refreshVersion, refresh] = useState(0);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [focuses, setFocuses] = useState<Focus[]>([]);
   const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
@@ -993,7 +987,16 @@ export default function CalendarPage() {
   }, []);
 
   useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refresh((version) => version + 1);
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    return () => window.removeEventListener("focus", refreshWhenVisible);
+  }, []);
+
+  useEffect(() => {
     let alive = true;
+    const planWritesAtStart = planWriteVersion.current;
     (async () => {
       setLoading(true);
       const [plansRes, tasksRes, focusRes, dayNotesRes, contentItemsRes, contentSessionsRes, movieLookupRes] = await Promise.all([
@@ -1001,7 +1004,7 @@ export default function CalendarPage() {
           .from("plans")
           .select("id,title,scheduled_for,end_date,starts_at,ends_at,status,day_off")
           .lte("scheduled_for", range.end)
-          .or(`end_date.gte.${range.start},and(end_date.is.null,scheduled_for.gte.${range.start})`)
+          .or(`scheduled_for.gte.${range.start},end_date.gte.${range.start}`)
           .order("scheduled_for", { ascending: true })
           .order("starts_at", { ascending: true, nullsFirst: true })
           .order("created_at", { ascending: true }),
@@ -1051,7 +1054,9 @@ export default function CalendarPage() {
       if (contentSessionsRes.error) console.error(contentSessionsRes.error);
       if (movieLookupRes.error) console.error(movieLookupRes.error);
 
-      setPlans((plansRes.data ?? []) as Plan[]);
+      if (!plansRes.error && planWritesAtStart === planWriteVersion.current) {
+        setPlans((plansRes.data ?? []) as Plan[]);
+      }
       setTasks((tasksRes.data ?? []) as Task[]);
       setFocuses((focusRes.data ?? []) as Focus[]);
       setContentItems((contentItemsRes.data ?? []) as ContentItem[]);
@@ -1077,7 +1082,7 @@ export default function CalendarPage() {
     return () => {
       alive = false;
     };
-  }, [range.start, range.end]);
+  }, [range.start, range.end, refreshVersion]);
 
   const plansByDay = useMemo(() => {
     const m: Record<string, Plan[]> = {};
@@ -1629,26 +1634,25 @@ export default function CalendarPage() {
           return d.toLocaleDateString(undefined, { weekday: 'long' });
         })() : ''}
         items={scheduleItems}
-        plans={scheduleViewDate ? plans.filter((p) => p.scheduled_for <= scheduleViewDate && scheduleViewDate <= planEndIso(p)) : []}
+        plans={plans}
         onClose={() => { setScheduleViewDate(null); setScheduleItems([]); }}
         onCreateItem={createScheduleItem}
         onUpdateItem={updateScheduleItem}
         onDeleteItem={deleteScheduleItem}
         onUpdatePlanTime={async (id, endsAtTime) => {
-          const plan = plans.find(p => p.id === id);
-          if (!plan || !plan.starts_at) return;
-          const startsAtDate = new Date(plan.starts_at);
-          const [endH, endM] = endsAtTime.split(':').map(Number);
-          const endsAtDate = new Date(startsAtDate);
-          endsAtDate.setHours(endH, endM, 0, 0);
-          const { error } = await supabase
-            .from('plans')
-            .update({ ends_at: endsAtDate.toISOString() })
-            .eq('id', id);
-          if (!error) {
-            setPlans(prev => prev.map(p =>
-              p.id === id ? { ...p, ends_at: endsAtDate.toISOString() } : p
-            ));
+          const plan = plans.find((item) => item.id === id);
+          if (!plan?.starts_at || !plan.scheduled_for) return;
+          try {
+            const times = resizePlanEnd(plan, endsAtTime);
+            const { data, error } = await supabase.from("plans").update(times)
+              .eq("id", id).eq("scheduled_for", plan.scheduled_for).eq("starts_at", plan.starts_at)
+              .select("starts_at,ends_at").single();
+            if (error) throw error;
+            planWriteVersion.current += 1;
+            setPlans((previous) => previous.map((item) => item.id === id ? { ...item, ...data } : item));
+          } catch (error) {
+            const message = error && typeof error === "object" && "message" in error ? String(error.message) : "Try again.";
+            window.alert(`Could not change the end time. ${message}`);
           }
         }}
       />

@@ -3,21 +3,15 @@
 import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { localTrackingTime, TRICH_DAY_START_HOUR, trichLogFields } from "@/lib/localTrackingTime";
 
-const PACIFIC_TZ = "America/Los_Angeles";
 const EASTERN_TZ = "America/New_York";
 
 type DailyRow = { date: string; t1: number; t2: number };
 type IndexPoint = { date: string; index: number };
 
-function pacificISODate(d = new Date()) {
-  // en-CA => YYYY-MM-DD
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: PACIFIC_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
+function currentTrackingDate() {
+  return localTrackingTime(TRICH_DAY_START_HOUR).trackingDate;
 }
 
 function isoToMDY(iso: string) {
@@ -138,7 +132,7 @@ export default function Home() {
   const [status, setStatus] = useState<"loading" | "idle" | "saving" | "error">("loading");
   const [err, setErr] = useState<string | null>(null);
 
-  const [today, setToday] = useState(() => pacificISODate());
+  const [today, setToday] = useState(() => currentTrackingDate());
 
   const [t1, setT1] = useState(0);
   const [t2, setT2] = useState(0);
@@ -160,10 +154,10 @@ export default function Home() {
   const t1ReplacementLevel = useMemo(() => getReplacementLevel(t1RegrowthIndexData, t1), [t1RegrowthIndexData, t1]);
   const t2ReplacementLevel = useMemo(() => getReplacementLevel(t2RegrowthIndexData, t2), [t2RegrowthIndexData, t2]);
 
-  // Keep "today" updated (Pacific midnight boundary)
+  // Re-read the device timezone as well as the local day boundary.
   useEffect(() => {
     const id = window.setInterval(() => {
-      const t = pacificISODate();
+      const t = currentTrackingDate();
       setToday((prev) => (prev === t ? prev : t));
     }, 30_000);
     return () => window.clearInterval(id);
@@ -195,7 +189,7 @@ export default function Home() {
     })();
   }, []);
 
-  // Load data whenever user or "today" changes (so it flips after Pacific midnight)
+  // Reload when the local tracking day changes.
   useEffect(() => {
     if (!userId) return;
     loadDailyAndToday(userId);
@@ -237,7 +231,7 @@ export default function Home() {
     try {
       const events = await fetchAllEvents(uid);
 
-      // Aggregate by occurred_on (Pacific-day bucket)
+      // Preserve each event's saved tracking day, including legacy events.
       const byDay = new Map<string, { t1: number; t2: number }>();
       for (const e of events) {
         const day = e.occurred_on;
@@ -251,13 +245,14 @@ export default function Home() {
       const allDates = Array.from(byDay.keys()).sort();
       const startDateISO = allDates.length > 0 ? allDates[0] : today;
 
-      // Build continuous daily rows from Pacific "today" back to start date
+      // Include saved dates ahead of the current local day after westward travel.
       const out: DailyRow[] = [];
       const start = dateFromISO(startDateISO);
-      let d = dateFromISO(today);
+      const latestDateISO = allDates.length > 0 && allDates[allDates.length - 1] > today ? allDates[allDates.length - 1] : today;
+      let d = dateFromISO(latestDateISO);
 
       for (; d >= start; d = new Date(d.getTime() - 86400000)) {
-        const iso = pacificISODate(d); // label each row in Pacific
+        const iso = d.toISOString().slice(0, 10);
         const agg = byDay.get(iso) ?? { t1: 0, t2: 0 };
         out.push({ date: iso, t1: agg.t1, t2: agg.t2 });
       }
@@ -336,10 +331,10 @@ export default function Home() {
       if (msg && !msg.toLowerCase().includes("does not exist")) break;
     }
 
-    const all: Array<{ occurred_on: string; trich: number; ts?: string | null }> = [];
+    const all: Array<{ occurred_on: string; trich: number; ts?: string | null; local_date: string | null; local_time: string | null; time_zone: string | null }> = [];
 
     while (true) {
-      const sel = tsCol ? `occurred_on,trich,${tsCol}` : "occurred_on,trich";
+      const sel = `occurred_on,trich,local_date,local_time,time_zone${tsCol ? `,${tsCol}` : ""}`;
       const { data, error } = await runPage(sel);
       if (error) throw error;
 
@@ -351,6 +346,9 @@ export default function Home() {
           occurred_on: r.occurred_on,
           trich: Number(r.trich),
           ts: typeof timestampValue === "string" ? timestampValue : null,
+          local_date: typeof r.local_date === "string" ? r.local_date : null,
+          local_time: typeof r.local_time === "string" ? r.local_time : null,
+          time_zone: typeof r.time_zone === "string" ? r.time_zone : null,
         });
       }
 
@@ -376,6 +374,9 @@ export default function Home() {
         "occurred_on",
         "trich",
         "timestamp",
+        "local_date",
+        "local_time",
+        "time_zone",
       ];
 
       const lines: string[] = [];
@@ -387,6 +388,9 @@ export default function Home() {
           csvEscape(r.occurred_on),
           csvEscape(r.trich),
           csvEscape(timestamp),
+          csvEscape(r.local_date ?? ""),
+          csvEscape(r.local_time ?? ""),
+          csvEscape(r.time_zone ?? ""),
         ].join(","));
       }
 
@@ -409,7 +413,8 @@ export default function Home() {
     setErr(null);
     setStatus("saving");
 
-    const occurredOn = pacificISODate(); // compute at tap time (Pacific day boundary)
+    const fields = trichLogFields();
+    const occurredOn = fields.occurred_on;
 
     // optimistic bump only if it’s for the currently displayed "today"
     if (occurredOn === today) {
@@ -420,7 +425,7 @@ export default function Home() {
     const { error } = await supabase.from("trich_events").insert({
       user_id: userId,
       trich: n,
-      occurred_on: occurredOn,
+      ...fields,
     });
 
     if (error) {
@@ -782,7 +787,7 @@ function HourlyPullsDialog({ date, userId, olderDay, newerDay, onNavigate, onClo
               {new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: EASTERN_TZ }).format(dateFromISO(date))}
               <span className="mt-1 block text-base font-normal text-white/60">{isoToMDY(date)}</span>
             </h2>
-            <p className="mt-1 text-sm text-white/50">Hourly pulls · 3am to 3am ET</p>
+            <p className="mt-1 text-sm text-white/50">Hourly pulls · 3am to 3am local time</p>
           </div>
           <button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-white/15 px-3 text-sm hover:bg-white/10">Close</button>
         </div>
@@ -814,18 +819,20 @@ function HourlyPullsChart({ date, userId }: { date: string; userId: string }) {
         const pageSize = 1000;
         for (let from = 0; ; from += pageSize) {
           const { data, error: queryError } = await supabase.from("trich_events")
-            .select("id, submitted_at")
+            .select("id, submitted_at, local_time, time_zone")
             .eq("user_id", userId)
             .in("trich", [1, 2])
-            .gte("submitted_at", start)
-            .lt("submitted_at", end)
+            .or(`and(time_zone.not.is.null,occurred_on.eq.${date}),and(time_zone.is.null,submitted_at.gte.${start},submitted_at.lt.${end})`)
             .order("submitted_at", { ascending: true })
             .order("id", { ascending: true })
             .range(from, from + pageSize - 1);
           if (queryError) throw new Error(queryError.message);
           if (cancelled) return;
           for (const event of data ?? []) {
-            const hour = Number(formatter.format(new Date(event.submitted_at)));
+            if (!event.submitted_at) continue;
+            const hour = event.time_zone && event.local_time
+              ? Number(event.local_time.split(":")[0])
+              : Number(formatter.format(new Date(event.submitted_at)));
             hourly[(hour + 21) % 24] += 1;
           }
           if ((data?.length ?? 0) < pageSize) break;

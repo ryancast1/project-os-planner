@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
+import { localDateTime, planClockTime, planScheduleFields } from "@/lib/planSchedule";
 import { supabase } from "@/lib/supabaseClient";
 
 // Column type definitions
-type ColumnType = "text" | "number" | "boolean" | "date" | "datetime" | "timestampTime" | "time" | "select" | "relation";
+type ColumnType = "text" | "number" | "boolean" | "date" | "datetime" | "timestampTime" | "planTime" | "time" | "select" | "relation";
 
 type RelationConfig = {
   table: string;
@@ -20,6 +21,7 @@ type ColumnConfig = {
   type: ColumnType;
   options?: string[];
   readonly?: boolean;
+  keepEmptyString?: boolean;
   relation?: RelationConfig;
 };
 
@@ -33,6 +35,12 @@ type TableConfig = {
 
 type RelationOption = { value: string; label: string };
 type RelationOptions = Record<string, RelationOption[]>;
+type DatabaseValue = string | number | boolean | null;
+type DatabaseRow = Record<string, DatabaseValue | undefined>;
+
+function stringValue(value: DatabaseValue | undefined) {
+  return typeof value === "string" ? value : null;
+}
 
 const GOAL_RELATION: RelationConfig = {
   table: "projects_goals",
@@ -166,13 +174,13 @@ const TABLE_CONFIG: Record<string, TableConfig> = {
     defaultSort: { column: "created_at", desc: true },
     columns: [
       { name: "title", type: "text" },
+      { name: "scheduled_for", label: "Start date", type: "date" },
+      { name: "end_date", label: "End date", type: "date" },
+      { name: "starts_at", label: "Start time", type: "planTime" },
+      { name: "ends_at", label: "End time", type: "planTime" },
       { name: "notes", type: "text" },
-      { name: "starts_at", type: "datetime" },
-      { name: "ends_at", type: "datetime" },
-      { name: "end_date", type: "date" },
       { name: "day_off", type: "boolean" },
       { name: "status", type: "select", options: ["open", "done", "canceled"] },
-      { name: "scheduled_for", type: "date" },
       { name: "window_kind", type: "select", options: ["workweek", "weekend"] },
       { name: "window_start", type: "date" },
       { name: "project_goal_id", type: "relation", relation: GOAL_RELATION },
@@ -218,7 +226,7 @@ const TABLE_CONFIG: Record<string, TableConfig> = {
       { name: "distance", type: "number" },
       { name: "distance_unit", type: "select", options: ["km", "mi"] },
       { name: "temperature_f", type: "number" },
-      { name: "notes", type: "text" },
+      { name: "notes", type: "text", keepEmptyString: true },
       { name: "is_east_river_3k", type: "boolean" },
       { name: "created_at", type: "datetime", readonly: true },
       { name: "updated_at", type: "datetime", readonly: true },
@@ -293,6 +301,51 @@ function noRowsChangedMessage(action: "update" | "delete", table: string) {
   return `No rows were ${verb} in ${table}. The record may no longer exist, or this table's row-level security policy may not allow ${action}s.`;
 }
 
+function errorMessage(error: unknown) {
+  return error && typeof error === "object" && "message" in error
+    ? String(error.message)
+    : "An unexpected error occurred.";
+}
+
+async function fetchAllRows(
+  fetchPage: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; count: number | null; error: unknown }>,
+  signal: AbortSignal,
+) {
+  const result: DatabaseRow[] = [];
+  let total: number | null = null;
+  while (!signal.aborted) {
+    const { data, count, error } = await fetchPage(result.length, result.length + 999);
+    if (error) throw error;
+    if (!data?.length) break;
+    total = count ?? total;
+    result.push(...data as DatabaseRow[]);
+    if (total !== null && result.length >= total) break;
+  }
+  return result;
+}
+
+function formatPlanTime(value: string) {
+  return planClockTime(value)
+    ? new Date(value).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    : "";
+}
+
+const planScheduleColumns = ["scheduled_for", "end_date", "starts_at", "ends_at"];
+
+function collectPlanDates(form: DatabaseRow, original?: DatabaseRow) {
+  return planScheduleFields(
+    stringValue(form.scheduled_for) || null,
+    stringValue(form.end_date) || null,
+    stringValue(form.starts_at) || "",
+    stringValue(form.ends_at) || "",
+    original ? { scheduled_for: stringValue(original.scheduled_for), starts_at: stringValue(original.starts_at), ends_at: stringValue(original.ends_at) } : undefined,
+  );
+}
+
+function MutationError({ message }: { message: string | null }) {
+  return message && <p role="alert" className="my-2 text-sm text-red-300">{message}</p>;
+}
+
 function formatDatetime(val: string | null): string {
   if (!val) return "";
   const d = new Date(val);
@@ -334,8 +387,8 @@ function formatTimestampTimeInput(val: string | null): string {
   }).format(date);
 }
 
-function replaceTimestampTimeInEastern(val: string, nextTime: string): string | null {
-  const date = new Date(val);
+function replaceTimestampTimeInEastern(val: string | null, nextTime: string): string | null {
+  const date = new Date(val ?? "");
   if (Number.isNaN(date.getTime()) || !nextTime) return null;
 
   const dateParts = new Intl.DateTimeFormat("en-US", {
@@ -391,151 +444,122 @@ function columnLabel(col: ColumnConfig) {
 
 export default function DatabasePage() {
   const [selectedTable, setSelectedTable] = useState<string>("tasks");
-  const [rows, setRows] = useState<any[]>([]);
-  const [allSearchRows, setAllSearchRows] = useState<any[] | null>(null);
+  const [rows, setRows] = useState<DatabaseRow[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
-  const [loading, setLoading] = useState(false);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [refreshVersion, refresh] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDesc, setSortDesc] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [editingRow, setEditingRow] = useState<any | null>(null);
+  const [editingRow, setEditingRow] = useState<DatabaseRow | null>(null);
   const [addingRow, setAddingRow] = useState(false);
   const [page, setPage] = useState(0);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteSelection, setDeleteSelection] = useState<string[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [relationOptions, setRelationOptions] = useState<RelationOptions>({});
 
   const config = TABLE_CONFIG[selectedTable];
 
-  // Load table data
-  async function loadTable() {
-    setLoading(true);
-    setError(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [relationError, setRelationError] = useState<string | null>(null);
+  const savingRef = useRef(false);
+  const searching = Boolean(searchQuery.trim());
+  const sortCol = sortColumn ?? config.defaultSort.column;
+  const sortAsc = sortColumn ? !sortDesc : !config.defaultSort.desc;
+  const queryPage = searching ? 0 : page;
+  const requestKey = JSON.stringify([selectedTable, sortCol, sortAsc, searching, queryPage, refreshVersion]);
+  const loading = loadedKey !== requestKey;
 
-    const sortCol = sortColumn ?? config.defaultSort.column;
-    const sortAsc = sortColumn ? !sortDesc : !config.defaultSort.desc;
-
-    // Get total count
-    const countRes = await supabase.from(selectedTable).select("*", { count: "exact", head: true });
-
-    const { data, error: fetchError } = await supabase
-      .from(selectedTable)
-      .select("*")
-      .order(sortCol, { ascending: sortAsc })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-
-    if (fetchError) {
-      setError(fetchError.message);
-      setRows([]);
-    } else {
-      setRows(data ?? []);
-      setTotalCount(countRes.count ?? 0);
-    }
-    setLoading(false);
+  function reload() {
+    setSelectedIds(new Set());
+    refresh((version) => version + 1);
   }
 
   useEffect(() => {
-    loadTable();
-    setSelectedIds(new Set());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTable, sortColumn, sortDesc, page]);
+    const controller = new AbortController();
+    const { signal } = controller;
+    const orderedRows = (from: number) => {
+      const query = supabase.from(selectedTable).select("*", from === 0 || !searching ? { count: "exact" } : {})
+        .order(sortCol, { ascending: sortAsc, nullsFirst: false });
+      return (sortCol === config.primaryKey ? query : query.order(config.primaryKey)).abortSignal(signal);
+    };
 
-  useEffect(() => {
-    let active = true;
-    const queryText = searchQuery.trim();
-
-    if (!queryText) {
-      setAllSearchRows(null);
-      setSearchLoading(false);
-      return;
-    }
-
-    setSearchLoading(true);
-    setAllSearchRows(null);
-    const timer = window.setTimeout(async () => {
-      const batchSize = 1000;
-      const allRows: any[] = [];
-      const sortCol = sortColumn ?? config.defaultSort.column;
-      const sortAsc = sortColumn ? !sortDesc : !config.defaultSort.desc;
-
+    async function load() {
+      setError(null);
       try {
-        for (let from = 0; ; from += batchSize) {
-          const { data, error: fetchError } = await supabase
-            .from(selectedTable)
-            .select("*")
-            .order(sortCol, { ascending: sortAsc })
-            .range(from, from + batchSize - 1);
-          if (fetchError) throw fetchError;
-          const batch = data ?? [];
-          allRows.push(...batch);
-          if (batch.length < batchSize) break;
+        if (searching) {
+          const allRows = await fetchAllRows((from, to) => orderedRows(from).range(from, to), signal);
+          if (!signal.aborted) {
+            setRows(allRows);
+            setTotalCount(allRows.length);
+          }
+        } else {
+          const { data, count, error } = await orderedRows(queryPage * PAGE_SIZE).range(queryPage * PAGE_SIZE, (queryPage + 1) * PAGE_SIZE - 1);
+          if (signal.aborted) return;
+          if (error?.code === "PGRST103" && queryPage > 0) {
+            setPage(0);
+            return;
+          }
+          if (error) throw error;
+          const lastPage = Math.max(0, Math.ceil((count ?? 0) / PAGE_SIZE) - 1);
+          if (queryPage > lastPage) {
+            setPage(lastPage);
+            return;
+          }
+          setRows(data ?? []);
+          setTotalCount(count ?? 0);
         }
-
-        if (active) setAllSearchRows(allRows);
-      } catch (searchError: unknown) {
-        if (active) {
-          const message = searchError instanceof Error ? searchError.message : "Search failed";
-          setError(message);
-          setAllSearchRows([]);
+      } catch (error) {
+        if (!signal.aborted) {
+          setRows([]);
+          setTotalCount(0);
+          setError(errorMessage(error));
         }
       } finally {
-        if (active) setSearchLoading(false);
+        if (!signal.aborted) setLoadedKey(requestKey);
       }
-    }, 250);
-
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [searchQuery, selectedTable, sortColumn, sortDesc, config]);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadRelationOptions() {
-      const relationColumns = config.columns.filter((col) => col.type === "relation" && col.relation);
-      if (relationColumns.length === 0) {
-        setRelationOptions({});
-        return;
-      }
-
-      const entries = await Promise.all(relationColumns.map(async (col) => {
-        const relation = col.relation!;
-        let query = supabase
-          .from(relation.table)
-          .select(`${relation.valueColumn},${relation.labelColumn}`);
-        if (relation.orderColumn) query = query.order(relation.orderColumn, { ascending: true });
-        const { data, error: relationError } = await query;
-        if (relationError) throw relationError;
-        const options = (data ?? []).map((item) => {
-          const record = item as unknown as Record<string, unknown>;
-          return {
-            value: String(record[relation.valueColumn]),
-            label: String(record[relation.labelColumn] ?? "Unnamed"),
-          };
-        });
-        return [col.name, options] as const;
-      }));
-
-      if (active) setRelationOptions(Object.fromEntries(entries));
     }
 
-    loadRelationOptions().catch((relationError: unknown) => {
-      if (!active) return;
-      const message = relationError instanceof Error ? relationError.message : "Could not load related names";
-      setError(message);
-      setRelationOptions({});
-    });
+    void load();
+    return () => controller.abort();
+  }, [selectedTable, config.primaryKey, sortCol, sortAsc, queryPage, searching, requestKey]);
 
-    return () => { active = false; };
-  }, [config]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    setRelationError(null);
+    const loadOptions = async () => {
+      const entries = await Promise.all(config.columns.flatMap((col) => {
+        const relation = col.relation;
+        if (!relation) return [];
+        return [fetchAllRows((from, to) => supabase.from(relation.table)
+          .select(`${relation.valueColumn},${relation.labelColumn}`, from === 0 ? { count: "exact" } : {})
+          .order(relation.orderColumn ?? relation.labelColumn)
+          .order(relation.valueColumn)
+          .range(from, to)
+          .abortSignal(signal), signal).then((records) => [col.name, records.map((item) => ({
+            value: String(item[relation.valueColumn]),
+            label: String(item[relation.labelColumn] || "Unnamed"),
+          }))] as const)];
+      }));
+      if (!signal.aborted) setRelationOptions(Object.fromEntries(entries));
+    };
+    loadOptions().catch((error: unknown) => {
+      if (!signal.aborted) setRelationError(`Could not load related names. ${errorMessage(error)}`);
+    });
+    return () => controller.abort();
+  }, [config, refreshVersion]);
 
   // Reset page when changing table
   function handleTableChange(newTable: string) {
     setSelectedTable(newTable);
+    setRelationOptions({});
+    setMutationError(null);
+    setDeleteSelection(null);
+    setEditingRow(null);
+    setAddingRow(false);
     setPage(0);
     setSortColumn(null);
     setSortDesc(true);
@@ -545,25 +569,30 @@ export default function DatabasePage() {
 
   // Filter rows by search (client-side)
   const matchingSearchRows = useMemo(() => {
-    if (!searchQuery.trim()) return [];
+    if (!searchQuery.trim() || loading) return [];
     const q = searchQuery.trim().toLowerCase();
-    return (allSearchRows ?? []).filter((row) =>
+    return rows.filter((row) =>
       config.columns.some((col) => {
         const val = row[col.name];
         if (val == null) return false;
-        const displayVal = col.type === "relation"
-          ? relationOptions[col.name]?.find((option) => option.value === String(val))?.label ?? val
-          : col.type === "timestampTime"
-            ? formatTimestampTime(String(val))
-          : val;
-        return String(displayVal).toLowerCase().includes(q);
+        if (col.type === "relation") {
+          return relationOptions[col.name]?.some((option) => option.value === String(val) && option.label.toLowerCase().includes(q));
+        }
+        const displayVal = col.type === "timestampTime" ? formatTimestampTime(String(val))
+          : col.type === "planTime" ? formatPlanTime(String(val)) : col.type === "boolean" ? (val ? "Yes" : "No") : val;
+        return String(displayVal).toLowerCase().includes(q) || String(val).toLowerCase().includes(q);
       })
     );
-  }, [allSearchRows, searchQuery, config.columns, relationOptions]);
+  }, [loading, rows, searchQuery, config.columns, relationOptions]);
 
-  const filteredRows = searchQuery.trim()
-    ? matchingSearchRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+  const displayedTotalCount = loading ? 0 : searching ? matchingSearchRows.length : totalCount;
+  const visiblePage = Math.min(page, Math.max(0, Math.ceil(displayedTotalCount / PAGE_SIZE) - 1));
+  const filteredRows = loading ? [] : searching
+    ? matchingSearchRows.slice(visiblePage * PAGE_SIZE, (visiblePage + 1) * PAGE_SIZE)
     : rows;
+  const visibleIds = filteredRows.map((row) => String(row[config.primaryKey]));
+  const visibleSelection = visibleIds.filter((id) => selectedIds.has(id));
+  const allVisibleSelected = visibleIds.length > 0 && visibleSelection.length === visibleIds.length;
 
   // Toggle row selection
   function toggleSelect(id: string) {
@@ -577,105 +606,88 @@ export default function DatabasePage() {
 
   // Select all visible
   function toggleSelectAll() {
-    if (selectedIds.size === filteredRows.length) {
+    if (allVisibleSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredRows.map((r) => r[config.primaryKey])));
+      setSelectedIds(new Set(visibleIds));
     }
   }
 
-  // Update a row
-  async function updateRow(id: string, patch: any) {
+  async function mutate(action: string, operation: () => Promise<void>) {
+    if (savingRef.current) return false;
+    savingRef.current = true;
     setSaving(true);
+    setMutationError(null);
     try {
-      // Mutations can return no error while changing zero rows (most commonly
-      // because an RLS policy filtered the row out). Requesting the affected
-      // primary key lets the editor distinguish that from a real save.
-      const { data, error: updateError } = await supabase
-        .from(selectedTable)
-        .update(patch)
-        .eq(config.primaryKey, id)
-        .select(config.primaryKey);
-
-      if (updateError) {
-        alert(`Update failed: ${updateError.message}`);
-        return false;
-      }
-      if (!data || data.length !== 1) {
-        alert(`Update failed: ${noRowsChangedMessage("update", selectedTable)}`);
-        return false;
-      }
-
-      await loadTable();
+      await operation();
+      reload();
       return true;
+    } catch (error) {
+      setMutationError(`${action} failed. ${errorMessage(error)}`);
+      return false;
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
 
-  // Insert a row
-  async function insertRow(row: any) {
-    setSaving(true);
-    try {
+  function updateRow(id: string, patch: Record<string, unknown>) {
+    return mutate("Update", async () => {
+      const { data, error } = await supabase.from(selectedTable).update(patch)
+        .eq(config.primaryKey, id).select("*").maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error(noRowsChangedMessage("update", selectedTable));
+      if (selectedTable === "plans") {
+        for (const field of planScheduleColumns) {
+          if (!(field in patch)) continue;
+          const expected = patch[field];
+          const actual = data[field];
+          const matches = expected === actual ||
+            (field.endsWith("_at") && typeof expected === "string" && typeof actual === "string"
+              && Date.parse(expected) === Date.parse(actual));
+          if (!matches) {
+            reload();
+            throw new Error("Supabase returned different Plan dates or times. Review the row before retrying.");
+          }
+        }
+      }
+    });
+  }
+
+  function insertRow(row: Record<string, unknown>) {
+    return mutate("Insert", async () => {
       let payload = row;
       if (config.userScoped) {
-        const { data: authData, error: authError } = await supabase.auth.getUser();
-        if (authError || !authData.user) {
-          alert(`Insert failed: ${authError?.message ?? "You must be signed in."}`);
-          return false;
-        }
-        payload = { ...row, user_id: authData.user.id };
+        const { data, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        if (!data.user) throw new Error("You must be signed in.");
+        payload = { ...row, user_id: data.user.id };
       }
-      const { data, error: insertError } = await supabase
-        .from(selectedTable)
-        .insert(payload)
-        .select(config.primaryKey);
-
-      if (insertError) {
-        alert(`Insert failed: ${insertError.message}`);
-        return false;
-      }
-      if (!data || data.length !== 1) {
-        alert(`Insert failed: Supabase did not return the inserted row from ${selectedTable}. Check its insert and select policies.`);
-        return false;
-      }
-
-      await loadTable();
-      return true;
-    } finally {
-      setSaving(false);
-    }
+      const { data, error } = await supabase.from(selectedTable).insert(payload).select(config.primaryKey);
+      if (error) throw error;
+      if (data?.length !== 1) throw new Error("Supabase did not confirm the inserted row.");
+    });
   }
 
-  // Delete rows
-  async function deleteRows(ids: string[]) {
-    setSaving(true);
-    try {
-      const { data, error: deleteError } = await supabase
-        .from(selectedTable)
-        .delete()
-        .in(config.primaryKey, ids)
-        .select(config.primaryKey);
-
-      if (deleteError) {
-        alert(`Delete failed: ${deleteError.message}`);
-        return false;
+  function deleteRows(ids: string[]) {
+    return mutate("Delete", async () => {
+      const { data, error } = await supabase.from(selectedTable).delete().in(config.primaryKey, ids).select(config.primaryKey);
+      if (error) throw error;
+      const deleted = data?.length ?? 0;
+      if (deleted !== ids.length) {
+        if (deleted) {
+          reload();
+          setDeleteSelection(null);
+          throw new Error(`Deleted ${deleted} of ${ids.length} selected rows. The rest may already be gone or protected by permissions.`);
+        }
+        throw new Error(noRowsChangedMessage("delete", selectedTable));
       }
-      if (!data || data.length !== ids.length) {
-        alert(`Delete failed: ${noRowsChangedMessage("delete", selectedTable)} Expected ${ids.length} row${ids.length === 1 ? "" : "s"}, but deleted ${data?.length ?? 0}.`);
-        return false;
-      }
-
-      setSelectedIds(new Set());
-      await loadTable();
-      return true;
-    } finally {
-      setSaving(false);
-    }
+    });
   }
 
   // Handle sort click
   function handleSort(colName: string) {
+    setSelectedIds(new Set());
     if (sortColumn === colName) {
       setSortDesc(!sortDesc);
     } else {
@@ -686,12 +698,13 @@ export default function DatabasePage() {
   }
 
   // Render cell value for grid
-  function renderCellValue(col: ColumnConfig, val: any): string {
+  function renderCellValue(col: ColumnConfig, val: DatabaseValue | undefined): string {
     if (val == null) return "";
     if (col.type === "boolean") return val ? "Yes" : "No";
-    if (col.type === "datetime") return formatDatetime(val);
-    if (col.type === "timestampTime") return formatTimestampTime(val);
-    if (col.type === "date") return formatDate(val);
+    if (col.type === "datetime") return formatDatetime(String(val));
+    if (col.type === "planTime") return formatPlanTime(String(val));
+    if (col.type === "timestampTime") return formatTimestampTime(String(val));
+    if (col.type === "date") return formatDate(String(val));
     if (col.type === "relation") {
       return relationOptions[col.name]?.find((option) => option.value === String(val))?.label ?? "Unknown";
     }
@@ -701,9 +714,8 @@ export default function DatabasePage() {
   // Get display columns (first few that fit)
   const displayColumns = config.columns.slice(0, 5);
 
-  const displayedTotalCount = searchQuery.trim() ? matchingSearchRows.length : totalCount;
-  const startRow = page * PAGE_SIZE + 1;
-  const endRow = Math.min((page + 1) * PAGE_SIZE, displayedTotalCount);
+  const startRow = visiblePage * PAGE_SIZE + 1;
+  const endRow = Math.min((visiblePage + 1) * PAGE_SIZE, displayedTotalCount);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-black to-zinc-950 px-4 py-6 text-white">
@@ -725,8 +737,8 @@ export default function DatabasePage() {
           </Link>
           <h1 className="text-xl font-semibold tracking-tight">Database</h1>
           <button
-            onClick={() => loadTable()}
-            disabled={loading}
+            onClick={reload}
+            disabled={loading || saving}
             className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 active:scale-[0.97] transition disabled:opacity-50"
             aria-label="Refresh"
           >
@@ -745,6 +757,7 @@ export default function DatabasePage() {
           <select
             value={selectedTable}
             onChange={(e) => handleTableChange(e.target.value)}
+            disabled={saving}
             className="w-full h-11 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-[16px]"
           >
             {TABLE_NAMES.map((name) => (
@@ -764,12 +777,13 @@ export default function DatabasePage() {
             onChange={(e) => {
               setSearchQuery(e.target.value);
               setPage(0);
+              setSelectedIds(new Set());
             }}
             style={{ fontSize: "16px" }}
             className="min-w-0 flex-1 h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white placeholder:text-white/40 outline-none"
           />
           <button
-            onClick={() => setAddingRow(true)}
+            onClick={() => { setMutationError(null); setAddingRow(true); }}
             className="h-10 px-4 rounded-xl border border-white/10 bg-white/5 text-white text-sm font-medium hover:bg-white/10 active:scale-[0.98] transition"
           >
             + Add
@@ -777,10 +791,14 @@ export default function DatabasePage() {
         </div>
 
         {/* Error */}
-        {error && <div className="mb-4 text-sm text-red-300">{error}</div>}
+        <MutationError message={loading ? null : error} />
+        <MutationError message={relationError} />
+        {!editingRow && !addingRow && !deleteSelection && mutationError && (
+          <div role="alert" className="mb-4 text-sm text-red-300">{mutationError}</div>
+        )}
 
         {/* Loading */}
-        {(loading || searchLoading) && <div className="mb-4 text-sm text-white/60">{searchLoading ? "Searching all rows..." : "Loading..."}</div>}
+        {loading && <div className="mb-4 text-sm text-white/60">{searching ? "Searching all rows..." : "Loading..."}</div>}
 
         {/* Data Grid */}
         <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
@@ -791,7 +809,7 @@ export default function DatabasePage() {
                   <th className="w-10 px-2 py-2">
                     <input
                       type="checkbox"
-                      checked={filteredRows.length > 0 && selectedIds.size === filteredRows.length}
+                      checked={allVisibleSelected}
                       onChange={toggleSelectAll}
                       className="w-4 h-4 rounded"
                     />
@@ -815,16 +833,16 @@ export default function DatabasePage() {
                 {filteredRows.length === 0 ? (
                   <tr>
                     <td colSpan={displayColumns.length + 2} className="px-4 py-8 text-center text-white/50">
-                      {loading || searchLoading ? "Loading..." : "No data"}
+                      {loading ? "Loading..." : searching ? "No matches" : "No data"}
                     </td>
                   </tr>
                 ) : (
                   filteredRows.map((row) => {
-                    const id = row[config.primaryKey];
+                    const id = String(row[config.primaryKey]);
                     return (
                       <tr
                         key={id}
-                        onClick={() => setEditingRow(row)}
+                        onClick={() => { setMutationError(null); setEditingRow(row); }}
                         className="border-t border-white/5 hover:bg-white/5 cursor-pointer"
                       >
                         <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
@@ -857,15 +875,15 @@ export default function DatabasePage() {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
+              onClick={() => { setPage(visiblePage - 1); setSelectedIds(new Set()); }}
+              disabled={loading || visiblePage === 0}
               className="px-3 py-1 rounded-lg border border-white/10 bg-white/5 disabled:opacity-30"
             >
               Prev
             </button>
             <button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={endRow >= displayedTotalCount}
+              onClick={() => { setPage(visiblePage + 1); setSelectedIds(new Set()); }}
+              disabled={loading || endRow >= displayedTotalCount}
               className="px-3 py-1 rounded-lg border border-white/10 bg-white/5 disabled:opacity-30"
             >
               Next
@@ -874,37 +892,38 @@ export default function DatabasePage() {
         </div>
 
         {/* Bulk Delete Button */}
-        {selectedIds.size > 0 && (
+        {visibleSelection.length > 0 && (
           <div className="mt-4">
             <button
-              onClick={() => setConfirmDelete(true)}
+              onClick={() => { setMutationError(null); setDeleteSelection(visibleSelection); }}
               className="w-full h-11 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 font-medium hover:bg-red-500/20 active:scale-[0.99] transition"
             >
-              Delete Selected ({selectedIds.size})
+              Delete Selected ({visibleSelection.length})
             </button>
           </div>
         )}
 
         {/* Delete Confirmation Modal */}
-        {confirmDelete && (
+        {deleteSelection && (
           <div className="fixed inset-0 z-50 grid place-items-center px-5">
-            <div className="absolute inset-0 bg-black/70" onClick={() => setConfirmDelete(false)} />
+            <div className="absolute inset-0 bg-black/70" onClick={() => { if (!savingRef.current) setDeleteSelection(null); }} />
             <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950 p-5 shadow-2xl">
               <h2 className="text-lg font-semibold mb-3">Confirm Delete</h2>
               <p className="text-white/70 text-sm mb-4">
-                Delete {selectedIds.size} row{selectedIds.size > 1 ? "s" : ""}? This cannot be undone.
+                Delete {deleteSelection.length} row{deleteSelection.length !== 1 ? "s" : ""}? This cannot be undone.
               </p>
+              <MutationError message={mutationError} />
               <div className="flex gap-2">
                 <button
-                  onClick={() => setConfirmDelete(false)}
+                  disabled={saving}
+                  onClick={() => { setMutationError(null); setDeleteSelection(null); }}
                   className="flex-1 h-10 rounded-xl border border-white/10 bg-white/5 text-white font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={async () => {
-                    await deleteRows(Array.from(selectedIds));
-                    setConfirmDelete(false);
+                    if (await deleteRows(deleteSelection)) setDeleteSelection(null);
                   }}
                   disabled={saving}
                   className="flex-1 h-10 rounded-xl bg-red-500 text-white font-medium disabled:opacity-50"
@@ -922,13 +941,14 @@ export default function DatabasePage() {
             config={config}
             row={editingRow}
             relationOptions={relationOptions}
-            onClose={() => setEditingRow(null)}
+            error={mutationError}
+            onClose={() => { if (!savingRef.current) { setMutationError(null); setEditingRow(null); } }}
             onSave={async (patch) => {
-              const success = await updateRow(editingRow[config.primaryKey], patch);
+              const success = await updateRow(String(editingRow[config.primaryKey]), patch);
               if (success) setEditingRow(null);
             }}
             onDelete={async () => {
-              const success = await deleteRows([editingRow[config.primaryKey]]);
+              const success = await deleteRows([String(editingRow[config.primaryKey])]);
               if (success) setEditingRow(null);
             }}
             saving={saving}
@@ -940,7 +960,8 @@ export default function DatabasePage() {
           <AddModal
             config={config}
             relationOptions={relationOptions}
-            onClose={() => setAddingRow(false)}
+            error={mutationError}
+            onClose={() => { if (!savingRef.current) { setMutationError(null); setAddingRow(false); } }}
             onSave={async (row) => {
               const success = await insertRow(row);
               if (success) setAddingRow(false);
@@ -962,29 +983,49 @@ function EditModal({
   onSave,
   onDelete,
   saving,
+  error,
 }: {
   config: TableConfig;
-  row: any;
+  row: DatabaseRow;
   relationOptions: RelationOptions;
   onClose: () => void;
-  onSave: (patch: any) => Promise<void>;
+  onSave: (patch: DatabaseRow) => Promise<void>;
   onDelete: () => Promise<void>;
   saving: boolean;
+  error: string | null;
 }) {
-  const [form, setForm] = useState<any>({ ...row });
+  const isPlan = config === TABLE_CONFIG.plans;
+  const [form, setForm] = useState<DatabaseRow>(() => isPlan
+    ? { ...row, starts_at: planClockTime(stringValue(row.starts_at)), ends_at: planClockTime(stringValue(row.ends_at)) }
+    : { ...row });
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  function updateField(name: string, value: any) {
-    setForm((prev: any) => ({ ...prev, [name]: value }));
+  function updateField(name: string, value: DatabaseValue) {
+    setValidationError(null);
+    setForm((prev) => ({ ...prev, [name]: value }));
   }
 
   function handleSave() {
     // Build patch with only changed fields
-    const patch: any = {};
+    const patch: DatabaseRow = {};
     for (const col of config.columns) {
       if (col.readonly) continue;
+      if (isPlan && planScheduleColumns.includes(col.name)) continue;
       if (form[col.name] !== row[col.name]) {
-        patch[col.name] = form[col.name] === "" ? null : form[col.name];
+        patch[col.name] = form[col.name] === "" && !col.keepEmptyString ? null : form[col.name];
+      }
+    }
+    if (isPlan && (form.scheduled_for !== row.scheduled_for || form.end_date !== row.end_date
+      || form.starts_at !== planClockTime(stringValue(row.starts_at)) || form.ends_at !== planClockTime(stringValue(row.ends_at)))) {
+      try {
+        const schedule = collectPlanDates(form, row);
+        for (const [field, value] of Object.entries(schedule)) {
+          if (value !== row[field]) patch[field] = value;
+        }
+      } catch (error) {
+        setValidationError(errorMessage(error));
+        return;
       }
     }
     if (Object.keys(patch).length === 0) {
@@ -1005,7 +1046,7 @@ function EditModal({
           </button>
         </div>
 
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+        <fieldset disabled={saving} className="min-w-0 space-y-3 max-h-[60vh] overflow-y-auto pr-1">
           {config.columns.map((col) => (
             <FieldInput
               key={col.name}
@@ -1015,8 +1056,9 @@ function EditModal({
               onChange={(val) => updateField(col.name, val)}
             />
           ))}
-        </div>
+        </fieldset>
 
+        <MutationError message={validationError ?? error} />
         <div className="mt-4 space-y-2">
           <button
             onClick={handleSave}
@@ -1028,6 +1070,7 @@ function EditModal({
 
           {!confirmDelete ? (
             <button
+              disabled={saving}
               onClick={() => setConfirmDelete(true)}
               className="w-full h-10 rounded-xl border border-red-500/30 text-red-300 text-sm"
             >
@@ -1063,34 +1106,38 @@ function AddModal({
   onClose,
   onSave,
   saving,
+  error,
 }: {
   config: TableConfig;
   relationOptions: RelationOptions;
   onClose: () => void;
-  onSave: (row: any) => Promise<void>;
+  onSave: (row: DatabaseRow) => Promise<void>;
   saving: boolean;
+  error: string | null;
 }) {
-  const [form, setForm] = useState<any>(() => {
-    const initial: any = {};
-    for (const col of config.columns) {
-      if (col.readonly) continue;
-      if (col.type === "boolean") initial[col.name] = false;
-      else initial[col.name] = "";
-    }
-    return initial;
-  });
+  const [form, setForm] = useState<DatabaseRow>({});
+  const [validationError, setValidationError] = useState<string | null>(null);
 
-  function updateField(name: string, value: any) {
-    setForm((prev: any) => ({ ...prev, [name]: value }));
+  function updateField(name: string, value: DatabaseValue) {
+    setValidationError(null);
+    setForm((prev) => ({ ...prev, [name]: value }));
   }
 
   function handleSave() {
-    const row: any = {};
+    const row: DatabaseRow = {};
     for (const col of config.columns) {
       if (col.readonly) continue;
       const val = form[col.name];
       if (val !== "" && val != null) {
         row[col.name] = val;
+      }
+    }
+    if (config === TABLE_CONFIG.plans && planScheduleColumns.some((field) => row[field] != null)) {
+      try {
+        Object.assign(row, collectPlanDates(form));
+      } catch (error) {
+        setValidationError(errorMessage(error));
+        return;
       }
     }
     onSave(row);
@@ -1107,7 +1154,7 @@ function AddModal({
           </button>
         </div>
 
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+        <fieldset disabled={saving} className="min-w-0 space-y-3 max-h-[60vh] overflow-y-auto pr-1">
           {config.columns
             .filter((col) => !col.readonly)
             .map((col) => (
@@ -1119,8 +1166,9 @@ function AddModal({
                 onChange={(val) => updateField(col.name, val)}
               />
             ))}
-        </div>
+        </fieldset>
 
+        <MutationError message={validationError ?? error} />
         <div className="mt-4">
           <button
             onClick={handleSave}
@@ -1143,12 +1191,14 @@ function FieldInput({
   onChange,
 }: {
   col: ColumnConfig;
-  value: any;
+  value: DatabaseValue | undefined;
   relationOptions: RelationOption[];
-  onChange: (val: any) => void;
+  onChange: (val: DatabaseValue) => void;
 }) {
   const inputClass =
     "w-full h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-white text-[16px] outline-none disabled:opacity-50 disabled:cursor-not-allowed";
+  const text = stringValue(value);
+  const inputValue = typeof value === "number" ? value : text ?? "";
 
   if (col.type === "boolean") {
     return (
@@ -1164,7 +1214,7 @@ function FieldInput({
               : "border-white/10 bg-white/5 text-white/60"
           } ${col.readonly ? "opacity-50 cursor-not-allowed" : ""}`}
         >
-          {value ? "Yes" : "No"}
+          {value === undefined ? "Default" : value ? "Yes" : "No"}
         </button>
       </div>
     );
@@ -1175,7 +1225,7 @@ function FieldInput({
       <div>
         <label className="block text-xs text-white/60 mb-1">{col.name}</label>
         <select
-          value={value ?? ""}
+          value={inputValue}
           onChange={(e) => onChange(e.target.value)}
           disabled={col.readonly}
           className={inputClass}
@@ -1196,12 +1246,15 @@ function FieldInput({
       <div>
         <label className="block text-xs text-white/60 mb-1">{columnLabel(col)}</label>
         <select
-          value={value ?? ""}
+          value={text ?? ""}
           onChange={(e) => onChange(e.target.value || null)}
           disabled={col.readonly}
           className={inputClass}
         >
           <option value="">—</option>
+          {text && !relationOptions.some((option) => option.value === text) && (
+            <option value={text}>Current selection unavailable</option>
+          )}
           {relationOptions.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
@@ -1213,10 +1266,10 @@ function FieldInput({
   if (col.type === "date") {
     return (
       <div>
-        <label className="block text-xs text-white/60 mb-1">{col.name}</label>
+        <label className="block text-xs text-white/60 mb-1">{columnLabel(col)}</label>
         <input
           type="date"
-          value={value ?? ""}
+          value={text ?? ""}
           onChange={(e) => onChange(e.target.value)}
           disabled={col.readonly}
           className={inputClass}
@@ -1225,10 +1278,10 @@ function FieldInput({
     );
   }
 
-  if (col.type === "time") {
+  if (col.type === "time" || col.type === "planTime") {
     return (
       <div>
-        <label className="block text-xs text-white/60 mb-1">{col.name}</label>
+        <label className="block text-xs text-white/60 mb-1">{columnLabel(col)}</label>
         <input
           type="time"
           step="1"
@@ -1249,12 +1302,13 @@ function FieldInput({
         </label>
         {col.readonly ? (
           <div className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 flex items-center text-white/50 text-[16px]">
-            {formatDatetime(value)}
+            {formatDatetime(text)}
           </div>
         ) : (
           <input
             type="datetime-local"
-            value={value ? value.slice(0, 16) : ""}
+            step="1"
+            value={localDateTime(text)}
             onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : null)}
             className={inputClass}
           />
@@ -1271,14 +1325,14 @@ function FieldInput({
         </label>
         {col.readonly ? (
           <div className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 flex items-center text-white/50 text-[16px]">
-            {formatTimestampTime(value)}
+            {formatTimestampTime(text)}
           </div>
         ) : (
           <input
             type="time"
             step="1"
-            value={formatTimestampTimeInput(value)}
-            onChange={(e) => onChange(replaceTimestampTimeInEastern(value, e.target.value))}
+            value={formatTimestampTimeInput(text)}
+            onChange={(e) => onChange(replaceTimestampTimeInEastern(text, e.target.value))}
             className={inputClass}
           />
         )}
@@ -1292,7 +1346,8 @@ function FieldInput({
         <label className="block text-xs text-white/60 mb-1">{col.name}</label>
         <input
           type="number"
-          value={value ?? ""}
+          step="any"
+          value={inputValue}
           onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
           disabled={col.readonly}
           className={inputClass}
@@ -1310,7 +1365,7 @@ function FieldInput({
       </label>
       {isLong ? (
         <textarea
-          value={value ?? ""}
+          value={inputValue}
           onChange={(e) => onChange(e.target.value)}
           disabled={col.readonly}
           rows={3}
@@ -1319,7 +1374,7 @@ function FieldInput({
       ) : (
         <input
           type="text"
-          value={value ?? ""}
+          value={inputValue}
           onChange={(e) => onChange(e.target.value)}
           disabled={col.readonly}
           className={inputClass}

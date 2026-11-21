@@ -3,16 +3,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { localTrackingTime, TRICH_DAY_START_HOUR, trichLogFields } from "@/lib/localTrackingTime";
+import { movePlanSchedule, planClockTime, planEndDate, planScheduleFields, planTimelineTimes, resizePlanEnd } from "@/lib/planSchedule";
 
-const PACIFIC_TZ = "America/Los_Angeles";
-
-function pacificISODate(d = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: PACIFIC_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
+function trichTrackingDate() {
+  return localTrackingTime(TRICH_DAY_START_HOUR).trackingDate;
 }
 
 type WindowKind = "workweek" | "weekend";
@@ -198,12 +193,60 @@ function fmtMonthDay(d: Date) {
   return d.toLocaleDateString(undefined, { month: "long", day: "numeric" });
 }
 
-function isoToTimeInput(iso: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
+function plannerSaveMessage(error: unknown) {
+  return error && typeof error === "object" && "message" in error
+    ? String(error.message) : "The change could not be saved.";
+}
+
+function useSheetSave() {
+  const pending = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  async function submit(action: () => Promise<void>) {
+    if (pending.current) return;
+    pending.current = true;
+    setSaving(true);
+    setSaveError("");
+    try {
+      await action();
+    } catch (error) {
+      setSaveError(plannerSaveMessage(error));
+    } finally {
+      pending.current = false;
+      setSaving(false);
+    }
+  }
+  return { saving, saveError, setSaveError, submit };
+}
+
+function PlanTimingInputs({ startDate, startTime, endTime, endDate, onStartTime, onEndTime, onEndDate }: {
+  startDate: string;
+  startTime: string;
+  endTime: string;
+  endDate: string;
+  onStartTime: (value: string) => void;
+  onEndTime: (value: string) => void;
+  onEndDate: (value: string) => void;
+}) {
+  const inputClass = "h-10 w-full min-w-0 rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100";
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs text-neutral-400">
+        End date (optional)
+        <input type="date" min={startDate} value={endDate} onChange={(e) => onEndDate(e.target.value)} className={inputClass} />
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block min-w-0 text-xs text-neutral-400">
+          Start time (optional)
+          <input type="time" step="1" value={startTime} onChange={(e) => onStartTime(e.target.value)} className={inputClass} />
+        </label>
+        <label className="block min-w-0 text-xs text-neutral-400">
+          End time (optional)
+          <input type="time" step="1" value={endTime} onChange={(e) => onEndTime(e.target.value)} className={inputClass} />
+        </label>
+      </div>
+    </div>
+  );
 }
 
 function startOfWeekMonday(d: Date) {
@@ -1435,16 +1478,20 @@ function EditSheet({
     notes: string | null;
     targetValue: string;
     planStartTime?: string;
+    planEndTime?: string;
     planEndDate?: string;
     projectGoalId?: string;
-  }) => void;
-  onDelete: () => void;
+  }) => Promise<void>;
+  onDelete: () => Promise<void>;
   onArchiveFocus: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [targetValue, setTargetValue] = useState<string>("none");
   const [planStartTime, setPlanStartTime] = useState("");
+  const [planEndTime, setPlanEndTime] = useState("");
+  const { saving, saveError, setSaveError, submit } = useSheetSave();
+  const close = () => { if (!saving) onClose(); };
   const [planEndDate, setPlanEndDate] = useState("");
   const [localType, setLocalType] = useState<ItemType>("task");
   const [projectGoalId, setProjectGoalId] = useState("");
@@ -1454,6 +1501,7 @@ function EditSheet({
 
   useEffect(() => {
     if (!open || !item) return;
+    setSaveError("");
     setTitle((item as any).title ?? "");
     setNotes(((item as any).notes ?? "") as string);
     setTargetValue(locationValueFor(item as any));
@@ -1461,10 +1509,12 @@ function EditSheet({
     setProjectGoalId((item as any).project_goal_id ?? "");
     if (itemType === "plan") {
       const p = item as Plan;
-      setPlanStartTime(isoToTimeInput(p.starts_at));
+      setPlanStartTime(planClockTime(p.starts_at));
+      setPlanEndTime(planClockTime(p.ends_at));
       setPlanEndDate(p.end_date ?? "");
     } else {
       setPlanStartTime("");
+      setPlanEndTime("");
       setPlanEndDate("");
     }
     // Custom date logic
@@ -1477,7 +1527,7 @@ function EditSheet({
     }
     setCustomDate(initialDate);
     setShowDatePicker(false);
-  }, [open, item, itemType]);
+  }, [open, item, itemType, setSaveError]);
 
   const dayTargets = moveTargets.filter((t) => t.group === "days");
   const parkingTargets = moveTargets.filter((t) => t.group === "parking");
@@ -1487,31 +1537,34 @@ function EditSheet({
 
   return (
     <div className="fixed inset-0 z-[70]">
-      <button className="absolute inset-0 bg-black/60" onClick={onClose} aria-label="Close" />
+      <button className="absolute inset-0 bg-black/60" onClick={close} aria-label="Close" />
 
       <div className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] left-0 right-0 mx-auto max-w-xl px-2">
         <div className="max-h-[calc(100dvh-140px)] overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950 p-4 shadow-2xl">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Edit</div>
             <button
+              disabled={saving}
               onClick={() =>
-                onSave({
+                void submit(() => onSave({
                   itemType: localType,
                   title: title.trim(),
                   notes: notes.trim() ? notes.trim() : null,
                   targetValue,
                   planStartTime,
+                  planEndTime,
                   planEndDate,
                   projectGoalId: projectGoalId || "",
-                })
+                }))
               }
               className="rounded-lg border border-neutral-800 bg-neutral-100 px-2 py-1 text-xs font-semibold text-neutral-900 active:scale-[0.99]"
             >
-              Save
+              {saving ? "Saving…" : "Save"}
             </button>
           </div>
 
-          <div className="mt-3 space-y-3">
+          {saveError && <p role="alert" className="mt-2 text-sm text-red-300">{saveError}</p>}
+          <fieldset disabled={saving} className="mt-3 min-w-0 space-y-3">
             <div>
               <div className="mb-1 text-xs text-neutral-400">Type</div>
               <div className="flex gap-2">
@@ -1614,39 +1667,15 @@ function EditSheet({
             </div>
 
             {localType === "plan" && isDayTarget && (
-              <div className="grid grid-cols-1 gap-2">
-                <div>
-                  <div className="mb-1 text-xs text-neutral-400">Start (optional)</div>
-                  <div className="flex gap-2 items-center">
-                    <input
-                      type="time"
-                      value={planStartTime}
-                      onChange={(e) => setPlanStartTime(e.target.value)}
-                      className="h-10 flex-1 rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
-                    />
-                    {planStartTime && (
-                      <button
-                        type="button"
-                        onClick={() => setPlanStartTime("")}
-                        className="shrink-0 rounded-lg border border-neutral-700 px-2 py-1.5 text-xs text-neutral-400 hover:text-neutral-200"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="mb-1 text-xs text-neutral-400">End date</div>
-                  <input
-                    type="date"
-                    value={planEndDate}
-                    min={targetValue.startsWith("D|") ? targetValue.split("|")[1] : undefined}
-                    onChange={(e) => setPlanEndDate(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
-                  />
-                </div>
-              </div>
+              <PlanTimingInputs
+                startDate={targetValue.split("|")[1]}
+                startTime={planStartTime}
+                endTime={planEndTime}
+                endDate={planEndDate}
+                onStartTime={setPlanStartTime}
+                onEndTime={setPlanEndTime}
+                onEndDate={setPlanEndDate}
+              />
             )}
 
             <div>
@@ -1660,7 +1689,7 @@ function EditSheet({
 
             <div className="flex gap-2">
               <button
-                onClick={onClose}
+                onClick={close}
                 className="flex-1 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-100 active:scale-[0.99]"
               >
                 Cancel
@@ -1675,7 +1704,7 @@ function EditSheet({
               ) : (
                 <button
                   onClick={() => {
-                    if (confirm("Delete this item?")) onDelete();
+                    if (confirm("Delete this item?")) void submit(onDelete);
                   }}
                   className="flex-1 rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-2 text-sm font-semibold text-red-200"
                 >
@@ -1683,7 +1712,7 @@ function EditSheet({
                 </button>
               )}
             </div>
-          </div>
+          </fieldset>
         </div>
       </div>
     </div>
@@ -2124,7 +2153,7 @@ function PlanItemBlock({
   siblingItems,
   column,
 }: {
-  plan: { id: string; title: string; starts_at: string; ends_at: string; isPlan: true; hasEndTime: boolean };
+  plan: { id: string; title: string; starts_at: string; ends_at: string; canResize: boolean };
   position: { top: number; height: number };
   onResize: (newEndTime: string) => void;
   pixelsPerHour: number;
@@ -2224,14 +2253,14 @@ function PlanItemBlock({
       <div className="px-2 py-1">
         <div className="text-sm text-neutral-200 truncate text-center">{plan.title}</div>
       </div>
-
-      {/* Resize handle */}
-      <div
-        className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize touch-none bg-gradient-to-t from-neutral-600/40"
-        onTouchStart={handleResizeStart}
-        onMouseDown={handleResizeStart}
-        onClick={(e) => e.stopPropagation()}
-      />
+      {plan.canResize && (
+        <div
+          className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize touch-none bg-gradient-to-t from-neutral-600/40"
+          onTouchStart={handleResizeStart}
+          onMouseDown={handleResizeStart}
+          onClick={(e) => e.stopPropagation()}
+        />
+      )}
     </div>
   );
 }
@@ -2298,38 +2327,12 @@ function DayScheduleView({
   // Convert plans with starts_at to displayable items
   // Plans have ISO datetime in starts_at, we need to extract the time part
   const plansWithTime = useMemo(() => {
-    return plans
-      .filter(p => p.starts_at && p.status === 'open')
-      .map(p => {
-        // Extract time from ISO datetime (e.g., "2024-01-15T14:30:00" -> "14:30:00")
-        const startsAtDate = new Date(p.starts_at!);
-        const startHour = startsAtDate.getHours();
-        const startMin = startsAtDate.getMinutes();
-        const startsAtTime = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`;
-
-        // Calculate end time: use ends_at if present, otherwise default to 1 hour
-        let endsAtTime: string;
-        if (p.ends_at) {
-          const endsAtDate = new Date(p.ends_at);
-          const endHour = endsAtDate.getHours();
-          const endMin = endsAtDate.getMinutes();
-          endsAtTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}:00`;
-        } else {
-          // Default to 1 hour duration
-          const endHour = startHour + 1;
-          endsAtTime = `${String(endHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`;
-        }
-
-        return {
-          id: p.id,
-          title: p.title,
-          starts_at: startsAtTime,
-          ends_at: endsAtTime,
-          isPlan: true as const,
-          hasEndTime: !!p.ends_at,
-        };
-      });
-  }, [plans]);
+    return plans.flatMap((plan) => {
+      if (plan.scheduled_for !== date || (plan.status && plan.status !== "open")) return [];
+      const times = planTimelineTimes(plan);
+      return times ? [{ id: plan.id, title: plan.title, ...times }] : [];
+    });
+  }, [plans, date]);
 
   const leftPlans = plansWithTime.filter(p => {
     const hour = parseInt(p.starts_at.split(':')[0]);
@@ -2868,10 +2871,11 @@ function AddSheet({
   targetValue: string;
   itemType: ItemType;
   planStartTime: string;
+    planEndTime: string;
   planEndDate: string;
   planDayOff: boolean;
   projectGoalId: string;
-}) => void;
+}) => Promise<void>;
   moveTargets: MoveTarget[];
   defaultTarget: string;
   projectGoals: ProjectGoal[];
@@ -2881,6 +2885,9 @@ function AddSheet({
   const [notes, setNotes] = useState("");
   const [targetValue, setTargetValue] = useState(defaultTarget);
   const [planStartTime, setPlanStartTime] = useState("");
+  const [planEndTime, setPlanEndTime] = useState("");
+  const { saving, saveError, setSaveError, submit } = useSheetSave();
+  const close = () => { if (!saving) onClose(); };
   const [planEndDate, setPlanEndDate] = useState("");
   const [planDayOff, setPlanDayOff] = useState(false);
   const [projectGoalId, setProjectGoalId] = useState("");
@@ -2890,11 +2897,13 @@ function AddSheet({
 
   useEffect(() => {
     if (!open) return;
+    setSaveError("");
     setItemType("task");
     setTitleRaw("");
     setNotes("");
     setTargetValue(defaultTarget);
     setPlanStartTime("");
+    setPlanEndTime("");
     setPlanEndDate("");
     setPlanDayOff(false);
     setProjectGoalId("");
@@ -2907,19 +2916,28 @@ function AddSheet({
     }
     setCustomDate(initialDate);
     setShowDatePicker(false);
-  }, [open, defaultTarget]);
+  }, [open, defaultTarget, setSaveError]);
+
+  async function submitNewItem() {
+    if (!titleRaw.trim()) return;
+    await submit(async () => {
+      await onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndTime, planEndDate, planDayOff, projectGoalId });
+      onClose();
+    });
+  }
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") close();
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff, projectGoalId });
+        e.preventDefault();
+        void submitNewItem();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, onCreate, titleRaw, notes, targetValue, itemType, planStartTime, planEndDate]);
+  });
 
   const dayTargets = moveTargets.filter((t) => t.group === "days");
   const parkingTargets = moveTargets.filter((t) => t.group === "parking");
@@ -2929,25 +2947,23 @@ function AddSheet({
 
   return (
     <div className="fixed inset-0 z-[60]">
-      <button className="absolute inset-0 bg-black/60" onClick={onClose} aria-label="Close" />
+      <button className="absolute inset-0 bg-black/60" onClick={close} aria-label="Close" />
 
       <div className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] left-0 right-0 mx-auto max-w-xl px-2">
   <div className="max-h-[calc(100dvh-140px)] overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950 p-4 shadow-2xl">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Add</div>
             <button
-              onClick={() => {
-                if (!titleRaw.trim()) return;
-                onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff, projectGoalId });
-                onClose();
-              }}
+              disabled={saving}
+              onClick={() => void submitNewItem()}
               className="rounded-lg border border-neutral-800 bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-900 active:scale-[0.99]"
             >
-              Add
+              {saving ? "Adding…" : "Add"}
             </button>
           </div>
 
-          <div className="mt-3 space-y-3">
+          {saveError && <p role="alert" className="mt-2 text-sm text-red-300">{saveError}</p>}
+          <fieldset disabled={saving} className="mt-3 min-w-0 space-y-3">
             <div>
               <div className="mb-1 text-xs text-neutral-400">Type</div>
               <div className="flex gap-2">
@@ -3025,21 +3041,10 @@ function AddSheet({
                       const v = e.target.value;
                       setCustomDate(v);
                       setTargetValue(v ? `D|${v}` : "none");
-                      // If end date is before start date, clear it.
-                      if (planEndDate && v && planEndDate < v) setPlanEndDate("");
                     }}
                     className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
                   />
 
-                  {itemType === "plan" && (
-                    <input
-                      type="date"
-                      value={planEndDate}
-                      min={customDate || undefined}
-                      onChange={(e) => setPlanEndDate(e.target.value)}
-                      className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
-                    />
-                  )}
                 </div>
               )}
             </div>
@@ -3061,28 +3066,22 @@ function AddSheet({
             </div>
 
             {itemType === "plan" && isDayTarget && (
-  <div className="grid grid-cols-1 gap-2">
-    <div>
-      <div className="mb-1 text-xs text-neutral-400">Start (optional)</div>
-      <input
-        type="time"
-        value={planStartTime}
-        onChange={(e) => setPlanStartTime(e.target.value)}
-        className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
-      />
-    </div>
-
-    <label className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100">
-      <span className="text-[13px] text-neutral-200">Day off?</span>
-      <input
-        type="checkbox"
-        checked={planDayOff}
-        onChange={(e) => setPlanDayOff(e.target.checked)}
-        className="h-5 w-5 accent-neutral-100"
-      />
-    </label>
-  </div>
-)}
+              <div className="space-y-2">
+                <PlanTimingInputs
+                  startDate={targetValue.split("|")[1]}
+                  startTime={planStartTime}
+                  endTime={planEndTime}
+                  endDate={planEndDate}
+                  onStartTime={setPlanStartTime}
+                  onEndTime={setPlanEndTime}
+                  onEndDate={setPlanEndDate}
+                />
+                <label className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100">
+                  <span>Day off?</span>
+                  <input type="checkbox" checked={planDayOff} onChange={(e) => setPlanDayOff(e.target.checked)} className="h-5 w-5 accent-neutral-100" />
+                </label>
+              </div>
+            )}
 
             <div>
               <div className="mb-1 text-xs text-neutral-400">Notes</div>
@@ -3096,17 +3095,14 @@ function AddSheet({
 
             <div className="flex gap-2">
               <button
-                onClick={() => {
-                  if (!titleRaw.trim()) return;
-                  onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndDate, planDayOff, projectGoalId });
-                  onClose();
-                }}
+                disabled={saving}
+                onClick={() => void submitNewItem()}
                 className="flex-1 rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 active:scale-[0.99]"
               >
-                Add
+                {saving ? "Adding…" : "Add"}
               </button>
               <button
-                onClick={onClose}
+                onClick={close}
                 className="rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-100 active:scale-[0.99]"
               >
                 Cancel
@@ -3115,7 +3111,7 @@ function AddSheet({
 
             <div className="text-[11px] text-neutral-500">Tip: Cmd/Ctrl+Enter to add. Escape to close.</div>
             <div className="h-[env(safe-area-inset-bottom)]" />
-          </div>
+          </fieldset>
         </div>
       </div>
     </div>
@@ -3125,6 +3121,8 @@ function AddSheet({
 export default function PlannerPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const planLoadVersion = useRef(0);
+  const planWriteVersion = useRef(0);
   const [focuses, setFocuses] = useState<Focus[]>([]);
   // New content system state
   const [contentItems, setContentItems] = useState<ContentItemRow[]>([]);
@@ -3547,6 +3545,8 @@ function getWindowValue(which: DrawerWindow) {
 
 
   async function fetchAll() {
+    const planLoad = ++planLoadVersion.current;
+    const planWritesAtStart = planWriteVersion.current;
     setLoading(true);
 
     // Auth guard: if session is missing, bounce to /login and stop.
@@ -3569,7 +3569,7 @@ function getWindowValue(which: DrawerWindow) {
     }
 
     const todayIso = toISODate(days[0]);
-    const trichTodayIso = pacificISODate();
+    const trichTodayIso = trichTrackingDate();
     const start = toISODate(days[0]);
 
     // We normally show 7 days (today + next 6). But we ALSO want future-dated items that fall into
@@ -3771,10 +3771,13 @@ function getWindowValue(which: DrawerWindow) {
       ...((tasksParkingRes.data ?? []) as Task[]),
     ]);
 
-    setPlans([
-      ...((plansScheduledRes.data ?? []) as Plan[]),
-      ...((plansParkingRes.data ?? []) as Plan[]),
-    ]);
+    if (planLoad === planLoadVersion.current && planWritesAtStart === planWriteVersion.current
+      && !plansScheduledRes.error && !plansParkingRes.error) {
+      setPlans([
+        ...((plansScheduledRes.data ?? []) as Plan[]),
+        ...((plansParkingRes.data ?? []) as Plan[]),
+      ]);
+    }
 
     setFocuses([
       ...((focusesScheduledRes.data ?? []) as Focus[]),
@@ -3968,6 +3971,7 @@ setMovieItems(
   }
 
   async function logTrichPull(n: 1 | 2) {
+    const fields = trichLogFields();
     const {
       data: { user },
       error: userError,
@@ -3978,7 +3982,6 @@ setMovieItems(
       return;
     }
 
-    const occurredOn = pacificISODate();
     const label = n === 1 ? "T1" : "T2";
     const previousCounts = trichCountsRef.current;
     const nextCounts = {
@@ -3993,7 +3996,7 @@ setMovieItems(
     const { error } = await supabase.from("trich_events").insert({
       user_id: user.id,
       trich: n,
-      occurred_on: occurredOn,
+      ...fields,
     });
 
     if (error) {
@@ -4402,20 +4405,15 @@ setMovieItems(
     const dayIsos = days.map((d) => toISODate(d));
     for (const iso of dayIsos) map[iso] = [];
 
-    for (const p of plans) {
-  // We render plans on day cards only when they have a scheduled_for date.
-  if (!p.scheduled_for) continue;
-
-  const startIso = p.scheduled_for;
-  const endIso = p.end_date && p.end_date >= startIso ? p.end_date : startIso;
-
-  // Add this plan to every visible day between start and end (inclusive).
-  for (const iso of dayIsos) {
-    if (iso < startIso) continue;
-    if (iso > endIso) break;
-    map[iso].push(p);
-  }
-}
+    for (const plan of plans) {
+      if (!plan.scheduled_for) continue;
+      const end = planEndDate(plan) ?? plan.scheduled_for;
+      for (const day of dayIsos) {
+        if (day < plan.scheduled_for) continue;
+        if (day > end) break;
+        map[day].push(plan);
+      }
+    }
 
     for (const k of Object.keys(map)) {
       map[k].sort((a, b) => {
@@ -4648,13 +4646,14 @@ setMovieItems(
     targetValue: string;
     itemType: ItemType;
     planStartTime?: string;
+    planEndTime?: string;
     planEndDate?: string;
     planDayOff?: boolean;
     projectGoalId?: string;
   }) {
     const parsed = parseHashtags(args.titleRaw, { targetValue: args.targetValue, today, windows, itemType: args.itemType });
     const title = parsed.title.trim();
-    if (!title) return;
+    if (!title) throw new Error("Enter a title.");
 
     let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null };
 
@@ -4691,7 +4690,7 @@ setMovieItems(
         .insert({ title, notes: notesVal, status: "open", project_goal_id: args.projectGoalId || null, sort_order, ...placement })
         .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at,sort_order")
         .single();
-      if (error) return console.error(error);
+      if (error) throw error;
       if (data) setTasks((p) => [...p, data as Task]);
       return;
     }
@@ -4703,43 +4702,27 @@ setMovieItems(
         .insert({ title, notes: notesVal, status: "active", project_goal_id: args.projectGoalId || null, sort_order, ...placement })
         .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at,sort_order")
         .single();
-      if (error) return console.error(error);
+      if (error) throw error;
       if (data) setFocuses((p) => [...p, data as Focus]);
       return;
     }
 
-    // plan
-    let starts_at: string | null = null;
-    if (placement.scheduled_for && args.planStartTime) {
-      starts_at = new Date(`${placement.scheduled_for}T${args.planStartTime}:00`).toISOString();
-    }
-
-    // Optional multi-day end date (date-only)
-let end_date: string | null = null;
-if (args.planEndDate && args.planEndDate.trim()) {
-  const endIso = args.planEndDate.trim();
-  // Guard: if we have a start day, ignore end dates earlier than start.
-  if (!placement.scheduled_for || endIso >= placement.scheduled_for) {
-    end_date = endIso;
-  }
-}
-
-const { data, error } = await supabase
-  .from("plans")
-  .insert({
-    title,
-    notes: notesVal,
-    status: "open",
-    day_off: Boolean(args.planDayOff),
-    starts_at,
-    end_date,
-    project_goal_id: args.projectGoalId || null,
-    ...placement
-  })
-  .select("id,title,notes,starts_at,ends_at,end_date,day_off,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
-  .single();
-    if (error) return console.error(error);
-    if (data) setPlans((p) => [...p, data as Plan]);
+    const schedule = planScheduleFields(
+      placement.scheduled_for,
+      args.planEndDate || null,
+      args.planStartTime || "",
+      args.planEndTime || "",
+    );
+    const { data, error } = await supabase.from("plans")
+      .insert({
+        title, notes: notesVal, status: "open", day_off: Boolean(args.planDayOff),
+        project_goal_id: args.projectGoalId || null, ...placement, ...schedule,
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    planWriteVersion.current += 1;
+    setPlans((previous) => [...previous, data as Plan]);
   }
 
   async function moveItem(type: ItemType, id: string, targetValue: string) {
@@ -4754,12 +4737,27 @@ const { data, error } = await supabase
       placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start };
     } else placement = { scheduled_for: null, window_kind: null, window_start: null };
 
-    const table = type === "task" ? "tasks" : type === "plan" ? "plans" : "focuses";
+    if (type === "plan") {
+      const plan = plans.find((item) => item.id === id);
+      if (!plan) return;
+      try {
+        const schedule = movePlanSchedule(plan, placement.scheduled_for);
+        const { data, error } = await supabase.from("plans")
+          .update({ ...placement, ...schedule }).eq("id", id).select("*").single();
+        if (error) throw error;
+        planWriteVersion.current += 1;
+        setPlans((previous) => previous.map((item) => item.id === id ? data as Plan : item));
+      } catch (error) {
+        window.alert(`Could not move plan. ${plannerSaveMessage(error)}`);
+      }
+      return;
+    }
+
+    const table = type === "task" ? "tasks" : "focuses";
     const { error } = await supabase.from(table).update(placement).eq("id", id);
     if (error) return console.error(error);
 
     if (type === "task") setTasks((p) => p.map((t) => (t.id === id ? ({ ...t, ...placement } as Task) : t)));
-    if (type === "plan") setPlans((p) => p.map((x) => (x.id === id ? ({ ...x, ...placement } as Plan) : x)));
     if (type === "focus") setFocuses((p) => p.map((x) => (x.id === id ? ({ ...x, ...placement } as Focus) : x)));
   }
 
@@ -4906,8 +4904,9 @@ const { data, error } = await supabase
   }
 
   async function deletePlan(id: string) {
-    const { error } = await supabase.from("plans").delete().eq("id", id);
-    if (error) return console.error(error);
+    const { error } = await supabase.from("plans").delete().eq("id", id).select("id").single();
+    if (error) throw error;
+    planWriteVersion.current += 1;
     setPlans((p) => p.filter((t) => t.id !== id));
   }
 
@@ -4923,7 +4922,12 @@ const { data, error } = await supabase
     const raw = (draftByDay[iso]?.[type] ?? "").trim();
     if (!raw) return;
 
-    await createItem({ titleRaw: raw, notes: "", targetValue: `D|${iso}`, itemType: type });
+    try {
+      await createItem({ titleRaw: raw, notes: "", targetValue: `D|${iso}`, itemType: type });
+    } catch (error) {
+      window.alert(plannerSaveMessage(error));
+      return;
+    }
 
     setDraftByDay((prev) => ({
       ...prev,
@@ -4935,7 +4939,12 @@ const { data, error } = await supabase
     const raw = drawerDraft.trim();
     if (!raw) return;
 
-    await createItem({ titleRaw: raw, notes: "", targetValue: getWindowValue(drawerWindow), itemType: drawerType });
+    try {
+      await createItem({ titleRaw: raw, notes: "", targetValue: getWindowValue(drawerWindow), itemType: drawerType });
+    } catch (error) {
+      window.alert(plannerSaveMessage(error));
+      return;
+    }
     setDrawerDraft("");
   }
 
@@ -5584,9 +5593,10 @@ const { data, error } = await supabase
     setEditOpen(true);
   }
 
-  async function saveEdit(patch: { itemType: ItemType; title: string; notes: string | null; targetValue: string; planStartTime?: string; planEndDate?: string; projectGoalId?: string }) {
+  async function saveEdit(patch: { itemType: ItemType; title: string; notes: string | null; targetValue: string; planStartTime?: string; planEndTime?: string; planEndDate?: string; projectGoalId?: string }) {
     if (!editItem) return;
-    const id = (editItem as any).id as string;
+    if (!patch.title) throw new Error("Enter a title.");
+    const id = editItem.id;
 
     let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null };
 
@@ -5600,12 +5610,6 @@ const { data, error } = await supabase
 
     // If the type changed, convert by creating in the new table and deleting the old row.
     if (patch.itemType !== editType) {
-      // Compute plan times if the new type is plan and it's scheduled on a day.
-      let starts_at: string | null = null;
-      if (placement.scheduled_for && patch.itemType === "plan") {
-        if (patch.planStartTime) starts_at = new Date(`${placement.scheduled_for}T${patch.planStartTime}:00`).toISOString();
-      }
-
       // Create in destination table
       if (patch.itemType === "task") {
         const { data, error } = await supabase
@@ -5613,7 +5617,7 @@ const { data, error } = await supabase
           .insert({ title: patch.title, notes: patch.notes, status: "open", project_goal_id: null, ...placement })
           .select("id,title,notes,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
           .single();
-        if (error) return console.error(error);
+        if (error) throw error;
         if (data) setTasks((p) => [...p, data as Task]);
       }
 
@@ -5623,30 +5627,33 @@ const { data, error } = await supabase
           .insert({ title: patch.title, notes: patch.notes, status: "active", project_goal_id: null, ...placement })
           .select("id,title,notes,status,scheduled_for,window_kind,window_start,content_category,project_goal_id,created_at")
           .single();
-        if (error) return console.error(error);
+        if (error) throw error;
         if (data) setFocuses((p) => [...p, data as Focus]);
       }
 
       if (patch.itemType === "plan") {
-        // Optional multi-day end date (date-only)
-        let end_date: string | null = null;
-        if (placement.scheduled_for && patch.planEndDate && patch.planEndDate.trim()) {
-          const endIso = patch.planEndDate.trim();
-          if (endIso >= placement.scheduled_for) end_date = endIso;
-        }
-
-        const { data, error } = await supabase
-          .from("plans")
-          .insert({ title: patch.title, notes: patch.notes, status: "open", starts_at, end_date, project_goal_id: null, ...placement })
-          .select("id,title,notes,starts_at,ends_at,end_date,status,scheduled_for,window_kind,window_start,project_goal_id,created_at")
-          .single();
-        if (error) return console.error(error);
+        const schedule = planScheduleFields(
+          placement.scheduled_for, placement.scheduled_for ? patch.planEndDate || null : null,
+          placement.scheduled_for ? patch.planStartTime || "" : "",
+          placement.scheduled_for ? patch.planEndTime || "" : "",
+        );
+        const { data, error } = await supabase.from("plans")
+          .insert({ title: patch.title, notes: patch.notes, status: "open", project_goal_id: patch.projectGoalId || null, ...placement, ...schedule })
+          .select("*").single();
+        if (error) throw error;
+        planWriteVersion.current += 1;
         if (data) setPlans((p) => [...p, data as Plan]);
       }
 
       // Delete from source table + update local state arrays
       if (editType === "task") await deleteTask(id);
-      if (editType === "plan") await deletePlan(id);
+      if (editType === "plan") {
+        try {
+          await deletePlan(id);
+        } catch (error) {
+          window.alert(`The new item was created. Deletion of the original plan could not be confirmed. ${plannerSaveMessage(error)}`);
+        }
+      }
       if (editType === "focus") await deleteFocus(id);
 
       setEditOpen(false);
@@ -5656,7 +5663,7 @@ const { data, error } = await supabase
     if (editType === "task") {
       const project_goal_id = patch.projectGoalId ? patch.projectGoalId : null;
       const { error } = await supabase.from("tasks").update({ title: patch.title, notes: patch.notes, project_goal_id, ...placement }).eq("id", id);
-      if (error) return console.error(error);
+      if (error) throw error;
       setTasks((p) => p.map((t) => (t.id === id ? ({ ...t, title: patch.title, notes: patch.notes, project_goal_id, ...placement } as Task) : t)));
       setEditOpen(false);
       return;
@@ -5665,37 +5672,26 @@ const { data, error } = await supabase
     if (editType === "focus") {
       const project_goal_id = patch.projectGoalId ? patch.projectGoalId : null;
       const { error } = await supabase.from("focuses").update({ title: patch.title, notes: patch.notes, project_goal_id, ...placement }).eq("id", id);
-      if (error) return console.error(error);
+      if (error) throw error;
       setFocuses((p) => p.map((f) => (f.id === id ? ({ ...f, title: patch.title, notes: patch.notes, project_goal_id, ...placement } as Focus) : f)));
       setEditOpen(false);
       return;
     }
 
-    // plan
-    let starts_at: string | null = null;
-    if (placement.scheduled_for && patch.planStartTime) starts_at = new Date(`${placement.scheduled_for}T${patch.planStartTime}:00`).toISOString();
-
-    let end_date: string | null = null;
-if (placement.scheduled_for && patch.planEndDate && patch.planEndDate.trim()) {
-  const endIso = patch.planEndDate.trim();
-  if (endIso >= placement.scheduled_for) {
-    end_date = endIso;
-  }
-}
-
-const project_goal_id = patch.projectGoalId ? patch.projectGoalId : null;
-const { error } = await supabase
-  .from("plans")
-  .update({ title: patch.title, notes: patch.notes, starts_at, end_date, project_goal_id, ...placement })
-  .eq("id", id);
-    if (error) return console.error(error);
-
-    setPlans((p) =>
-      p.map((pl) =>
-        pl.id === id ? ({ ...pl, title: patch.title, notes: patch.notes, starts_at, end_date, project_goal_id, ...placement } as Plan) : pl
-      )
-    );
-
+    const plan = editItem as Plan;
+    const startDate = placement.scheduled_for;
+    const endDate = startDate ? patch.planEndDate || null : null;
+    const startTime = startDate ? patch.planStartTime || "" : "";
+    const endTime = startDate ? patch.planEndTime || "" : "";
+    const scheduleChanged = startDate !== plan.scheduled_for || endDate !== plan.end_date
+      || startTime !== planClockTime(plan.starts_at) || endTime !== planClockTime(plan.ends_at);
+    const schedule = scheduleChanged ? planScheduleFields(startDate, endDate, startTime, endTime, plan) : {};
+    const { data, error } = await supabase.from("plans")
+      .update({ title: patch.title, notes: patch.notes, project_goal_id: patch.projectGoalId || null, ...placement, ...schedule })
+      .eq("id", id).select("*").single();
+    if (error) throw error;
+    planWriteVersion.current += 1;
+    setPlans((previous) => previous.map((item) => item.id === id ? data as Plan : item));
     setEditOpen(false);
   }
 
@@ -7464,6 +7460,7 @@ const { error } = await supabase
             targetValue: args.targetValue,
             itemType: args.itemType,
             planStartTime: args.planStartTime,
+            planEndTime: args.planEndTime,
             planEndDate: args.planEndDate,
             planDayOff: args.planDayOff,
             projectGoalId: args.projectGoalId,
@@ -7507,31 +7504,24 @@ const { error } = await supabase
           return fmtDayLabel(fromISODate(scheduleViewDate), days.findIndex(d => toISODate(d) === scheduleViewDate));
         })() : ''}
         items={scheduleItems}
-        plans={scheduleViewDate ? plans.filter(p => p.scheduled_for === scheduleViewDate) : []}
+        plans={plans}
         onClose={() => { setScheduleViewDate(null); setScheduleItems([]); }}
         onCreateItem={createScheduleItem}
         onUpdateItem={updateScheduleItem}
         onDeleteItem={deleteScheduleItem}
         onUpdatePlanTime={async (id, endsAtTime) => {
-          // Find the plan to get its starts_at date part
-          const plan = plans.find(p => p.id === id);
-          if (!plan || !plan.starts_at) return;
-
-          // Combine the date from starts_at with the new end time
-          const startsAtDate = new Date(plan.starts_at);
-          const [endH, endM] = endsAtTime.split(':').map(Number);
-          const endsAtDate = new Date(startsAtDate);
-          endsAtDate.setHours(endH, endM, 0, 0);
-
-          const { error } = await supabase
-            .from('plans')
-            .update({ ends_at: endsAtDate.toISOString() })
-            .eq('id', id);
-
-          if (!error) {
-            setPlans(prev => prev.map(p =>
-              p.id === id ? { ...p, ends_at: endsAtDate.toISOString() } : p
-            ));
+          const plan = plans.find((item) => item.id === id);
+          if (!plan?.starts_at || !plan.scheduled_for) return;
+          try {
+            const times = resizePlanEnd(plan, endsAtTime);
+            const { data, error } = await supabase.from("plans").update(times)
+              .eq("id", id).eq("scheduled_for", plan.scheduled_for).eq("starts_at", plan.starts_at)
+              .select("starts_at,ends_at").single();
+            if (error) throw error;
+            planWriteVersion.current += 1;
+            setPlans((previous) => previous.map((item) => item.id === id ? { ...item, ...data } : item));
+          } catch (error) {
+            window.alert(`Could not change the end time. ${plannerSaveMessage(error)}`);
           }
         }}
       />
