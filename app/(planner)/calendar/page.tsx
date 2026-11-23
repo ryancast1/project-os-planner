@@ -184,6 +184,7 @@ function DayCell({
   isToday,
   dayPlans,
   maxPlansPerCell,
+  planBarSpace,
   weekend,
   dayOff,
   monthChangeFromTop,
@@ -196,6 +197,7 @@ function DayCell({
   isToday: boolean;
   dayPlans: Plan[];
   maxPlansPerCell: number;
+  planBarSpace: number;
   weekend: boolean;
   dayOff: boolean;
   monthChangeFromTop: boolean;
@@ -219,7 +221,7 @@ function DayCell({
         onOpenDay(iso);
       }}
       className={clsx(
-        "relative p-1 select-none aspect-square transition-colors",
+        "relative flex min-h-[calc(100cqw/7)] min-w-0 flex-col select-none px-1 pt-6 transition-colors",
         // grid lines
         dIdx === 6 ? "border-r-0" : "border-r border-r-neutral-700/40",
         // top border for every cell; thicker when month changes vs the cell above
@@ -232,11 +234,11 @@ function DayCell({
             ? "bg-neutral-800/50"
             : "bg-neutral-950/30"
       )}
-      style={{ touchAction: "manipulation" }}
+      style={{ touchAction: "manipulation", paddingBottom: planBarSpace || 4 }}
     >
       <div className="absolute right-1 top-1 text-[10px] font-medium text-neutral-400 md:landscape:text-xs">{d.getDate()}</div>
 
-      <div className="mt-5 space-y-0.5 sm:space-y-1 landscape:space-y-1 md:landscape:space-y-2 md:landscape:mt-0 md:landscape:h-full md:landscape:pt-5 md:landscape:pb-2 md:landscape:flex md:landscape:flex-col md:landscape:justify-center">
+      <div className="min-w-0 flex-1 space-y-0.5 sm:space-y-1 landscape:space-y-1 md:landscape:space-y-2 md:landscape:flex md:landscape:flex-col md:landscape:justify-center">
         {show.map((p) => (
           <div
             key={p.id}
@@ -856,6 +858,11 @@ export default function CalendarPage() {
             {weeks.map((row, wIdx) => {
               const monthLabel = monthLabelForWeek(row, wIdx);
               const isCurrentWeek = toISODate(row[0]) === toISODate(week0);
+              const spans = spansByWeek[wIdx];
+              const laneCount = spans.reduce((count, span) => Math.max(count, span.lane + 1), 0);
+              const barHeight = isWide ? 20 : 12;
+              const laneHeight = barHeight + 2;
+              const planBarSpace = laneCount ? 6 + laneCount * laneHeight : 0;
 
               return (
                 <div
@@ -863,7 +870,7 @@ export default function CalendarPage() {
                   ref={yearView && isCurrentWeek ? currentWeekRowRef : undefined}
                   className="flex"
                 >
-                  <div className="relative flex-1 border-l border-neutral-700/50">
+                  <div className="@container relative min-w-0 flex-1 border-l border-neutral-700/50">
                   <div className="grid grid-cols-7">
                     {row.map((d, dIdx) => {
                       const iso = toISODate(d);
@@ -883,7 +890,7 @@ export default function CalendarPage() {
                           <div
                             key={iso}
                             className={clsx(
-                              "relative aspect-square select-none bg-neutral-950/10 p-1",
+                              "relative min-h-[calc(100cqw/7)] select-none bg-neutral-950/10 p-1",
                               dIdx === 6 ? "border-r-0" : "border-r border-r-neutral-700/40",
                               monthChangeFromTop ? "border-t-2 border-t-neutral-500/70" : "border-t border-t-neutral-700/40",
                               monthChangeFromLeft ? "border-l-2 border-l-neutral-500/70" : ""
@@ -900,6 +907,7 @@ export default function CalendarPage() {
                           isToday={isToday}
                           dayPlans={dayPlans}
                           maxPlansPerCell={maxPlansPerCell}
+                          planBarSpace={planBarSpace}
                           weekend={weekend}
                           dayOff={dayOff}
                           monthChangeFromTop={monthChangeFromTop}
@@ -911,36 +919,22 @@ export default function CalendarPage() {
                     })}
                   </div>
                   {/* Multi-day plan bars */}
-                  {spansByWeek[wIdx]?.length ? (
-                    <div
-                      className={clsx(
-                        "pointer-events-none absolute inset-0 grid grid-cols-7",
-                        // On small screens we stack bars near the bottom so they don't cover day numbers / plan text.
-                        isWide ? "items-start" : "items-end"
-                      )}
-                    >
-                      {spansByWeek[wIdx].map((s) => {
-                        // Desktop/iPad landscape: a little lower than before to leave a tiny gap under day numbers.
-                        const top = 22 + s.lane * 16;
-                        // Mobile: stack from the bottom up. Use thinner bars + tighter stacking.
-                        const bottom = 4 + s.lane * 8;
-
+                  {laneCount > 0 ? (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-1 z-10 grid grid-cols-7" style={{ gridAutoRows: laneHeight }}>
+                      {spans.map((s) => {
                         return (
                           <div
                             key={s.key}
-                            style={
-                              isWide
-                                ? { gridColumn: `${s.startCol + 1} / ${s.endCol + 2}`, marginTop: top }
-                                : { gridColumn: `${s.startCol + 1} / ${s.endCol + 2}`, marginBottom: bottom }
-                            }
-                            className="z-10 px-1"
+                            style={{ gridColumn: `${s.startCol + 1} / ${s.endCol + 2}`, gridRow: laneCount - s.lane }}
+                            className="min-w-0 self-end px-1"
                           >
                             <div
+                              style={{ height: barHeight }}
                               className={clsx(
-                                "w-full border border-neutral-200/30 bg-neutral-200/10 backdrop-blur shadow-sm",
+                                "flex w-full items-center border border-neutral-200/30 bg-neutral-200/10 font-medium leading-none text-neutral-100 backdrop-blur shadow-sm",
                                 isWide
-                                  ? "rounded-md px-1.5 py-1 text-[11px] leading-none text-neutral-100 font-medium"
-                                  : "rounded-sm px-1 text-[8px] leading-none text-neutral-100 font-medium h-3 flex items-center"
+                                  ? "rounded-md px-1.5 text-[11px]"
+                                  : "rounded-sm px-1 text-[8px]"
                               )}
                             >
                               <div className="flex w-full items-center justify-center gap-1 overflow-hidden">
@@ -948,10 +942,7 @@ export default function CalendarPage() {
                                   <span className={clsx("shrink-0", isWide ? "text-neutral-200/80" : "text-neutral-200/60")}>←</span>
                                 ) : null}
                                 <span
-                                  className={clsx(
-                                    "min-w-0 truncate text-center",
-                                    isWide ? "max-w-full" : "max-w-full"
-                                  )}
+                                  className="min-w-0 truncate text-center"
                                   title={s.title}
                                 >
                                   {s.title}

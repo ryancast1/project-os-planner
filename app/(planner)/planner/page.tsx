@@ -209,6 +209,10 @@ function useSheetSave() {
   return { saving, saveError, setSaveError, submit };
 }
 
+const nativeDateTimeSizing = "block w-full min-w-0 max-w-full appearance-none [&::-webkit-date-and-time-value]:text-left";
+const sheetFieldClass = "block w-full min-w-0 rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] leading-5 text-neutral-100 outline-none focus:border-neutral-500 sm:text-sm";
+const sheetDateTimeClass = `${sheetFieldClass} ${nativeDateTimeSizing} h-10 scheme-dark [&::-webkit-date-and-time-value]:m-0 [&::-webkit-datetime-edit]:p-0 [&::-webkit-datetime-edit-fields-wrapper]:p-0`;
+
 function PlanTimingInputs({ startDate, startTime, endTime, endDate, onStartTime, onEndTime, onEndDate }: {
   startDate: string;
   startTime: string;
@@ -218,21 +222,20 @@ function PlanTimingInputs({ startDate, startTime, endTime, endDate, onStartTime,
   onEndTime: (value: string) => void;
   onEndDate: (value: string) => void;
 }) {
-  const inputClass = "h-10 w-full min-w-0 rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100";
   return (
     <div className="space-y-2">
-      <label className="block text-xs text-neutral-400">
-        End date (optional)
-        <input type="date" min={startDate} value={endDate} onChange={(e) => onEndDate(e.target.value)} className={inputClass} />
+      <label className="block">
+        <span className="mb-1 block text-xs text-neutral-400">End date (optional)</span>
+        <input type="date" min={startDate} value={endDate} onChange={(e) => onEndDate(e.target.value)} className={sheetDateTimeClass} />
       </label>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block min-w-0 text-xs text-neutral-400">
-          Start time (optional)
-          <input type="time" step="1" value={startTime} onChange={(e) => onStartTime(e.target.value)} className={inputClass} />
+      <div className="grid grid-cols-2 gap-2 max-[359px]:grid-cols-1">
+        <label className="block min-w-0">
+          <span className="mb-1 block text-xs text-neutral-400">Start time (optional)</span>
+          <input type="time" step="1" value={startTime} onChange={(e) => onStartTime(e.target.value)} className={sheetDateTimeClass} />
         </label>
-        <label className="block min-w-0 text-xs text-neutral-400">
-          End time (optional)
-          <input type="time" step="1" value={endTime} onChange={(e) => onEndTime(e.target.value)} className={inputClass} />
+        <label className="block min-w-0">
+          <span className="mb-1 block text-xs text-neutral-400">End time (optional)</span>
+          <input type="time" step="1" value={endTime} onChange={(e) => onEndTime(e.target.value)} className={sheetDateTimeClass} />
         </label>
       </div>
     </div>
@@ -279,132 +282,6 @@ function computePlanningWindows(today: Date): PlanningWindows {
   const nextWeekendStart = toISODate(addDays(thisWeekendSat, 7));
 
   return { thisWeekStart, nextWeekStart, thisWeekendStart, nextWeekendStart };
-}
-
-function nextWeekdayISO(from: Date, targetWeekday: number) {
-  // weekday: 0=Sun ... 6=Sat
-  const d = new Date(from);
-  d.setHours(0, 0, 0, 0);
-  const cur = d.getDay();
-  let delta = (targetWeekday - cur + 7) % 7;
-  if (delta === 0) delta = 7; // next occurrence
-  d.setDate(d.getDate() + delta);
-  return toISODate(d);
-}
-
-type ParsedAdd = {
-  title: string;
-  targetValue: string; // none | D|YYYY-MM-DD | P|kind|start
-  itemType: ItemType;
-};
-
-function parseHashtags(
-  raw: string,
-  defaults: { targetValue: string; today: Date; windows: PlanningWindows; itemType: ItemType }
-): ParsedAdd {
-  const { targetValue: defaultTarget, today, windows, itemType: defaultType } = defaults;
-
-  const parts = raw.trim().split(/\s+/).filter(Boolean);
-  let targetValue = defaultTarget;
-  let itemType: ItemType = defaultType;
-
-  const kept: string[] = [];
-
-  const setParking = (which: "thisWeek" | "thisWeekend" | "nextWeek" | "nextWeekend") => {
-    if (which === "thisWeek") targetValue = `P|workweek|${windows.thisWeekStart}`;
-    if (which === "thisWeekend") targetValue = `P|weekend|${windows.thisWeekendStart}`;
-    if (which === "nextWeek") targetValue = `P|workweek|${windows.nextWeekStart}`;
-    if (which === "nextWeekend") targetValue = `P|weekend|${windows.nextWeekendStart}`;
-  };
-
-  const weekdayMap: Record<string, number> = {
-    sun: 0,
-    sunday: 0,
-    mon: 1,
-    monday: 1,
-    tue: 2,
-    tues: 2,
-    tuesday: 2,
-    wed: 3,
-    weds: 3,
-    wednesday: 3,
-    thu: 4,
-    thur: 4,
-    thurs: 4,
-    thursday: 4,
-    fri: 5,
-    friday: 5,
-    sat: 6,
-    saturday: 6,
-  };
-
-  for (const p of parts) {
-    if (!p.startsWith("#") || p.length < 2) {
-      kept.push(p);
-      continue;
-    }
-
-    const tag = p.slice(1).toLowerCase().replace(/[^a-z]/g, "");
-
-    // type tags
-    if (tag === "task" || tag === "tasks") {
-      itemType = "task";
-      continue;
-    }
-    if (tag === "plan" || tag === "plans") {
-      itemType = "plan";
-      continue;
-    }
-    if (tag === "focus" || tag === "focuses") {
-      itemType = "focus";
-      continue;
-    }
-
-    // date-ish
-    if (tag === "today") {
-      targetValue = `D|${toISODate(today)}`;
-      continue;
-    }
-    if (tag === "tomorrow") {
-      targetValue = `D|${toISODate(addDays(today, 1))}`;
-      continue;
-    }
-
-    // parking shortcuts
-    if (tag === "thisweek" || tag === "week") {
-      setParking("thisWeek");
-      continue;
-    }
-    if (tag === "thisweekend" || tag === "weekend") {
-      setParking("thisWeekend");
-      continue;
-    }
-    if (tag === "nextweek") {
-      setParking("nextWeek");
-      continue;
-    }
-    if (tag === "nextweekend") {
-      setParking("nextWeekend");
-      continue;
-    }
-
-    if (tag === "nodate" || tag === "someday" || tag === "later") {
-      targetValue = "none";
-      continue;
-    }
-
-    // weekday shortcuts
-    if (weekdayMap[tag] !== undefined) {
-      const iso = nextWeekdayISO(today, weekdayMap[tag]);
-      targetValue = `D|${iso}`;
-      continue;
-    }
-
-    // unknown hashtag: keep it
-    kept.push(p);
-  }
-
-  return { title: kept.join(" ").trim(), targetValue, itemType };
 }
 
 function locationValueFor(item: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null }) {
@@ -1634,7 +1511,7 @@ function EditSheet({
                       setCustomDate(v);
                       setTargetValue(v ? `D|${v}` : "none");
                     }}
-                    className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
+                    className={`${nativeDateTimeSizing} rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm`}
                   />
                 </div>
               )}
@@ -1817,14 +1694,11 @@ function NotesModal({
 }
 
 function AddSheet({
-  open,
   onClose,
   onCreate,
-  moveTargets,
-  defaultTarget,
+  defaultDate,
   projectGoals,
 }: {
-  open: boolean;
   onClose: () => void;
   onCreate: (args: {
   titleRaw: string;
@@ -1837,58 +1711,40 @@ function AddSheet({
   planDayOff: boolean;
   projectGoalId: string;
 }) => Promise<void>;
-  moveTargets: MoveTarget[];
-  defaultTarget: string;
+  defaultDate: string;
   projectGoals: ProjectGoal[];
 }) {
   const [itemType, setItemType] = useState<ItemType>("task");
   const [titleRaw, setTitleRaw] = useState("");
   const [notes, setNotes] = useState("");
-  const [targetValue, setTargetValue] = useState(defaultTarget);
+  const [date, setDate] = useState(defaultDate);
   const [planStartTime, setPlanStartTime] = useState("");
   const [planEndTime, setPlanEndTime] = useState("");
-  const { saving, saveError, setSaveError, submit } = useSheetSave();
+  const { saving, saveError, submit } = useSheetSave();
   const close = () => { if (!saving) onClose(); };
   const [planEndDate, setPlanEndDate] = useState("");
   const [planDayOff, setPlanDayOff] = useState(false);
   const [projectGoalId, setProjectGoalId] = useState("");
-  // Date picker state for custom date
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [customDate, setCustomDate] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    setSaveError("");
-    setItemType("task");
-    setTitleRaw("");
-    setNotes("");
-    setTargetValue(defaultTarget);
-    setPlanStartTime("");
-    setPlanEndTime("");
-    setPlanEndDate("");
-    setPlanDayOff(false);
-    setProjectGoalId("");
-    // Date picker: set to today or to defaultTarget if D|
-    let initialDate = "";
-    if (defaultTarget.startsWith("D|")) {
-      initialDate = defaultTarget.split("|")[1];
-    } else {
-      initialDate = toISODate(plannerTodayDate());
-    }
-    setCustomDate(initialDate);
-    setShowDatePicker(false);
-  }, [open, defaultTarget, setSaveError]);
 
   async function submitNewItem() {
     if (!titleRaw.trim()) return;
     await submit(async () => {
-      await onCreate({ titleRaw, notes, targetValue, itemType, planStartTime, planEndTime, planEndDate, planDayOff, projectGoalId });
+      await onCreate({
+        titleRaw,
+        notes,
+        targetValue: date ? `D|${date}` : "none",
+        itemType,
+        planStartTime: date ? planStartTime : "",
+        planEndTime: date ? planEndTime : "",
+        planEndDate: date ? planEndDate : "",
+        planDayOff: Boolean(date) && planDayOff,
+        projectGoalId,
+      });
       onClose();
     });
   }
 
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -1899,12 +1755,6 @@ function AddSheet({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
-
-  const dayTargets = moveTargets.filter((t) => t.group === "days");
-  const parkingTargets = moveTargets.filter((t) => t.group === "parking");
-  const isDayTarget = targetValue.startsWith("D|");
-
-  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[60]">
@@ -1955,81 +1805,44 @@ function AddSheet({
                 value={titleRaw}
                 onChange={(e) => setTitleRaw(e.target.value)}
                 placeholder="Add..."
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                className={`${sheetFieldClass} h-10 placeholder:text-neutral-500`}
                 autoFocus
               />
-              <div className="mt-1 text-[11px] text-neutral-500">
-                Hashtags: #today #tomorrow #mon…#sun #thisweek #thisweekend #nextweek #nextweekend #nodate
-              </div>
             </div>
 
-            <div>
-              <div className="mb-1 text-xs text-neutral-400">When</div>
-              <select
-                value={targetValue}
-                onChange={(e) => {
-                  if (e.target.value === "__custom_date__") {
-                    setShowDatePicker(true);
-                    setTargetValue(`D|${customDate}`);
-                  } else {
-                    setShowDatePicker(false);
-                    setTargetValue(e.target.value);
-                  }
-                }}
-                className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
-              >
-                {dayTargets.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-                <option value="__sep" disabled>
-                  ──────────
-                </option>
-                {parkingTargets.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-                <option value="__custom_date__">Pick a date…</option>
-              </select>
-              {showDatePicker && (
-                <div className="mt-2 space-y-2">
-                  <input
-                    type="date"
-                    value={customDate}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setCustomDate(v);
-                      setTargetValue(v ? `D|${v}` : "none");
-                    }}
-                    className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 outline-none sm:text-sm"
-                  />
+            <label className="block">
+              <span className="mb-1 block text-xs text-neutral-400">When</span>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className={sheetDateTimeClass}
+              />
+            </label>
 
-                </div>
-              )}
-            </div>
+            <label className="block">
+              <span className="mb-1 block text-xs text-neutral-400">Project/Goal (optional)</span>
+              <span className="relative block">
+                <select
+                  value={projectGoalId}
+                  onChange={(e) => setProjectGoalId(e.target.value)}
+                  className={`${sheetFieldClass} h-10 appearance-none truncate pr-8 scheme-dark`}
+                >
+                  <option value="">None</option>
+                  {projectGoals.map((pg) => (
+                    <option key={pg.id} value={pg.id}>
+                      {pg.bucket ? `${pg.bucket}: ${pg.goal}` : pg.goal}
+                    </option>
+                  ))}
+                </select>
+                <span aria-hidden="true" className="pointer-events-none absolute right-3.5 top-1/2 size-2 -translate-y-3/4 rotate-45 border-r border-b border-neutral-400" />
+              </span>
+            </label>
 
-            <div>
-              <div className="mb-1 text-xs text-neutral-400">Project/Goal (optional)</div>
-              <select
-                value={projectGoalId}
-                onChange={(e) => setProjectGoalId(e.target.value)}
-                className="h-10 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-[16px] text-neutral-100 outline-none sm:text-sm"
-              >
-                <option value="">None</option>
-                {projectGoals.map((pg) => (
-                  <option key={pg.id} value={pg.id}>
-                    {pg.bucket ? `${pg.bucket}: ${pg.goal}` : pg.goal}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {itemType === "plan" && isDayTarget && (
+            {itemType === "plan" && date && (
               <div className="space-y-2">
                 <PlanTimingInputs
-                  startDate={targetValue.split("|")[1]}
+                  startDate={date}
                   startTime={planStartTime}
                   endTime={planEndTime}
                   endDate={planEndDate}
@@ -2050,7 +1863,7 @@ function AddSheet({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Optional"
-                className="min-h-[92px] w-full resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none sm:text-sm"
+                className={`${sheetFieldClass} min-h-[92px] resize-none placeholder:text-neutral-500`}
               />
             </div>
 
@@ -2392,7 +2205,7 @@ const [movieDropdownId, setMovieDropdownId] = useState<string | null>(null);
   const [drawerType, setDrawerType] = useState<ItemType>("task");
 
   const [openDayIso, setOpenDayIso] = useState<string | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
+  const [addDefaultDate, setAddDefaultDate] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editType, setEditType] = useState<ItemType>("task");
   const [editItem, setEditItem] = useState<Task | Plan | Focus | null>(null);
@@ -3612,16 +3425,15 @@ setMovieItems(
     planDayOff?: boolean;
     projectGoalId?: string;
   }) {
-    const parsed = parseHashtags(args.titleRaw, { targetValue: args.targetValue, today, windows, itemType: args.itemType });
-    const title = parsed.title.trim();
+    const { targetValue, itemType } = args;
+    const title = args.titleRaw.trim();
     if (!title) throw new Error("Enter a title.");
 
     let placement: { scheduled_for: string | null; window_kind: WindowKind | null; window_start: string | null };
 
-    if (parsed.targetValue === "none") placement = { scheduled_for: null, window_kind: null, window_start: null };
-    else if (parsed.targetValue.startsWith("D|")) placement = { scheduled_for: parsed.targetValue.split("|")[1], window_kind: null, window_start: null };
-    else if (parsed.targetValue.startsWith("P|")) {
-      const [, kind, start] = parsed.targetValue.split("|");
+    if (targetValue.startsWith("D|")) placement = { scheduled_for: targetValue.split("|")[1], window_kind: null, window_start: null };
+    else if (targetValue.startsWith("P|")) {
+      const [, kind, start] = targetValue.split("|");
       placement = { scheduled_for: null, window_kind: kind as WindowKind, window_start: start };
     } else placement = { scheduled_for: null, window_kind: null, window_start: null };
 
@@ -3644,7 +3456,7 @@ setMovieItems(
       return maxOrder + 1;
     };
 
-    if (parsed.itemType === "task") {
+    if (itemType === "task") {
       const sort_order = getNextSortOrder(tasks);
       const { data, error } = await supabase
         .from("tasks")
@@ -3656,7 +3468,7 @@ setMovieItems(
       return;
     }
 
-    if (parsed.itemType === "focus") {
+    if (itemType === "focus") {
       const sort_order = getNextSortOrder(focuses);
       const { data, error } = await supabase
         .from("focuses")
@@ -6400,7 +6212,7 @@ setMovieItems(
 
       {/* Floating add */}
       <button
-        onClick={() => setAddOpen(true)}
+        onClick={() => setAddDefaultDate(toISODate(plannerTodayDate()))}
         className="fixed bottom-[calc(72px+env(safe-area-inset-bottom))] right-4 z-[55] h-12 w-12 rounded-full border border-neutral-800 bg-neutral-100 text-xl font-semibold text-neutral-900 shadow-lg active:scale-[0.98]"
         aria-label="Add"
         title="Add"
@@ -6408,26 +6220,14 @@ setMovieItems(
         +
       </button>
 
-      <AddSheet
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        moveTargets={moveTargets}
-        defaultTarget={openDayIso ? `D|${openDayIso}` : `D|${todayIso}`}
-        projectGoals={projectGoals}
-        onCreate={async (args) => {
-          await createItem({
-            titleRaw: args.titleRaw,
-            notes: args.notes,
-            targetValue: args.targetValue,
-            itemType: args.itemType,
-            planStartTime: args.planStartTime,
-            planEndTime: args.planEndTime,
-            planEndDate: args.planEndDate,
-            planDayOff: args.planDayOff,
-            projectGoalId: args.projectGoalId,
-          });
-        }}
-      />
+      {addDefaultDate && (
+        <AddSheet
+          onClose={() => setAddDefaultDate(null)}
+          defaultDate={addDefaultDate}
+          projectGoals={projectGoals}
+          onCreate={createItem}
+        />
+      )}
 
       <EditSheet
         open={editOpen}
