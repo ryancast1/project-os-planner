@@ -6,6 +6,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { localTrackingTime, TRICH_DAY_START_HOUR, trichLogFields } from "@/lib/localTrackingTime";
 import { movePlanSchedule, planClockTime, planEndDate, planScheduleFields, resizePlanEnd } from "@/lib/planSchedule";
 import DayScheduleView, { type DayScheduleItem } from "@/components/DayScheduleView";
+import { NotesButton, NotesModal } from "@/components/DayNotes";
+import TaskDivider from "@/components/TaskDivider";
+import { hasTaskDivider, setTaskDivider, taskNoteText } from "@/lib/taskNotes";
 
 function trichTrackingDate() {
   return localTrackingTime(TRICH_DAY_START_HOUR).trackingDate;
@@ -496,6 +499,7 @@ function TaskRow({
   onEdit,
   tone,
   compact,
+  divider,
   showDragHandle = false,
   onDragStart,
   onDragEnd,
@@ -513,6 +517,7 @@ function TaskRow({
   onEdit: (t: Task) => void;
   tone?: "normal" | "overdue";
   compact?: boolean;
+  divider?: { active: boolean; onToggle: () => void };
   showDragHandle?: boolean;
   onDragStart?: (id: string) => void;
   onDragEnd?: () => void;
@@ -546,6 +551,7 @@ function TaskRow({
       dropPosition={dropPosition}
       dragItemId={task.id}
     >
+      {divider && <TaskDivider active={divider.active} compact={compact} onToggle={divider.onToggle} />}
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
@@ -1370,7 +1376,7 @@ function EditSheet({
     if (!open || !item) return;
     setSaveError("");
     setTitle((item as any).title ?? "");
-    setNotes(((item as any).notes ?? "") as string);
+    setNotes((itemType === "task" ? taskNoteText(item.notes) : item.notes) ?? "");
     setTargetValue(locationValueFor(item as any));
     setLocalType(itemType);
     setProjectGoalId((item as any).project_goal_id ?? "");
@@ -1586,113 +1592,6 @@ function EditSheet({
   );
 }
 
-function NotesButton({ date, hasNotes, onClick }: { date: string; hasNotes: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className={clsx(
-        "transition-colors",
-        hasNotes ? "text-neutral-200" : "text-neutral-500 hover:text-neutral-300"
-      )}
-      title="Day notes"
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-4 w-4"
-      >
-        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-        <line x1="10" y1="9" x2="8" y2="9" />
-      </svg>
-    </button>
-  );
-}
-
-function NotesModal({
-  open,
-  date,
-  dateLabel,
-  initialNotes,
-  saving,
-  onSave,
-  onClose,
-}: {
-  open: boolean;
-  date: string;
-  dateLabel: string;
-  initialNotes: string;
-  saving: boolean;
-  onSave: (date: string, notes: string) => void;
-  onClose: () => void;
-}) {
-  const [draft, setDraft] = useState(initialNotes);
-
-  // Reset draft when modal opens with new date
-  useEffect(() => {
-    if (open) setDraft(initialNotes);
-  }, [open, initialNotes]);
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="relative z-10 w-full max-w-lg flex flex-col rounded-2xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl" style={{ height: "min(75dvh, 600px)" }}>
-        <div className="mb-3 flex items-center justify-between shrink-0">
-          <h2 className="text-lg font-semibold text-neutral-100">Notes for {dateLabel}</h2>
-          <button
-            type="button"
-            onClick={() => {
-              onSave(date, draft);
-              onClose();
-            }}
-            disabled={saving}
-            className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
-
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Add notes for this day..."
-          className="w-full flex-1 min-h-0 resize-none rounded-xl border border-neutral-700 bg-neutral-800/50 px-3 py-2 text-[16px] sm:text-sm text-neutral-100 placeholder:text-neutral-500 outline-none focus:border-neutral-500"
-          autoFocus
-        />
-
-        <div className="mt-3 flex justify-end shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-neutral-700 px-4 py-2 text-sm font-semibold text-neutral-300 hover:bg-neutral-800"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function AddSheet({
   onClose,
   onCreate,
@@ -1894,6 +1793,11 @@ function AddSheet({
 
 export default function PlannerPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const dividerWrites = useRef(new Set<string>());
+  const dayTaskReorders = useRef(new Set<string>());
+  const dividerWriteVersion = useRef(0);
+  const [pendingDividers, setPendingDividers] = useState<Record<string, boolean | undefined>>({});
+  const [dividerError, setDividerError] = useState("");
   const [plans, setPlans] = useState<Plan[]>([]);
   const planLoadVersion = useRef(0);
   const planWriteVersion = useRef(0);
@@ -1911,9 +1815,8 @@ export default function PlannerPage() {
   const previousDayRangeStartRef = useRef<string | null>(null);
   const [projectGoals, setProjectGoals] = useState<ProjectGoal[]>([]);
   const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
+  const noteWriteVersion = useRef(0);
   const [notesModalDate, setNotesModalDate] = useState<string | null>(null);
-  const [notesModalDraft, setNotesModalDraft] = useState("");
-  const [notesSaving, setNotesSaving] = useState(false);
   const [scheduleViewDate, setScheduleViewDate] = useState<string | null>(null);
   const [scheduleItems, setScheduleItems] = useState<DayScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2321,6 +2224,8 @@ function getWindowValue(which: DrawerWindow) {
   async function fetchAll() {
     const planLoad = ++planLoadVersion.current;
     const planWritesAtStart = planWriteVersion.current;
+    const noteWritesAtStart = noteWriteVersion.current;
+    const dividerWritesAtStart = dividerWriteVersion.current;
     setLoading(true);
 
     // Auth guard: if session is missing, bounce to /login and stop.
@@ -2539,11 +2444,13 @@ function getWindowValue(which: DrawerWindow) {
     if (dayNotesRes.error) console.warn("dayNotesRes", dayNotesRes.error);
     if (contentItemsRes.error) console.warn("contentItemsRes", contentItemsRes.error);
     if (contentSessionsRes.error) console.warn("contentSessionsRes", contentSessionsRes.error);
-    setTasks([
-      ...((tasksOverdueRes.data ?? []) as Task[]),
-      ...((tasksScheduledRes.data ?? []) as Task[]),
-      ...((tasksParkingRes.data ?? []) as Task[]),
-    ]);
+    if (dividerWritesAtStart === dividerWriteVersion.current && dayTaskReorders.current.size === 0) {
+      setTasks([
+        ...((tasksOverdueRes.data ?? []) as Task[]),
+        ...((tasksScheduledRes.data ?? []) as Task[]),
+        ...((tasksParkingRes.data ?? []) as Task[]),
+      ]);
+    }
 
     if (planLoad === planLoadVersion.current && planWritesAtStart === planWriteVersion.current
       && !plansScheduledRes.error && !plansParkingRes.error) {
@@ -2560,12 +2467,13 @@ function getWindowValue(which: DrawerWindow) {
 
     setProjectGoals((projectGoalsRes.data ?? []) as ProjectGoal[]);
 
-    // Process day notes into a lookup by date
-    const notesMap: Record<string, string> = {};
-    for (const row of (dayNotesRes.data ?? []) as DayNote[]) {
-      if (row.notes) notesMap[row.note_date] = row.notes;
+    if (!dayNotesRes.error && noteWritesAtStart === noteWriteVersion.current) {
+      const notesMap: Record<string, string> = {};
+      for (const row of (dayNotesRes.data ?? []) as DayNote[]) {
+        if (row.notes) notesMap[row.note_date] = row.notes;
+      }
+      setDayNotes(notesMap);
     }
-    setDayNotes(notesMap);
 
     // Set new content system state
     setContentItems((contentItemsRes.data ?? []) as ContentItemRow[]);
@@ -3526,12 +3434,106 @@ setMovieItems(
       return;
     }
 
+    const task = type === "task" && placement.scheduled_for === dayRangeStart
+      ? tasks.find((item) => item.id === id)
+      : undefined;
+    if (task?.status === "open" && task.scheduled_for && task.scheduled_for < dayRangeStart
+      && task.notes !== null && hasTaskDivider(task.notes)) {
+      setDividerError("");
+      const patch = { ...placement, notes: taskNoteText(task.notes) };
+      const { data, error } = await supabase.from("tasks").update(patch).eq("id", id)
+        .eq("scheduled_for", task.scheduled_for).eq("notes", task.notes)
+        .select("id").maybeSingle();
+      if (error || !data) {
+        console.warn("moveOverdueTask", error ?? "Task changed before it could be moved.");
+        setDividerError("Could not move the task to Today. Try again.");
+        void fetchAll();
+        return;
+      }
+      dividerWriteVersion.current += 1;
+      setTasks((prev) => prev.map((item) => item.id === id ? { ...item, ...patch } : item));
+      return;
+    }
+
     const table = type === "task" ? "tasks" : "focuses";
     const { error } = await supabase.from(table).update(placement).eq("id", id);
     if (error) return console.error(error);
 
     if (type === "task") setTasks((p) => p.map((t) => (t.id === id ? ({ ...t, ...placement } as Task) : t)));
     if (type === "focus") setFocuses((p) => p.map((x) => (x.id === id ? ({ ...x, ...placement } as Focus) : x)));
+  }
+
+  async function reorderDayTasks(
+    date: string,
+    original: Task[],
+    reordered: Task[],
+    draggedId: string,
+    targetId: string,
+  ) {
+    if (dayTaskReorders.current.has(date) || original.some((task) => dividerWrites.current.has(task.id))) return;
+
+    // Assign the dragged task to the target's group. The other tasks keep their groups.
+    const groups = new Map<string, number>();
+    let group = 0;
+    original.forEach((task, index) => {
+      if (index > 0 && hasTaskDivider(task.notes)) group += 1;
+      groups.set(task.id, group);
+    });
+    groups.set(draggedId, groups.get(targetId) ?? 0);
+
+    const edits = reordered.flatMap((task, index) => {
+      const divider = index > 0 && groups.get(task.id) !== groups.get(reordered[index - 1].id);
+      const before = { sort_order: task.sort_order ?? null };
+      const after = { sort_order: index };
+      if (divider !== hasTaskDivider(task.notes)) {
+        return [{ id: task.id, before: { ...before, notes: task.notes }, after: { ...after, notes: setTaskDivider(task.notes, divider) } }];
+      }
+      return before.sort_order === index ? [] : [{ id: task.id, before, after }];
+    });
+    if (!edits.length) return;
+
+    const editsById = new Map(edits.map((edit) => [edit.id, edit.after]));
+    dayTaskReorders.current.add(date);
+    setDividerError("");
+    setTasks((prev) => prev.map((task) => {
+      const edit = editsById.get(task.id);
+      return edit ? { ...task, ...edit } : task;
+    }));
+
+    type OrderPatch = { sort_order: number | null; notes?: string | null };
+    async function write(id: string, from: OrderPatch, to: OrderPatch) {
+      let query = supabase.from("tasks").update(to).eq("id", id).eq("scheduled_for", date);
+      query = from.sort_order === null ? query.is("sort_order", null) : query.eq("sort_order", from.sort_order);
+      if ("notes" in from) {
+        query = from.notes == null ? query.is("notes", null) : query.eq("notes", from.notes);
+      }
+      const { data, error } = await query.select("id").maybeSingle();
+      if (error || !data) throw error ?? new Error("A task changed while its order was being saved.");
+    }
+
+    const saved: typeof edits = [];
+    let failed = false;
+    try {
+      for (const edit of edits) {
+        await write(edit.id, edit.before, edit.after);
+        saved.push(edit);
+      }
+    } catch (error) {
+      failed = true;
+      console.warn("reorderDayTasks", error);
+      for (const edit of saved.reverse()) {
+        try {
+          await write(edit.id, edit.after, edit.before);
+        } catch (rollbackError) {
+          console.warn("reorderDayTasks rollback", rollbackError);
+        }
+      }
+      setDividerError("Could not save the task order. Try again.");
+    } finally {
+      dayTaskReorders.current.delete(date);
+      dividerWriteVersion.current += 1;
+    }
+    if (failed) await fetchAll();
   }
 
   async function reorderItems(
@@ -3541,9 +3543,6 @@ setMovieItems(
     context: { date?: string; window?: string; contentTab?: string },
     position: "above" | "below" = "above"
   ) {
-    // 1. Get the relevant array of items from the source arrays (tasks/focuses, not derived)
-    const sourceArray = type === "task" ? tasks : focuses;
-
     // 2. Get the items in the current context
     let contextItems: (Task | Focus)[];
     if (context.date) {
@@ -3575,6 +3574,11 @@ setMovieItems(
       insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
     }
     reordered.splice(insertIndex, 0, removed);
+
+    if (type === "task" && context.date) {
+      await reorderDayTasks(context.date, contextItems as Task[], reordered as Task[], draggedId, targetId);
+      return;
+    }
 
     // 5. Update sort_order for all items in the reordered list
     const updates = reordered.map((item, index) => ({
@@ -3657,17 +3661,44 @@ setMovieItems(
     );
   }
 
-  async function saveDayNotes(date: string, notes: string) {
-    setNotesSaving(true);
-    const { error } = await supabase
-      .from("day_notes")
-      .upsert({ note_date: date, notes, updated_at: new Date().toISOString() }, { onConflict: "note_date" });
-    setNotesSaving(false);
-    if (error) {
-      console.error("saveDayNotes", error);
-      return;
-    }
+  function updateDayNotes(date: string, notes: string) {
+    noteWriteVersion.current += 1;
     setDayNotes((prev) => ({ ...prev, [date]: notes }));
+  }
+
+  async function toggleTaskDivider(task: Task) {
+    if (dividerWrites.current.has(task.id) || (task.scheduled_for && dayTaskReorders.current.has(task.scheduled_for))) return;
+    dividerWrites.current.add(task.id);
+    setDividerError("");
+    const active = !hasTaskDivider(task.notes);
+    setPendingDividers((prev) => ({ ...prev, [task.id]: active }));
+    try {
+      const notes = setTaskDivider(task.notes, active);
+      const update = supabase.from("tasks").update({ notes }).eq("id", task.id);
+      const match = task.notes === null ? update.is("notes", null) : update.eq("notes", task.notes);
+      const { data, error } = await match.select("notes").maybeSingle();
+      if (error || !data) throw error ?? new Error("Task changed before the divider could be saved.");
+      dividerWriteVersion.current += 1;
+      setTasks((prev) => prev.map((item) => item.id === task.id ? { ...item, notes: data.notes } : item));
+    } catch (error) {
+      console.warn("toggleTaskDivider", error);
+      setDividerError("Could not save the divider. Try again.");
+      void fetchAll();
+    } finally {
+      dividerWrites.current.delete(task.id);
+      setPendingDividers((prev) => {
+        const next = { ...prev };
+        delete next[task.id];
+        return next;
+      });
+    }
+  }
+
+  function taskDivider(task: Task, index: number) {
+    return index > 0 ? {
+      active: pendingDividers[task.id] ?? hasTaskDivider(task.notes),
+      onToggle: () => void toggleTaskDivider(task),
+    } : undefined;
   }
 
   async function deleteTask(id: string) {
@@ -4435,9 +4466,17 @@ setMovieItems(
 
     if (editType === "task") {
       const project_goal_id = patch.projectGoalId ? patch.projectGoalId : null;
-      const { error } = await supabase.from("tasks").update({ title: patch.title, notes: patch.notes, project_goal_id, ...placement }).eq("id", id);
+      const task = tasks.find((item) => item.id === id) ?? editItem;
+      const notes = setTaskDivider(patch.notes, hasTaskDivider(task.notes));
+      const update = supabase.from("tasks").update({ title: patch.title, notes, project_goal_id, ...placement }).eq("id", id);
+      const match = task.notes === null ? update.is("notes", null) : update.eq("notes", task.notes);
+      const { data, error } = await match.select("id").maybeSingle();
       if (error) throw error;
-      setTasks((p) => p.map((t) => (t.id === id ? ({ ...t, title: patch.title, notes: patch.notes, project_goal_id, ...placement } as Task) : t)));
+      if (!data) {
+        void fetchAll();
+        throw new Error("This task changed while it was open. Try saving again.");
+      }
+      setTasks((p) => p.map((t) => (t.id === id ? { ...t, title: patch.title, notes, project_goal_id, ...placement } : t)));
       setEditOpen(false);
       return;
     }
@@ -4997,7 +5036,6 @@ setMovieItems(
                   <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(days[0])}</div>
                 </button>
                 <NotesButton
-                  date={toISODate(days[0])}
                   hasNotes={!!dayNotes[toISODate(days[0])]}
                   onClick={() => setNotesModalDate(toISODate(days[0]))}
                 />
@@ -5238,10 +5276,11 @@ setMovieItems(
                 </div>
               )}
               <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                {(tasksByDay[todayIso] ?? []).map((t) => (
+                {(tasksByDay[todayIso] ?? []).map((t, index) => (
                   <TaskRow
                     key={t.id}
                     task={t}
+                    divider={taskDivider(t, index)}
                     moveTargets={moveTargets}
                     onMove={(id, v) => moveItem("task", id, v)}
                     onToggleDone={toggleTaskDone}
@@ -5436,7 +5475,6 @@ setMovieItems(
                         <div className="mt-0.5 text-xs text-neutral-400">{fmtMonthDay(tomorrowDay)}</div>
                       </button>
                       <NotesButton
-                        date={tomorrowIso}
                         hasNotes={!!dayNotes[tomorrowIso]}
                         onClick={() => setNotesModalDate(tomorrowIso)}
                       />
@@ -5586,10 +5624,11 @@ setMovieItems(
                   {/* Tasks */}
                   <div className="mt-4">
                     <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                      {tomorrowTasks.map((t) => (
+                      {tomorrowTasks.map((t, index) => (
                         <TaskRow
                           key={t.id}
                           task={t}
+                          divider={taskDivider(t, index)}
                           moveTargets={moveTargets}
                           onMove={(id, v) => moveItem("task", id, v)}
                           onToggleDone={toggleTaskDone}
@@ -5795,7 +5834,6 @@ setMovieItems(
                         </div>
                       </button>
                       <NotesButton
-                        date={iso}
                         hasNotes={!!dayNotes[iso]}
                         onClick={() => setNotesModalDate(iso)}
                       />
@@ -5962,11 +6000,12 @@ setMovieItems(
 
                       <div className="mt-4">
                         <div className="mt-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20">
-                          {dayTasks.map((t) => (
+                          {dayTasks.map((t, index) => (
                             <TaskRow
                               compact={isMdUp}
                               key={t.id}
                               task={t}
+                              divider={taskDivider(t, index)}
                               moveTargets={moveTargets}
                               onMove={(id, v) => moveItem("task", id, v)}
                               onToggleDone={toggleTaskDone}
@@ -6161,11 +6200,12 @@ setMovieItems(
 
                       {/* Tasks */}
                       <div className={clsx("mt-3", "overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/20")}>
-                        {dayTasks.map((t) => (
+                        {dayTasks.map((t, index) => (
                           <TaskRow
                             compact
                             key={t.id}
                             task={t}
+                            divider={taskDivider(t, index)}
                             moveTargets={moveTargets}
                             onMove={(id, v) => moveItem("task", id, v)}
                             onToggleDone={toggleTaskDone}
@@ -6211,6 +6251,12 @@ setMovieItems(
       )}
 
       {/* Floating add */}
+      {dividerError && (
+        <div role="alert" className="fixed bottom-[calc(80px+env(safe-area-inset-bottom))] left-4 right-20 z-[55] flex w-fit max-w-[calc(100%-6rem)] items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 shadow-lg">
+          {dividerError}
+          <button type="button" aria-label="Dismiss" onClick={() => setDividerError("")} className="px-1 text-lg leading-none">{"\u00D7"}</button>
+        </div>
+      )}
       <button
         onClick={() => setAddDefaultDate(toISODate(plannerTodayDate()))}
         className="fixed bottom-[calc(72px+env(safe-area-inset-bottom))] right-4 z-[55] h-12 w-12 rounded-full border border-neutral-800 bg-neutral-100 text-xl font-semibold text-neutral-900 shadow-lg active:scale-[0.98]"
@@ -6241,20 +6287,16 @@ setMovieItems(
         onArchiveFocus={archiveEditedFocus}
       />
 
-      <NotesModal
-        open={!!notesModalDate}
-        date={notesModalDate ?? ""}
-        dateLabel={notesModalDate ? (() => {
-          const d = fromISODate(notesModalDate);
-          const isToday = notesModalDate === toISODate(days[0]);
-          if (isToday) return "Today";
-          return d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
-        })() : ""}
-        initialNotes={notesModalDate ? (dayNotes[notesModalDate] ?? "") : ""}
-        saving={notesSaving}
-        onSave={saveDayNotes}
-        onClose={() => setNotesModalDate(null)}
-      />
+      {notesModalDate && (
+        <NotesModal
+          key={notesModalDate}
+          date={notesModalDate}
+          dateLabel={notesModalDate === todayIso ? "Today" : fromISODate(notesModalDate).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
+          initialNotes={dayNotes[notesModalDate] ?? ""}
+          onSaved={updateDayNotes}
+          onClose={() => setNotesModalDate(null)}
+        />
+      )}
 
       {scheduleViewDate && <DayScheduleView
         key={scheduleViewDate}

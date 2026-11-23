@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import clsx from "clsx";
 import { supabase } from "@/lib/supabaseClient";
+import { taskNoteText } from "@/lib/taskNotes";
 
 type WindowKind = "workweek" | "weekend";
 
@@ -548,6 +549,7 @@ export default function ProjectDetailPage() {
                   const canMoveDown = openIndex >= 0 && openIndex < openTaskIds.length - 1;
                   const isOpen = openIndex >= 0;
                   const isSaving = savingId === task.id;
+                  const notes = taskNoteText(task.notes);
 
                   return (
                     <div
@@ -569,9 +571,9 @@ export default function ProjectDetailPage() {
                             <div className={clsx("text-sm font-medium text-neutral-100", task.status === "done" && "text-neutral-500 line-through")}>
                               {task.title}
                             </div>
-                            {task.notes && (
+                            {notes && (
                               <div className="mt-1 whitespace-pre-wrap text-xs text-neutral-500">
-                                {task.notes}
+                                {notes}
                               </div>
                             )}
                           </div>

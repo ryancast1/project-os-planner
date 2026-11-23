@@ -5,6 +5,8 @@ import clsx from "clsx";
 import { supabase } from "../../../lib/supabaseClient";
 import { planEndDate, resizePlanEnd } from "@/lib/planSchedule";
 import DayScheduleView, { type DayScheduleItem } from "@/components/DayScheduleView";
+import { NotesButton, NotesModal } from "@/components/DayNotes";
+
 type Plan = {
   id: string;
   title: string;
@@ -297,6 +299,8 @@ export default function CalendarPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [focuses, setFocuses] = useState<Focus[]>([]);
   const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
+  const noteWriteVersion = useRef(0);
+  const [notesModalDate, setNotesModalDate] = useState<string | null>(null);
   const [contentItems, setContentItems] = useState<ContentItem[]>([]);
   const [contentSessions, setContentSessions] = useState<ContentSession[]>([]);
   const [movieLookup, setMovieLookup] = useState<Map<string, string>>(new Map());
@@ -305,6 +309,11 @@ export default function CalendarPage() {
   const [openIso, setOpenIso] = useState<string | null>(null);
   const [scheduleViewDate, setScheduleViewDate] = useState<string | null>(null);
   const [scheduleItems, setScheduleItems] = useState<DayScheduleItem[]>([]);
+
+  function updateDayNotes(date: string, notes: string) {
+    noteWriteVersion.current += 1;
+    setDayNotes((prev) => ({ ...prev, [date]: notes }));
+  }
 
   // Fetch schedule items when schedule view opens
   useEffect(() => {
@@ -371,6 +380,7 @@ export default function CalendarPage() {
   useEffect(() => {
     let alive = true;
     const planWritesAtStart = planWriteVersion.current;
+    const noteWritesAtStart = noteWriteVersion.current;
     (async () => {
       setLoading(true);
       const [plansRes, tasksRes, focusRes, dayNotesRes, contentItemsRes, contentSessionsRes, movieLookupRes] = await Promise.all([
@@ -444,12 +454,13 @@ export default function CalendarPage() {
       }
       setMovieLookup(lookupMap);
 
-      // Process day notes into a lookup by date
-      const notesMap: Record<string, string> = {};
-      for (const row of (dayNotesRes.data ?? []) as { note_date: string; notes: string }[]) {
-        if (row.notes) notesMap[row.note_date] = row.notes;
+      if (!dayNotesRes.error && noteWritesAtStart === noteWriteVersion.current) {
+        const notesMap: Record<string, string> = {};
+        for (const row of (dayNotesRes.data ?? []) as { note_date: string; notes: string }[]) {
+          if (row.notes) notesMap[row.note_date] = row.notes;
+        }
+        setDayNotes(notesMap);
       }
-      setDayNotes(notesMap);
 
       setLoading(false);
     })();
@@ -677,13 +688,19 @@ export default function CalendarPage() {
     return (
       <div className="w-[min(560px,92vw)] max-h-[80dvh] overflow-y-auto rounded-3xl border border-neutral-700/60 bg-neutral-950/98 p-5 shadow-2xl backdrop-blur-xl">
         <div className="flex items-start justify-between gap-4">
-          <button
-            onClick={() => { setScheduleViewDate(iso); }}
-            className="text-left hover:opacity-70 transition-opacity"
-          >
-            <div className="text-sm font-medium text-neutral-400">{fmtWeekday(d)}</div>
-            <div className="text-xl font-semibold text-neutral-50 tracking-tight underline decoration-neutral-600 underline-offset-2">{fmtMonthDay(d)}</div>
-          </button>
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              onClick={() => setScheduleViewDate(iso)}
+              className="text-left transition-opacity hover:opacity-70"
+            >
+              <div className="text-sm font-medium text-neutral-400">{fmtWeekday(d)}</div>
+              <div className="text-xl leading-7 font-semibold text-neutral-50 tracking-tight underline decoration-neutral-600 underline-offset-2">{fmtMonthDay(d)}</div>
+            </button>
+            <div className="flex h-7 items-center">
+              <NotesButton hasNotes={!!notes} onClick={() => setNotesModalDate(iso)} />
+            </div>
+          </div>
           <button
             onClick={() => setOpenIso(null)}
             className="rounded-xl border border-neutral-700 bg-neutral-900/80 px-3 py-2 text-sm font-medium text-neutral-100 hover:bg-neutral-800/80 transition-colors"
@@ -976,6 +993,7 @@ export default function CalendarPage() {
       {openIso ? (
         <div
           className="fixed inset-0 z-[120] grid place-items-center bg-black/70 p-4"
+          inert={!!notesModalDate}
           onPointerDown={(e) => {
             // click outside closes
             if (e.target === e.currentTarget) setOpenIso(null);
@@ -984,6 +1002,18 @@ export default function CalendarPage() {
           {dayModalContent(openIso)}
         </div>
       ) : null}
+
+      {notesModalDate && (
+        <NotesModal
+          key={notesModalDate}
+          date={notesModalDate}
+          dateLabel={notesModalDate === todayIso ? "Today" : new Date(notesModalDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
+          initialNotes={dayNotes[notesModalDate] ?? ""}
+          layer="z-[125]"
+          onSaved={updateDayNotes}
+          onClose={() => setNotesModalDate(null)}
+        />
+      )}
 
       {/* Day Schedule View */}
       {scheduleViewDate && <DayScheduleView
