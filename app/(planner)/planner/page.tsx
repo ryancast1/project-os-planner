@@ -517,7 +517,7 @@ function TaskRow({
   onEdit: (t: Task) => void;
   tone?: "normal" | "overdue";
   compact?: boolean;
-  divider?: { active: boolean; onToggle: () => void };
+  divider?: { active: boolean; dragInProgress: boolean; onToggle: () => void };
   showDragHandle?: boolean;
   onDragStart?: (id: string) => void;
   onDragEnd?: () => void;
@@ -532,7 +532,7 @@ function TaskRow({
   const [showMove, setShowMove] = useState(false);
   const todayTarget = moveTargets.find((t) => t.group === "days" && t.label === "Today") ?? moveTargets.find((t) => t.group === "days");
 
-  return (
+  const row = (
     <RowShell
       tone={tone}
       compact={compact}
@@ -551,7 +551,6 @@ function TaskRow({
       dropPosition={dropPosition}
       dragItemId={task.id}
     >
-      {divider && <TaskDivider active={divider.active} compact={compact} onToggle={divider.onToggle} />}
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
@@ -608,6 +607,17 @@ function TaskRow({
         <MoveSelect compact={compact} value={locationValueFor(task)} onChange={(v) => onMove(task.id, v)} moveTargets={moveTargets} />
       )}
     </RowShell>
+  );
+
+  return (
+    <>
+      {divider && (
+        <div className={clsx("relative h-0", divider.dragInProgress && "pointer-events-none")}>
+          <TaskDivider active={divider.active} compact={compact} onToggle={divider.onToggle} />
+        </div>
+      )}
+      {row}
+    </>
   );
 }
 
@@ -3697,6 +3707,7 @@ setMovieItems(
   function taskDivider(task: Task, index: number) {
     return index > 0 ? {
       active: pendingDividers[task.id] ?? hasTaskDivider(task.notes),
+      dragInProgress: draggedItemId !== null,
       onToggle: () => void toggleTaskDivider(task),
     } : undefined;
   }
