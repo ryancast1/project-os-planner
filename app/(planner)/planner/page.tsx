@@ -1820,9 +1820,9 @@ export default function PlannerPage() {
     const [icon, conditions] = forecast && i >= 0 ? condition(forecast.daily.weather_code[i]) : ["🌡️", "Weather"];
     const low = forecast?.daily.temperature_2m_min[i];
     const high = forecast?.daily.temperature_2m_max[i];
-    const range = low != null && high != null ? `${Math.round(low)}/${Math.round(high)}` : "";
+    const range = low != null && high != null ? `${Math.round(high)}/${Math.round(low)}` : "";
     const label = weatherFailed && !forecast ? "Retry weather forecast" :
-      [conditions, range && `Low/high ${range} °F`, "View weather for " + iso].filter(Boolean).join(" · ");
+      [conditions, range && `High/low ${range} °F`, "View weather for " + iso].filter(Boolean).join(" · ");
     return <button type="button" className="inline-flex shrink-0 items-center gap-1 rounded px-0.5 text-base leading-6 grayscale opacity-60 transition-opacity hover:opacity-90 focus-visible:opacity-100"
       title={label} aria-label={label} aria-haspopup="dialog" disabled={!!forecast && i < 0}
       onClick={event => {
