@@ -1,0 +1,22 @@
+.detail { text-align: center; position: fixed; inset: 0; box-sizing: border-box; margin: auto; width: min(94vw, 610px); max-height: 90dvh; overflow: auto; padding: clamp(16px,4vw,28px); border: 1px solid #485365; border-radius: 22px; background: #1b2029; color: #f5f8ff; color-scheme: dark; font-variant-numeric: tabular-nums; }
+.detail::backdrop { background: #070e1ac2; }
+.header { display: grid; grid-template-columns: 82px minmax(0,1fr) 44px 36px; align-items: center; gap: 2px; }
+.arrow { display: grid; align-content: center; justify-items: center; color: #f5f8ff; width: 100%; height: 44px; font-size: 28px; line-height: 1; cursor: pointer; border-radius: 50%; }
+.arrow small { font-size: 10px; line-height: 1.1; }
+.arrow:hover { background: #ffffff12; }
+.arrow:disabled { visibility: hidden; }
+.detail h2:focus { outline: none; }
+.detail h2 { text-align: center; font-size: clamp(18px,4vw,24px); font-weight: 600; }
+.close { cursor: pointer; background: #343b48; border-radius: 20px; }
+.close { width: 36px; height: 36px; font-size: 24px; line-height: 1; }
+.detailTime,.detailSub,.sun span { color: #bdc7d8; font-size: 14px; }
+.reading { font-size: clamp(36px,8vw,52px); line-height: 1.2; }
+.reading span { font-size: .63em; }
+.plot { width: 100%; display: block; margin-top: 16px; cursor: crosshair; touch-action: pan-y; }
+.plot text { font-size: 11px; fill: #cfdae7; }
+.gridline { stroke: #ffffff25; }
+.sun { margin-top: 18px; border-top: 1px solid #ffffff25; padding-top: 14px; display: grid; grid-template-columns: 1fr 1fr; }
+.sun div { display: grid; gap: 2px; }
+.sun span { text-transform: capitalize; }
+.synopsis { margin: 12px 0; color: #d4dfed; font-size: 14px; }
+.metricSelect { display: block; margin: 8px auto 12px; border: 1px solid #596372; border-radius: 8px; padding: 6px 10px; background: #343b48; font-size: 14px; }

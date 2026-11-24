@@ -424,7 +424,7 @@ export default function ProjectDetailPage() {
             onClick={() => router.push("/goals")}
             className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm font-semibold text-neutral-200"
           >
-            Back to Projects/Goals
+            Back to Goals
           </button>
           <div className="text-sm text-neutral-400">Project not found.</div>
         </div>
@@ -441,7 +441,7 @@ export default function ProjectDetailPage() {
               href="/goals"
               className="inline-flex rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm font-semibold text-neutral-200"
             >
-              Back to Projects/Goals
+              Back to Goals
             </Link>
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">

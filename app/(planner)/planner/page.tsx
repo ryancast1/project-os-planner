@@ -6,6 +6,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { localTrackingTime, TRICH_DAY_START_HOUR, trichLogFields } from "@/lib/localTrackingTime";
 import { movePlanSchedule, planClockTime, planEndDate, planScheduleFields, resizePlanEnd } from "@/lib/planSchedule";
 import DayScheduleView, { type DayScheduleItem } from "@/components/DayScheduleView";
+import DayDetail from "../weather/DayDetail";
+import { useForecast } from "../weather/useForecast";
+import { condition, weatherLocation } from "@/lib/weather";
 import { NotesButton, NotesModal } from "@/components/DayNotes";
 import TaskDivider from "@/components/TaskDivider";
 import { hasTaskDivider, setTaskDivider, taskNoteText } from "@/lib/taskNotes";
@@ -1801,7 +1804,34 @@ function AddSheet({
   );
 }
 
+const weatherDate = new Intl.DateTimeFormat("en-CA", {
+  timeZone: weatherLocation.timezone, year: "numeric", month: "2-digit", day: "2-digit",
+});
+
 export default function PlannerPage() {
+  const { forecast, failed: weatherFailed, retry: retryWeather } = useForecast();
+  const [weatherDay, setWeatherDay] = useState<string | null>(null);
+  const weatherDates = useMemo(() => forecast?.daily.time.map((time, i) =>
+    weatherDate.format((forecast.daily.sunrise[i] ?? time) * 1000)) ?? [], [forecast]);
+  const weatherIndex = weatherDay ? weatherDates.indexOf(weatherDay) : -1;
+
+  function weatherButton(iso: string) {
+    const i = weatherDates.indexOf(iso);
+    const [icon, conditions] = forecast && i >= 0 ? condition(forecast.daily.weather_code[i]) : ["🌡️", "Weather"];
+    const low = forecast?.daily.temperature_2m_min[i];
+    const high = forecast?.daily.temperature_2m_max[i];
+    const range = low != null && high != null ? `${Math.round(low)}/${Math.round(high)}` : "";
+    const label = weatherFailed && !forecast ? "Retry weather forecast" :
+      [conditions, range && `Low/high ${range} °F`, "View weather for " + iso].filter(Boolean).join(" · ");
+    return <button type="button" className="inline-flex shrink-0 items-center gap-1 rounded px-0.5 text-base leading-6 grayscale opacity-60 transition-opacity hover:opacity-90 focus-visible:opacity-100"
+      title={label} aria-label={label} aria-haspopup="dialog" disabled={!!forecast && i < 0}
+      onClick={event => {
+        event.stopPropagation();
+        setWeatherDay(iso);
+        if (weatherFailed && !forecast) retryWeather();
+      }}>{icon}{range && <span className="text-xs tabular-nums">{range}</span>}</button>;
+  }
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const dividerWrites = useRef(new Set<string>());
   const dayTaskReorders = useRef(new Set<string>());
@@ -5050,6 +5080,7 @@ setMovieItems(
                   hasNotes={!!dayNotes[toISODate(days[0])]}
                   onClick={() => setNotesModalDate(toISODate(days[0]))}
                 />
+                {weatherButton(todayIso)}
               </div>
 
     {/* Habit chips (Today only) */}
@@ -5489,6 +5520,7 @@ setMovieItems(
                         hasNotes={!!dayNotes[tomorrowIso]}
                         onClick={() => setNotesModalDate(tomorrowIso)}
                       />
+                      {weatherButton(tomorrowIso)}
                     </div>
                   </div>
 
@@ -5848,6 +5880,7 @@ setMovieItems(
                         hasNotes={!!dayNotes[iso]}
                         onClick={() => setNotesModalDate(iso)}
                       />
+                      {weatherButton(iso)}
                     </div>
                     <button
                       onClick={() => {
@@ -6298,6 +6331,15 @@ setMovieItems(
         onArchiveFocus={archiveEditedFocus}
       />
 
+      {forecast && weatherIndex >= 0 && <DayDetail planner forecast={forecast} day={weatherIndex}
+        today={weatherDates.indexOf(weatherDate.format(forecast.current.time * 1000))}
+        onSelect={time => setWeatherDay(weatherDates[forecast.daily.time.indexOf(time)])}
+        onClose={() => setWeatherDay(null)} />}
+      {weatherDay && !forecast && <div className="fixed bottom-24 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl bg-neutral-800 px-4 py-2 text-sm" role="status">
+        {weatherFailed ? "Forecast unavailable." : "Loading forecast…"}
+        {weatherFailed && <button onClick={retryWeather}>Retry</button>}
+        <button aria-label="Dismiss weather status" onClick={() => setWeatherDay(null)}>×</button>
+      </div>}
       {notesModalDate && (
         <NotesModal
           key={notesModalDate}

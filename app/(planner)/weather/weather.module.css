@@ -1,0 +1,32 @@
+.sky {
+  height: 100%; overflow-y: auto; color: #fff; color-scheme: dark;
+  background: linear-gradient(165deg,#234775 0%,#536fa1 49%,#947f88 86%,#ae9181 100%);
+  font-variant-numeric: tabular-nums;
+}
+.sky[data-night="true"] { background: linear-gradient(160deg,#101d39,#283d65 60%,#605b74); }
+.wrap { max-width: 780px; margin: auto; padding: 28px clamp(12px,3vw,32px) 42px; }
+.hero { text-align: center; padding: 12px 0 26px; font-size: 17px; }
+.hero p, .card h2 { font-size: 12px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; color: #e3edfc; }
+.hero h1 { font-size: clamp(32px,6vw,46px); letter-spacing: -.045em; line-height: 1.2; }
+.temp { font-size: clamp(64px,10vw,86px); font-weight: 300; letter-spacing: -.07em; line-height: 1.12; }
+.card,.status { background: #172c5063; border: 1px solid #ffffff24; border-radius: 20px; padding: 16px 18px; margin-bottom: 12px; }
+.header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.switcher { display: inline-flex; border-radius: 20px; background: #0e204250; padding: 3px; }
+.switcher button { border-radius: inherit; padding: 5px 9px; font-size: 12px; cursor: pointer; }
+.switcher button[aria-pressed="true"] { background: #ffffff32; }
+.hours { display: flex; gap: 12px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #ffffff49 transparent; padding: 16px 0 8px; }
+.hour { min-width: 54px; text-align: center; display: grid; gap: 5px; font-size: 14px; white-space: nowrap; }
+.icon,.symbol { font-size: 22px; }
+.day { display: grid; width: 100%; text-align: left; cursor: pointer; grid-template-columns: minmax(46px,1fr) minmax(36px,.75fr) 3.5ch minmax(40px,2fr) 3.5ch; align-items: center; gap: clamp(6px,2vw,18px); min-height: 50px; border-top: 1px solid #ffffff22; }
+.card h2 + .day { margin-top: 10px; }
+.day strong,.hour strong { font-weight: 600; }
+.symbol { display: grid; justify-items: center; line-height: 1.15; }
+.symbol small { font-size: 11px; color: #a7eeff; font-weight: 700; }
+.low,.day strong:last-child { text-align: right; }
+.low { color: #d8e1f2; }
+.track { position: relative; height: 6px; border-radius: 6px; background: #17234340; }
+.track i,.track b { position: absolute; border-radius: inherit; height: 100%; min-width: 3px; }
+.track b { width: 8px; height: 8px; top: -1px; transform: translateX(-50%); background: white; box-shadow: 0 0 0 2px #435675; }
+.wrap footer { text-align: center; font-size: 12px; }
+.wrap a,.status button { text-decoration: underline; }
+.day:hover { background: #ffffff0d; }

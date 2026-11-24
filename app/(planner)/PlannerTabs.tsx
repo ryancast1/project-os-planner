@@ -10,8 +10,9 @@ export default function PlannerTabs() {
   const tabs = [
     { href: "/", label: "Home" },
     { href: "/planner", label: "Planner" },
-    { href: "/goals", label: "Projects/Goals" },
+    { href: "/goals", label: "Goals" },
     { href: "/habits", label: "Habits" },
+    { href: "/weather", label: "Weather" },
     { href: "/calendar", label: "Calendar" },
   ] as const;
 
@@ -25,7 +26,7 @@ export default function PlannerTabs() {
       )}
       aria-label="Planner tabs"
     >
-      <div className="mx-auto grid max-w-6xl grid-cols-[0.85fr_12px_1fr_1fr_1fr_1fr] items-stretch gap-1 px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
+      <div className="mx-auto grid max-w-6xl grid-cols-[0.85fr_12px_repeat(5,1fr)] items-stretch gap-1 px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
         {/* Home */}
         {(() => {
           const active = pathname === homeTab.href;
