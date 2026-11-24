@@ -61,6 +61,8 @@ export type BuiltinMarket = {
   category: string; // e.g. "Stocks"
   /** How to format the price value. Default "price" = dollar format. "yield" = 4.25% format */
   displayType?: "price" | "yield";
+  /** True for instruments such as crypto that also trade on weekends. */
+  continuousTrading?: boolean;
 };
 
 export type StockSnapshot = {

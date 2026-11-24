@@ -13,13 +13,10 @@ import {
   COLOR_RED,
   REFRESH_INTERVAL_MS,
   STOCK_REFRESH_INTERVAL_MS,
-  BUILTIN_MARKETS,
-  US_EQUITY_BUILTIN_IDS,
   getStartTs,
   getFidelity,
   getYahooParams,
   getMarketHoursForTs,
-  getTradingSession,
 } from "../_lib/constants";
 import { chartHistory, fetchEvent, fetchBatchedPrice, fetchStockData } from "../_lib/api";
 import { subscribeToVisiblePolling } from "../_lib/visiblePolling";
@@ -42,6 +39,7 @@ import NeedleDisplay from "./NeedleDisplay";
 import needleStyles from "./NeedleDisplay.module.css";
 import { getNeedleModel } from "../_lib/needle";
 import { getNeedleDistribution, isNeedleDistributionMarket } from "../_lib/needleDistribution";
+import { getStockMarket } from "../_lib/stockMarkets";
 
 function Panel({
   slotIndex,
@@ -85,6 +83,7 @@ function Panel({
 
   // -- Stock state --
   const [stockSnapshot, setStockSnapshot] = useState<StockSnapshot | null>(null);
+  const [dataAsOf, setDataAsOf] = useState(() => Math.floor(Date.now() / 1000));
 
   // -- Shared state --
   const [loading, setLoading] = useState(false);
@@ -100,9 +99,13 @@ function Panel({
   const requestGeneration = useRef(0);
   const loadedMarketId = useRef<string | null>(null);
 
-  const isBuiltin = marketId?.startsWith("builtin:") ?? false;
   const savedMarket = savedMarkets.find((saved) => saved.id === marketId);
   const savedSlug = savedMarket?.slug;
+  const stockMarket = getStockMarket(marketId, savedMarket);
+  const isStock = !!stockMarket || savedMarket?.source === "stock" || (marketId?.startsWith("builtin:") ?? false);
+  const stockTicker = stockMarket?.ticker;
+  const stockDisplayType = stockMarket?.displayType;
+  const includePrePost = stockMarket?.includePrePost;
 
   // ---- POLYMARKET refresh ----
   const refreshPolyData = useCallback(
@@ -133,6 +136,7 @@ function Panel({
       if (generation !== requestGeneration.current) return;
       outcomesRef.current = updated;
       setOutcomes(updated);
+      setDataAsOf(Math.floor(Date.now() / 1000));
     },
     []
   );
@@ -141,7 +145,6 @@ function Panel({
   const refreshStockData = useCallback(
     async (
       ticker: string,
-      label: string,
       range: TimeRangeLabel,
       generation: number,
       displayType?: "price" | "yield",
@@ -152,9 +155,11 @@ function Panel({
         range === "1H" || range === "4H" ? getStartTs(range) : undefined;
       const snap = await fetchStockData(ticker, yahooRange, yahooInterval, startTs, includePrePost);
       if (snap && generation === requestGeneration.current) {
-        const withLabel: StockSnapshot = { ...snap, label, displayType };
+        const withLabel: StockSnapshot = { ...snap, displayType };
         setStockSnapshot(withLabel);
+        setDataAsOf(Math.floor(Date.now() / 1000));
       }
+      return snap !== null;
     },
     []
   );
@@ -179,10 +184,10 @@ function Panel({
     async function init() {
       setLoading(!!marketId);
       try {
-        if (isBuiltin) {
-          const builtin = BUILTIN_MARKETS.find((option) => option.id === marketId);
-          if (builtin) await refreshStockData(builtin.ticker, builtin.label, timeRange, generation,
-            builtin.displayType, !US_EQUITY_BUILTIN_IDS.has(builtin.id));
+        if (isStock) {
+          if (!stockTicker) { setError("Invalid stock symbol"); return; }
+          const ready = await refreshStockData(stockTicker, timeRange, generation, stockDisplayType, includePrePost);
+          if (!ready && generation === requestGeneration.current) setError("Could not load stock data. Try another time range or reload.");
         } else if (marketId && savedSlug) {
           const info = await fetchEvent(savedSlug);
           if (generation !== requestGeneration.current) return;
@@ -198,24 +203,23 @@ function Panel({
     }
     void init();
     return () => { requestGeneration.current = generation + 1; };
-  }, [marketId, savedSlug, timeRange, refreshPolyData, refreshStockData, isBuiltin]);
+  }, [marketId, savedSlug, timeRange, refreshPolyData, refreshStockData, isStock, stockTicker, stockDisplayType, includePrePost]);
 
   // ---- Polling ----
-  const hasData = isBuiltin ? !!stockSnapshot : outcomes.length > 0;
+  const hasData = isStock ? !!stockSnapshot : outcomes.length > 0;
   useEffect(() => {
     if (loading || !hasData) return;
-    const ms = isBuiltin ? STOCK_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS;
+    const ms = isStock ? STOCK_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS;
 
     return subscribeToVisiblePolling(async () => {
       const generation = requestGeneration.current;
-      if (isBuiltin) {
-        const builtin = BUILTIN_MARKETS.find((m) => m.id === marketId);
-        if (builtin) await refreshStockData(builtin.ticker, builtin.label, timeRange, generation, builtin.displayType, !US_EQUITY_BUILTIN_IDS.has(builtin.id));
+      if (isStock) {
+        if (stockTicker) await refreshStockData(stockTicker, timeRange, generation, stockDisplayType, includePrePost);
       } else {
         await refreshPolyData(outcomesRef.current, timeRange, generation);
       }
     }, ms);
-  }, [loading, hasData, isBuiltin, marketId, timeRange, refreshPolyData, refreshStockData]);
+  }, [loading, hasData, isStock, stockTicker, stockDisplayType, includePrePost, marketId, timeRange, refreshPolyData, refreshStockData]);
 
   // Chart outcomes for polymarket
   const isBinary = market?.kind === "binary";
@@ -230,7 +234,7 @@ function Panel({
     : visibleMultiOutcomes;
   const outcomeColors = getOutcomeColors(chartOutcomes, savedMarket?.outcome_colors, market?.outcomeNames ?? outcomes.map((outcome) => outcome.name));
   const hoveredPrices = hoverTimestamp == null ? null : getHistoricalPrices(outcomes, hoverTimestamp);
-  const highConfidence = !isBuiltin && !loading && !error
+  const highConfidence = !isStock && !loading && !error
     ? getHighConfidenceOutcome(market, outcomes, chartOutcomes, savedMarket?.outcome_colors)
     : null;
   const needleDistribution = needleActive && market ? getNeedleDistribution(market, outcomes, savedMarket?.outcome_colors, savedMarket?.label) : null;
@@ -240,7 +244,7 @@ function Panel({
   const stockChartOutcomes: Outcome[] = stockSnapshot
     ? [
         {
-          name: stockSnapshot.label,
+          name: stockMarket?.label ?? stockSnapshot.label,
           tokenId: stockSnapshot.ticker,
           currentPrice: stockSnapshot.currentPrice,
           history: stockSnapshot.history,
@@ -249,8 +253,8 @@ function Panel({
     : [];
   const hoveredStockPrice = hoverTimestamp == null ? undefined : getHistoricalPrices(stockChartOutcomes, hoverTimestamp)[stockSnapshot?.ticker ?? ""] ?? null;
 
-  const panelTitle = isBuiltin
-    ? (BUILTIN_MARKETS.find((m) => m.id === marketId)?.label ?? "")
+  const panelTitle = isStock
+    ? (stockMarket?.label ?? savedMarket?.label ?? "")
     : (savedMarket?.label || market?.title || "");
 
   return (
@@ -286,7 +290,7 @@ function Panel({
         />
       )}
       {tvMode && mover && <span id={`tv-mover-${slotIndex}`} className="sr-only">{describeMover(mover)}</span>}
-      {requestedTVMode && moverRange && marketId && !loading && !error && onMoverChange && (isBuiltin || (market && isMoverEligibleMarket(market, outcomes))) && (
+      {requestedTVMode && moverRange && marketId && !loading && !error && onMoverChange && (isStock || (market && isMoverEligibleMarket(market, outcomes))) && (
         <MoverReporter
           key={`${marketId}:${moverRange}`}
           slotIndex={slotIndex}
@@ -296,6 +300,7 @@ function Panel({
           outcomes={outcomes}
           chartOutcomes={chartOutcomes}
           stockSnapshot={stockSnapshot}
+          stockMarket={stockMarket}
           cache={moverCache}
           overrides={savedMarket?.outcome_colors}
           onChange={onMoverChange}
@@ -368,10 +373,10 @@ function Panel({
         )}
 
         {/* Stock panel */}
-        {isBuiltin && !loading && !error && stockSnapshot && (() => {
+        {isStock && !loading && !error && stockSnapshot && (() => {
           // On 1D: pin X-axis to the market's trading session hours
           // Use the last data point's date so weekends show the last trading day
-          const session = getTradingSession(marketId ?? "");
+          const session = stockMarket?.session;
           const lastTs =
             stockSnapshot.history.length > 0
               ? stockSnapshot.history[stockSnapshot.history.length - 1].t
@@ -380,7 +385,7 @@ function Panel({
             session && timeRange === "1D" && lastTs != null
               ? getMarketHoursForTs(lastTs, session)
               : null;
-          const nowSec = Math.floor(Date.now() / 1000);
+          const nowSec = dataAsOf;
           const chartXMin = mktHours?.openTs;
           const chartXMax = mktHours
             ? Math.min(nowSec, mktHours.closeTs)
@@ -407,7 +412,7 @@ function Panel({
           const stockColor = isDown ? COLOR_RED : COLOR_GREEN;
 
           // Override previousClose with period start so StockDisplay shows period change
-          const displaySnapshot = { ...stockSnapshot, previousClose: periodStart };
+          const displaySnapshot = { ...stockSnapshot, label: panelTitle, previousClose: periodStart };
 
           if (needleActive) return <NeedleDisplay model={null} fallbackLabel="Price market"
             fallbackValue={stockSnapshot.displayType === "yield" ? `${stockSnapshot.currentPrice.toFixed(2)}% yield`
@@ -423,7 +428,9 @@ function Panel({
                   outcomes={stockChartOutcomes}
                   colors={[stockColor]}
                   startTs={getStartTs(timeRange)}
+                  endTs={dataAsOf}
                   valueFormat={stockSnapshot.displayType === "yield" ? "yield" : "price"}
+                  tradingTime={!isIntraday && !stockMarket?.continuousTrading}
                   xMin={chartXMin}
                   xMax={chartXMax}
                   previousClose={chartReference}
@@ -437,8 +444,8 @@ function Panel({
         })()}
 
         {/* Polymarket panel */}
-        {!isBuiltin && !loading && !error && market && outcomes.length > 0 && needleActive && <NeedleDisplay model={needleModel} distribution={needleDistribution} />}
-        {!isBuiltin && !loading && !error && market && outcomes.length > 0 && !needleActive && (
+        {!isStock && !loading && !error && market && outcomes.length > 0 && needleActive && <NeedleDisplay model={needleModel} distribution={needleDistribution} />}
+        {!isStock && !loading && !error && market && outcomes.length > 0 && !needleActive && (
           <>
             <OddsDisplay
               market={{ ...market, title: savedMarket?.label || market.title }}
@@ -457,6 +464,7 @@ function Panel({
                 outcomes={chartOutcomes}
                 colors={outcomeColors}
                 startTs={getStartTs(timeRange)}
+                endTs={dataAsOf}
                 valueFormat="percent"
                 showLegend={!compact && !preview.active}
                 mobileLandscape={mobileLandscape}

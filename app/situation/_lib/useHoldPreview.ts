@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type MouseEvent } from "react";
 import { HOLD_PREVIEW_DELAY_MS, HOLD_PREVIEW_EVENT, movedBeforeHold } from "./holdPreview";
+import { CHART_MEASURE_EVENT } from "./chartMeasurement";
 
 export function useHoldPreview(enabled: boolean, identity: string) {
   const elementRef = useRef<HTMLDivElement>(null);
@@ -23,7 +24,11 @@ export function useHoldPreview(enabled: boolean, identity: string) {
       if (event.pointerId === gesture.current?.id) finish();
     };
     const otherFinger = (event: globalThis.PointerEvent) => {
-      if (event.pointerType === "touch" && gesture.current && event.pointerId !== gesture.current.id) finish();
+      if (event.pointerType === "touch" && gesture.current && event.pointerId !== gesture.current.id && !gesture.current.expanded) finish();
+    };
+    const measure = () => {
+      suppressClick.current = true;
+      if (!gesture.current?.expanded) finish();
     };
     const hide = () => { if (document.hidden) finish(); };
     window.addEventListener("pointerup", release, true);
@@ -31,6 +36,8 @@ export function useHoldPreview(enabled: boolean, identity: string) {
     window.addEventListener("pointerdown", otherFinger, true);
     window.addEventListener("blur", finish);
     document.addEventListener("visibilitychange", hide);
+    const element = elementRef.current;
+    element?.addEventListener(CHART_MEASURE_EVENT, measure);
     return () => {
       finish();
       window.removeEventListener("pointerup", release, true);
@@ -38,6 +45,7 @@ export function useHoldPreview(enabled: boolean, identity: string) {
       window.removeEventListener("pointerdown", otherFinger, true);
       window.removeEventListener("blur", finish);
       document.removeEventListener("visibilitychange", hide);
+      element?.removeEventListener(CHART_MEASURE_EVENT, measure);
     };
   }, [enabled, identity, finish]);
 

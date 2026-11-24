@@ -2,12 +2,12 @@
 
 import { useEffect, useEffectEvent, type RefObject } from "react";
 import { fetchPriceHistory, fetchStockData } from "../_lib/api";
-import { BUILTIN_MARKETS, US_EQUITY_BUILTIN_IDS } from "../_lib/constants";
 import { combineMoverHistories, getMissingMoverTokens, getMoverBaseline, getMoverWindow, getPolymarketMover, getStockMover, hasStockMoverCoverage, mergeMoverHistory, MOVER_REFRESH_MS, type MarketMover, type MoverCache, type MoverRange } from "../_lib/movers";
 import type { MarketInfo, Outcome, OutcomeColors, StockSnapshot } from "../_lib/types";
 import { subscribeToVisiblePolling } from "../_lib/visiblePolling";
+import type { StockMarket } from "../_lib/stockMarkets";
 
-export default function MoverReporter({ slotIndex, marketId, range, market, outcomes, chartOutcomes, stockSnapshot, cache, overrides, onChange }: {
+export default function MoverReporter({ slotIndex, marketId, range, market, outcomes, chartOutcomes, stockSnapshot, stockMarket, cache, overrides, onChange }: {
   slotIndex: number;
   marketId: string;
   range: MoverRange;
@@ -15,20 +15,22 @@ export default function MoverReporter({ slotIndex, marketId, range, market, outc
   outcomes: Outcome[];
   chartOutcomes: Outcome[];
   stockSnapshot: StockSnapshot | null;
+  stockMarket: StockMarket | null;
   cache: RefObject<MoverCache>;
   overrides?: OutcomeColors;
   onChange: (slot: number, mover: MarketMover | null) => void;
 }) {
   const tokens = outcomes.map((outcome) => outcome.tokenId).sort().join(",");
-  const builtin = BUILTIN_MARKETS.find((option) => option.id === marketId);
+  const stockTicker = stockMarket?.ticker;
+  const includePrePost = stockMarket?.includePrePost;
 
   const getStockSnapshot = useEffectEvent(() => {
     const snapshot = stockSnapshot ?? cache.current.stock;
-    return snapshot ? { ...snapshot, history: mergeMoverHistory(cache.current.stock?.history ?? [], stockSnapshot?.history ?? []) } : null;
+    return snapshot ? { ...snapshot, label: stockMarket?.label ?? snapshot.label, history: mergeMoverHistory(cache.current.stock?.history ?? [], stockSnapshot?.history ?? []) } : null;
   });
   const publish = useEffectEvent(() => {
     const now = Math.floor(Date.now() / 1000);
-    if (builtin) {
+    if (stockTicker) {
       const snapshot = getStockSnapshot();
       onChange(slotIndex, snapshot ? getStockMover(marketId, range, snapshot, now) : null);
     } else if (market) {
@@ -60,13 +62,13 @@ export default function MoverReporter({ slotIndex, marketId, range, market, outc
       try {
         const now = Math.floor(Date.now() / 1000);
         publish();
-        if (builtin) {
+        if (stockTicker) {
           const existing = getStockSnapshot();
           if (existing && hasStockMoverCoverage(range, existing, now)) return;
-          const snapshot = await fetchStockData(builtin.ticker, "5d", range === "1D" ? "5m" : "1m",
-            undefined, !US_EQUITY_BUILTIN_IDS.has(builtin.id));
+          const snapshot = await fetchStockData(stockTicker, "5d", range === "1D" ? "5m" : "1m",
+            undefined, includePrePost);
           if (!cancelled && snapshot) {
-            cache.current.stock = { ...snapshot, label: builtin.label };
+            cache.current.stock = snapshot;
             publish();
           }
         } else if (tokens) {
@@ -97,7 +99,7 @@ export default function MoverReporter({ slotIndex, marketId, range, market, outc
       stop();
       onChange(slotIndex, null);
     };
-  }, [marketId, range, tokens, builtin, slotIndex, onChange, cache]);
+  }, [marketId, range, tokens, stockTicker, includePrePost, slotIndex, onChange, cache]);
 
   return null;
 }

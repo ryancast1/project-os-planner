@@ -4,6 +4,10 @@ import { useEffect, useState, useRef, type CSSProperties } from "react";
 import type { Outcome } from "../_lib/types";
 import { getTimeLabelLimit, selectAxisLabels } from "../_lib/chartLayout";
 import { findNearestPricePoint } from "../_lib/chartHover";
+import { createTradingTimeScale } from "../_lib/tradingTime";
+import { getRangeMeasurements, formatRangeChange, snapChartTimestamp } from "../_lib/chartMeasurement";
+import { useChartInteraction } from "../_lib/useChartInteraction";
+import { COLOR_GREEN, COLOR_RED } from "../_lib/constants";
 import styles from "./OddsChart.module.css";
 
 type ValueFormat = "percent" | "price" | "yield";
@@ -54,7 +58,9 @@ export default function OddsChart({
   outcomes,
   colors,
   startTs,
+  endTs,
   valueFormat = "percent",
+  tradingTime = false,
   showLegend = true,
   xMin,
   xMax,
@@ -66,7 +72,11 @@ export default function OddsChart({
   outcomes: Outcome[];
   colors: string[];
   startTs: number;
+  /** Timestamp of the latest data refresh, keeping the live calendar axis in sync. */
+  endTs?: number;
   valueFormat?: ValueFormat;
+  /** Space actual trading candles evenly instead of reserving closed-market time. */
+  tradingTime?: boolean;
   showLegend?: boolean;
   /** Override the left edge of the X-axis (Unix seconds) */
   xMin?: number;
@@ -80,12 +90,26 @@ export default function OddsChart({
   onHoverTimeChange?: (timestamp: number | null) => void;
 }) {
   // -- Crosshair / tooltip state --
-  const [hoverTs, setHoverTs] = useState<number | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(0);
 
   const allPoints = outcomes.flatMap((o) => o.history);
   const hasHistory = allPoints.length > 0;
+  const nowTs = endTs ?? (hasHistory ? Math.max(...allPoints.map((point) => point.t)) : 0);
+  const tradingScale = tradingTime ? createTradingTimeScale(allPoints.map((point) => point.t)) : null;
+  const tMin = tradingScale?.timestamps[0] ?? xMin ?? (startTs > 0 ? startTs : hasHistory ? Math.min(...allPoints.map((point) => point.t)) : 0);
+  const tMax = tradingScale?.timestamps.at(-1) ?? xMax ?? nowTs;
+  const tRange = Math.max(1, tMax - tMin);
+  const { hoverTs, range } = useChartInteraction({
+    elementRef: chartRef,
+    hasHistory,
+    allowHover: !mobileLandscape,
+    timestampAtPosition: (position, snap) => {
+      const timestamp = tradingScale ? tradingScale.timestampAtPosition(position) : tMin + position * tRange;
+      return timestamp == null ? null : snap ? snapChartTimestamp(outcomes, timestamp) : timestamp;
+    },
+    onHoverTimeChange,
+  });
   useEffect(() => {
     const element = chartRef.current;
     if (!element || !hasHistory) return;
@@ -93,7 +117,6 @@ export default function OddsChart({
     observer.observe(element);
     return () => observer.disconnect();
   }, [hasHistory]);
-  useEffect(() => () => onHoverTimeChange?.(null), [onHoverTimeChange]);
 
   if (allPoints.length === 0) {
     return (
@@ -102,11 +125,6 @@ export default function OddsChart({
       </div>
     );
   }
-
-  const nowTs = Math.floor(Date.now() / 1000);
-  const tMin = xMin ?? (startTs > 0 ? startTs : Math.min(...allPoints.map((p) => p.t)));
-  const tMax = xMax ?? nowTs;
-  const tRange = Math.max(1, tMax - tMin);
 
   // Dynamic Y range — clamp to 0-1 for probabilities, free for prices/yields
   // Include previousClose so the reference line is always visible
@@ -130,7 +148,7 @@ export default function OddsChart({
   const ySpanSvg = yBottom - yTop;
 
   function toSvgX(t: number): number {
-    return xLeft + ((t - tMin) / tRange) * xSpan;
+    return xLeft + (tradingScale ? tradingScale.toPosition(t) : (t - tMin) / tRange) * xSpan;
   }
   function toSvgY(p: number): number {
     return yBottom - ((p - yMin) / (yMax - yMin)) * ySpanSvg;
@@ -161,7 +179,17 @@ export default function OddsChart({
       ? startTs
       : tMin;
   const labelEnd = xMax ?? nowTs;
-  for (let ts = labelStart; ts <= labelEnd; ts += interval) {
+  if (tradingScale) {
+    const formatter = new Intl.DateTimeFormat("en-US", duration < 91 * 86400
+      ? { month: "short", day: "numeric" }
+      : { month: "short", year: "2-digit" });
+    for (const ts of selectAxisLabels(tradingScale.timestamps, 7)) {
+      const label = formatter.format(new Date(ts * 1000));
+      if (timeLabels.at(-1)?.label !== label) timeLabels.push({ ts, label });
+      // Anchor the final date to the final candle, not the session's first bar.
+      else if (ts === tMax && timeLabels.length > 1) timeLabels[timeLabels.length - 1] = { ts, label };
+    }
+  } else for (let ts = labelStart; ts <= labelEnd; ts += interval) {
     const d = new Date(ts * 1000);
     let label: string;
     if (interval < 86400) {
@@ -210,13 +238,16 @@ export default function OddsChart({
   const displayTimeLabels = selectAxisLabels(timeLabels, getTimeLabelLimit(chartWidth, axisFontSize, timeLabels, tvMode));
 
   // -- Hover / crosshair --
-  const enableHover = !mobileLandscape;
-
   const hoverSvgX = hoverTs == null ? null : toSvgX(hoverTs);
-  function updateHover(svgX: number | null) {
-    const timestamp = svgX == null ? null : tMin + ((svgX - xLeft) / xSpan) * tRange;
-    setHoverTs(timestamp);
-    onHoverTimeChange?.(timestamp);
+  const measurements = range ? getRangeMeasurements(outcomes, range, valueFormat) : [];
+  const measureAccent = measurements.length === 1 && measurements[0].change != null && measurements[0].change !== 0
+    ? measurements[0].change > 0 ? COLOR_GREEN : COLOR_RED : "#9ca3af";
+  const rangeStartX = range ? toSvgX(range.start) : 0;
+  const rangeEndX = range ? toSvgX(range.end) : 0;
+  function rangeDate(timestamp: number): string {
+    return new Date(timestamp * 1000).toLocaleString("en-US", duration < 7 * 86400
+      ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
+      : { month: "short", day: "numeric", year: "numeric" });
   }
 
   const hoverPoints =
@@ -270,6 +301,7 @@ export default function OddsChart({
 
       <div
         data-market-chart
+        data-chart-time-scale={tradingScale ? "trading" : "calendar"}
         className={`market-chart-surface flex-1 min-h-0 rounded-2xl border border-white/10 bg-black/30 relative overflow-hidden ${styles.surface}`}
         style={{
           "--chart-font": tvMode ? "clamp(9px, 3.8cqw, 20px)" : "11px",
@@ -279,44 +311,31 @@ export default function OddsChart({
         <div
           ref={chartRef}
           data-chart-plot
+          data-measuring={range ? "true" : undefined}
+          aria-description="Hover or touch to inspect a moment. Drag with a mouse, or place two fingers on the chart, to measure a range. Release or press Escape to finish."
           className={styles.plot}
-          style={enableHover ? { touchAction: "none" } : undefined}
-          onPointerDown={
-            enableHover
-              ? (e) => {
-                if (!chartRef.current) return;
-                // Capture pointer so all subsequent move events stay on this element (critical for touch drag)
-                if (e.pointerType !== "mouse") {
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                }
-                const rect = chartRef.current.getBoundingClientRect();
-                const svgX = ((e.clientX - rect.left) / rect.width) * 100;
-                if (svgX >= xLeft && svgX <= xRight) updateHover(svgX);
-              }
-              : undefined
-          }
-          onPointerMove={
-            enableHover
-              ? (e) => {
-                if (!chartRef.current) return;
-                const rect = chartRef.current.getBoundingClientRect();
-                const svgX = ((e.clientX - rect.left) / rect.width) * 100;
-                if (svgX >= xLeft && svgX <= xRight) updateHover(svgX);
-                else updateHover(null);
-              }
-              : undefined
-          }
-          onPointerUp={
-            enableHover
-              ? (e) => {
-                // Touch: clear crosshair on finger lift. Mouse: keep hovering.
-                if (e.pointerType !== "mouse") updateHover(null);
-              }
-              : undefined
-          }
-          onPointerLeave={enableHover ? () => updateHover(null) : undefined}
-          onPointerCancel={enableHover ? () => updateHover(null) : undefined}
+          style={{ touchAction: "none" }}
         >
+          {range && (
+            <>
+              <div data-chart-range-shade className={styles.rangeShade} style={{ left: `${rangeStartX}%`, width: `${Math.max(0, rangeEndX - rangeStartX)}%`, "--range-accent": measureAccent } as CSSProperties} />
+              {[rangeStartX, rangeEndX].map((position, index) => <div key={index} data-chart-range-marker className={styles.rangeMarker} style={{ left: `${position}%`, borderColor: measureAccent }} />)}
+              <div data-chart-measurement className={styles.measurement} data-columns={measurements.length > 2 ? "two" : "one"}>
+                <div className={styles.rangeDates}><span>{rangeDate(range.start)}</span><span aria-hidden="true">&rarr;</span><span>{rangeDate(range.end)}</span></div>
+                <div className={styles.measurementRows}>
+                  {measurements.map((measurement, index) => (
+                    <div key={measurement.tokenId} className={styles.measurementRow} data-measurement-outcome={measurement.tokenId}>
+                      <span className={styles.measurementName} style={{ color: colors[index % colors.length] }} title={measurement.name}>{measurement.name}</span>
+                      <strong data-range-change style={{ color: measurement.change == null || measurement.change === 0 ? "#d1d5db" : measurement.change > 0 ? COLOR_GREEN : COLOR_RED }}>{formatRangeChange(measurement)}</strong>
+                      {measurements.length === 1 && <span className={styles.rangeValues}>
+                        {measurement.start ? formatHoverValue(measurement.start.p, valueFormat) : "--"} &rarr; {measurement.end ? formatHoverValue(measurement.end.p, valueFormat) : "--"}
+                      </span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
           {/* Y axis labels */}
           {displayYLabels.map((yl) => {
             const topPct = (toSvgY(yl.value) / 100) * 100;
@@ -333,7 +352,7 @@ export default function OddsChart({
           })}
 
           {/* Hover crosshair + tooltip */}
-          {hoverSvgX != null && (
+          {hoverSvgX != null && !range && (
             <>
               {/* Vertical crosshair line */}
               <div
@@ -422,6 +441,7 @@ export default function OddsChart({
               return (
                 <g key={o.tokenId}>
                   <polyline
+                    data-chart-series={o.tokenId}
                     fill="none"
                     stroke={color}
                     strokeWidth="0.5"
@@ -436,10 +456,12 @@ export default function OddsChart({
                 </g>
               );
             })}
+            {range && measurements.flatMap((measurement, index) => [measurement.start, measurement.end].map((point, edge) =>
+              point && Number.isFinite(point.p) ? <circle key={`${measurement.tokenId}:${edge}`} cx={toSvgX(point.t)} cy={toSvgY(point.p)} r="1.1" fill={colors[index % colors.length]} stroke="#08090c" strokeWidth="0.35" /> : null))}
           </svg>
         </div>
         {!mobileLandscape && (
-          <div className={styles.timeAxis} data-time-axis>
+          <div className={styles.timeAxis} data-time-axis title={tradingScale ? "Trading time: closed-market gaps are compressed; dates show actual trading sessions." : undefined}>
             {displayTimeLabels.map((tl, i) => (
               <div
                 key={tl.ts}

@@ -1,0 +1,58 @@
+.overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.backdrop { position: absolute; inset: 0; background: #000b; backdrop-filter: blur(6px); }
+.dialog {
+  --muted: #93969b;
+  position: relative; display: flex; flex-direction: column; width: 100%; max-width: 680px; max-height: min(90dvh, 900px);
+  overflow: hidden; border: 1px solid #ffffff24; border-radius: 18px; color: #f4f4f5;
+  background: radial-gradient(ellipse at top left, #1c2527 0, transparent 48%), #0d0e10;
+  box-shadow: 0 32px 100px #0009;
+}
+.header { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 26px 20px; border-bottom: 1px solid #ffffff12; }
+.eyebrow { color: #a7c7be; font-family: ui-monospace, monospace; font-size: 10px; font-weight: 600; letter-spacing: .13em; }
+.header h2 { margin: 6px 0 3px; font-size: 25px; font-weight: 650; letter-spacing: -.03em; }
+.close { width: 30px; height: 30px; border: 1px solid #ffffff20; border-radius: 8px; color: #aaa; font-size: 24px; line-height: 1; }
+.scroll { overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+.addForm { padding: 20px 26px; border-bottom: 1px solid #ffffff12; }
+.sourcePicker { display: inline-flex; gap: 3px; padding: 3px; margin-bottom: 18px; background: #0005; border: 1px solid #ffffff16; border-radius: 9px; }
+.sourcePicker button { padding: 7px 18px; border-radius: 6px; color: var(--muted); font-size: 13px; font-weight: 600; transition: background .15s, color .15s; }
+.sourcePicker button[aria-pressed="true"] { background: #ffffff15; color: #fff; box-shadow: 0 1px 4px #0004; }
+.field { display: block; min-width: 0; }
+.field > span { display: block; margin-bottom: 6px; color: #cbd0d2; font-size: 12px; font-weight: 600; }
+.field small { color: #777d83; font-size: 11px; font-weight: 400; margin-left: 4px; }
+.field input { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid #ffffff20; border-radius: 8px; background: #0003; color: #f4f4f5; font-size: 16px; outline: none; }
+.field input::placeholder { color: #6d737a; }
+.field input:focus { border-color: #9bc2b5; box-shadow: 0 0 0 2px #9bc2b511; }
+.addRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; margin-top: 12px; }
+.addButton { min-height: 46px; padding: 10px 18px; border-radius: 8px; color: #10221b; background: #bcdfcf; font-size: 13px; font-weight: 700; }
+.addButton:hover:not(:disabled) { background: #d2eede; }
+.dialog button:disabled { opacity: .45; cursor: default; }
+.dialog button:focus-visible { outline: 2px solid #b5d7cb; outline-offset: 3px; }
+.hint, .error, .notice, .savedNotice { margin: 10px 0 0; font-size: 12px; line-height: 1.6; }
+.hint { color: #858b92; }
+.error { color: #fda4af; }
+.notice { color: #b5d7cb; }
+.watchlist { padding: 20px 26px 26px; }
+.section + .section { margin-top: 24px; }
+.section h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 12px; font-weight: 600; color: #b9bfc4; }
+.section h3 > span { color: #7a848b; font-family: ui-monospace, monospace; font-size: 10px; }
+.list { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.market { padding: 12px; border: 1px solid #ffffff0e; border-radius: 9px; background: #ffffff03; }
+.marketRow { display: flex; align-items: center; gap: 10px; }
+.marketText { flex: 1; min-width: 0; }
+.marketName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 550; }
+.marketDetail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; color: #78818a; font-family: ui-monospace, monospace; font-size: 10px; }
+.editButton { flex-shrink: 0; border: 1px solid #ffffff22; border-radius: 6px; padding: 5px 10px; font-size: 11px; color: #c9ced2; }
+.editButton:hover:not(:disabled) { background: #ffffff09; }
+.removeButton { flex-shrink: 0; font-size: 11px; color: #ce8b91; }
+.removeButton:hover:not(:disabled) { color: #f4a9b0; }
+.savedNotice { color: #9cafaa; }
+.empty { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+@media (max-width: 480px) {
+  .overlay { padding: 10px; }
+  .dialog { max-height: 94dvh; border-radius: 14px; }
+  .header, .addForm, .watchlist { padding-left: 16px; padding-right: 16px; }
+  .header h2 { font-size: 23px; }
+  .marketRow { gap: 8px; }
+  .market { padding: 10px; }
+  .addButton { padding-left: 12px; padding-right: 12px; }
+}

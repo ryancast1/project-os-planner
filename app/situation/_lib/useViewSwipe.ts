@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { SavedView } from "./types";
 import { HOLD_PREVIEW_EVENT } from "./holdPreview";
+import { CHART_MEASURE_EVENT } from "./chartMeasurement";
 
 /* ── Thresholds ──────────────────────────────────────────── */
 const WHEEL_THRESHOLD = 150; // accumulated deltaX to trigger switch
@@ -65,13 +66,15 @@ export function useViewSwipe({
   const touchStartTime = useRef(0);
   const touchCancelled = useRef(false);
 
-  // Keep latest values in refs so event handlers never read stale state
+  // Event handlers use the latest committed view state.
   const viewsRef = useRef(savedViews);
-  viewsRef.current = savedViews;
   const activeIdRef = useRef(activeViewId);
-  activeIdRef.current = activeViewId;
   const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
+  useEffect(() => {
+    viewsRef.current = savedViews;
+    activeIdRef.current = activeViewId;
+    enabledRef.current = enabled;
+  }, [savedViews, activeViewId, enabled]);
 
   const doSwitch = useCallback(
     (direction: "next" | "prev") => {
@@ -203,11 +206,13 @@ export function useViewSwipe({
     const cancelForPreview = () => { touchCancelled.current = true; };
 
     el.addEventListener(HOLD_PREVIEW_EVENT, cancelForPreview);
+    el.addEventListener(CHART_MEASURE_EVENT, cancelForPreview);
     el.addEventListener("touchstart", handleTouchStart, { passive: true });
     el.addEventListener("touchmove", handleTouchMove, { passive: true });
     el.addEventListener("touchend", handleTouchEnd, { passive: true });
     return () => {
       el.removeEventListener(HOLD_PREVIEW_EVENT, cancelForPreview);
+      el.removeEventListener(CHART_MEASURE_EVENT, cancelForPreview);
       el.removeEventListener("touchstart", handleTouchStart);
       el.removeEventListener("touchmove", handleTouchMove);
       el.removeEventListener("touchend", handleTouchEnd);

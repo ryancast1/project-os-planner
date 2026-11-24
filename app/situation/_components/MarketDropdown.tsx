@@ -16,6 +16,8 @@ export default function MarketDropdown({
   className?: string;
   title?: string;
 }) {
+  const stocks = savedMarkets.filter((market) => market.source === "stock");
+  const markets = savedMarkets.filter((market) => market.source !== "stock");
   return (
     <select
       aria-label="Select a market"
@@ -28,7 +30,7 @@ export default function MarketDropdown({
         Select a market...
       </option>
 
-      {/* Built-in markets grouped by category */}
+      {/* Saved stocks share the built-in Stocks category; their IDs stay unchanged. */}
       {BUILTIN_CATEGORIES.map((cat) => (
         <optgroup key={cat} label={cat} className="bg-zinc-900 text-white/60">
           {BUILTIN_MARKETS.filter((m) => m.category === cat).map((m) => (
@@ -36,13 +38,17 @@ export default function MarketDropdown({
               {m.label}
             </option>
           ))}
+          {cat === "Stocks" && stocks.map((stock) => (
+            <option key={stock.id} value={stock.id} className="bg-zinc-900 text-white">
+              {stock.label}
+            </option>
+          ))}
         </optgroup>
       ))}
 
-      {/* User's saved Polymarket markets */}
-      {savedMarkets.length > 0 && (
+      {markets.length > 0 && (
         <optgroup label="Your Markets" className="bg-zinc-900 text-white/60">
-          {savedMarkets.map((m) => (
+          {markets.map((m) => (
             <option key={m.id} value={m.id} className="bg-zinc-900 text-white">
               {m.label}
             </option>

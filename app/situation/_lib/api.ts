@@ -4,6 +4,7 @@ import { buildPolymarketInfo, parseProbability } from "./polymarket";
 import { createRequestCache } from "./requestCache";
 import { createQuoteBatcher } from "./quoteBatcher";
 import { createChartHistoryCache } from "./chartHistory";
+import { normalizeStockTicker } from "./stockMarkets";
 
 const events = createRequestCache<MarketInfo | null>();
 const stocks = createRequestCache<StockSnapshot | null>();
@@ -79,6 +80,27 @@ export async function fetchStockData(
 ): Promise<StockSnapshot | null> {
   const key = JSON.stringify([ticker, yahooRange, yahooInterval, startTs, includePrePost]);
   return stocks.get(key, 4000, () => requestStockData(ticker, yahooRange, yahooInterval, startTs, includePrePost), (value) => value !== null);
+}
+
+export async function lookupStock(input: string): Promise<{ ticker: string; label: string } | null> {
+  const ticker = normalizeStockTicker(input);
+  if (!ticker) return null;
+  try {
+    const response = await fetch(`${PROXY}?endpoint=stock&ticker=${encodeURIComponent(ticker)}&range=1mo&interval=1d`,
+      { signal: AbortSignal.timeout(20_000) });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const result = data?.chart?.result?.[0];
+    const meta = result?.meta;
+    if (data?.chart?.error || !meta || normalizeStockTicker(meta.symbol ?? "") !== ticker) return null;
+    if (meta.instrumentType && !["EQUITY", "ETF"].includes(String(meta.instrumentType).toUpperCase())) return null;
+    const prices = [meta.regularMarketPrice, ...(result.indicators?.quote?.[0]?.close ?? [])];
+    if (!prices.some((price) => typeof price === "number" && Number.isFinite(price) && price > 0)) return null;
+    const name = [meta.longName, meta.shortName].find((value) => typeof value === "string" && value.trim());
+    return { ticker, label: name?.trim() || ticker };
+  } catch {
+    return null;
+  }
 }
 
 async function requestStockData(

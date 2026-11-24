@@ -14,8 +14,9 @@ export default function MarketEditor({ market, userId, onSettingsSaved, onSaved,
   onSaved: (message?: string) => void;
   onSavingChange: (saving: boolean) => void;
 }) {
+  const isStock = market.source === "stock";
   const [info, setInfo] = useState<MarketInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isStock);
   const [attempt, setAttempt] = useState(0);
   const [draft, setDraft] = useState(() => sanitizeOutcomeColors(market.outcome_colors));
   const [saved, setSaved] = useState(draft);
@@ -25,6 +26,7 @@ export default function MarketEditor({ market, userId, onSettingsSaved, onSaved,
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isStock) return;
     let cancelled = false;
     fetchEvent(market.slug).then((result) => {
       if (cancelled) return;
@@ -32,9 +34,9 @@ export default function MarketEditor({ market, userId, onSettingsSaved, onSaved,
       setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [market.slug, attempt]);
+  }, [market.slug, attempt, isStock]);
 
-  const colorsDirty = Object.keys({ ...saved, ...draft }).some((token) => saved[token] !== draft[token]);
+  const colorsDirty = !isStock && Object.keys({ ...saved, ...draft }).some((token) => saved[token] !== draft[token]);
   const dirty = label.trim() !== savedLabel || colorsDirty;
 
   function changeColor(token: string, value: string) {
@@ -53,7 +55,7 @@ export default function MarketEditor({ market, userId, onSettingsSaved, onSaved,
     onSavingChange(true);
     setMessage(null);
     try {
-      const defaultTitle = info?.title ?? (!label.trim() ? (await fetchEvent(market.slug))?.title : undefined);
+      const defaultTitle = isStock ? market.slug : info?.title ?? (!label.trim() ? (await fetchEvent(market.slug))?.title : undefined);
       const nextLabel = resolveMarketLabel(label, defaultTitle);
       if (!nextLabel) {
         setMessage("Could not load the Polymarket title. Enter a label or try loading the outcomes again.");
@@ -92,17 +94,18 @@ export default function MarketEditor({ market, userId, onSettingsSaved, onSaved,
   return (
     <form id={`market-editor-${market.id}`} onSubmit={save} className="mt-3 border-t border-white/10 pt-3" aria-label={`Settings for ${market.label}`}>
       <label className="mb-3 block">
-        <span className="mb-1 block text-sm text-white/80">Market label</span>
+        <span className="mb-1 block text-sm text-white/80">{isStock ? "Stock label" : "Market label"}</span>
         <input
-          aria-label="Market label"
+          aria-label={isStock ? "Stock label" : "Market label"}
           value={label}
           onChange={(event) => { setLabel(event.target.value); setMessage(null); }}
           disabled={saving}
-          placeholder={info?.title || "Use the Polymarket title"}
+          placeholder={isStock ? market.slug : info?.title || "Use the Polymarket title"}
           className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-base text-white outline-none focus:border-white/40 disabled:opacity-50"
         />
-        <span className="mt-1 block text-xs text-white/40">Leave blank to use the Polymarket title.</span>
+        <span className="mt-1 block text-xs text-white/40">{isStock ? "Leave blank to use the stock symbol." : "Leave blank to use the Polymarket title."}</span>
       </label>
+      {!isStock && <>
       <p className="mb-1 text-sm text-white/80">Outcome colors</p>
       <p className="mb-3 text-xs leading-relaxed text-white/50">
         Default uses blue for Democrat/(D) and red for Republican/(R). Markets with multiple choices for the same party keep the regular palette. Manual colors always take priority.
@@ -159,6 +162,7 @@ export default function MarketEditor({ market, userId, onSettingsSaved, onSaved,
           Reset to defaults
         </button>
       </div>
+      </>}
       {message && <p role="status" className="mt-2 text-xs leading-relaxed text-white/60">{message}</p>}
     </form>
   );

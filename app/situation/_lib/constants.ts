@@ -78,7 +78,7 @@ export const BUILTIN_MARKETS: BuiltinMarket[] = [
   { id: "builtin:nasdaq", label: "NASDAQ",     ticker: "^IXIC",   category: "Stocks" },
   { id: "builtin:dow",    label: "Dow Jones",  ticker: "^DJI",    category: "Stocks" },
   { id: "builtin:br",     label: "Broadridge", ticker: "BR",      category: "Stocks" },
-  { id: "builtin:btc",    label: "Bitcoin",    ticker: "BTC-USD", category: "Crypto/Commodities" },
+  { id: "builtin:btc",    label: "Bitcoin",    ticker: "BTC-USD", category: "Crypto/Commodities", continuousTrading: true },
   { id: "builtin:gold",   label: "Gold",       ticker: "GC=F",    category: "Crypto/Commodities" },
   { id: "builtin:oil",    label: "Crude Oil",  ticker: "CL=F",    category: "Futures" },
   { id: "builtin:spfut",  label: "S&P Futures",ticker: "ES=F",    category: "Futures" },

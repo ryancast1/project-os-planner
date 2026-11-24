@@ -1,5 +1,6 @@
 .surface { display: flex; flex-direction: column; font-size: var(--chart-font, 11px); }
-.plot { position: relative; flex: 1; min-height: 0; }
+.plot { position: relative; flex: 1; min-height: 0; user-select: none; -webkit-touch-callout: none; cursor: crosshair; }
+.plot[data-measuring="true"] { cursor: col-resize; }
 .svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .yLabel {
   position: absolute;
@@ -33,3 +34,22 @@
   color: rgb(255 255 255 / 60%);
   pointer-events: none;
 }
+.rangeShade {
+  position: absolute; inset-block: 0; z-index: 1; pointer-events: none;
+  background: color-mix(in srgb, var(--range-accent) 13%, transparent);
+}
+.rangeMarker { position: absolute; inset-block: 0; z-index: 20; border-left: 1px solid; opacity: .8; pointer-events: none; }
+.measurement {
+  position: absolute; top: 6px; right: 6px; z-index: 30; width: max-content;
+  max-width: calc(100% - 12px); max-height: calc(100% - 12px); overflow: hidden;
+  border: 1px solid #ffffff26; border-radius: 7px; padding: .5em .65em;
+  background: #090b0ef2; box-shadow: 0 3px 12px #0005; pointer-events: none;
+  font-size: clamp(11px, 1em, 16px); line-height: 1.3; font-variant-numeric: tabular-nums;
+}
+.rangeDates { display: flex; flex-wrap: wrap; gap: .25em .45em; margin-bottom: .5em; color: #9ca3af; font-size: .85em; }
+.measurementRows { display: grid; gap: .5em 1em; }
+.measurement[data-columns="two"] .measurementRows { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.measurementRow { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: baseline; gap: .15em .65em; min-width: 0; }
+.measurementName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 13em; }
+.measurementRow strong { font-size: 1.15em; font-weight: 700; white-space: nowrap; }
+.rangeValues { grid-column: 1 / -1; color: #89919c; font-size: .85em; white-space: nowrap; }

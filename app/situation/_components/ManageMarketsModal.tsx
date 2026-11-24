@@ -2,19 +2,14 @@
 
 import { useState } from "react";
 import type { MarketUpdates, SavedMarket } from "../_lib/types";
-import { extractSlug, fetchEvent } from "../_lib/api";
+import { extractSlug, fetchEvent, lookupStock } from "../_lib/api";
 import { addSavedMarket, removeSavedMarket } from "../_lib/markets";
+import { normalizeStockTicker } from "../_lib/stockMarkets";
 import MarketEditor from "./MarketEditor";
 import { resolveMarketLabel } from "../_lib/marketLabel";
+import styles from "./ManageMarkets.module.css";
 
-export default function ManageMarketsModal({
-  open,
-  onClose,
-  savedMarkets,
-  userId,
-  onMarketsChange,
-  onMarketSettingsChange,
-}: {
+export default function ManageMarketsModal({ open, onClose, savedMarkets, userId, onMarketsChange, onMarketSettingsChange }: {
   open: boolean;
   onClose: () => void;
   savedMarkets: SavedMarket[];
@@ -22,160 +17,163 @@ export default function ManageMarketsModal({
   onMarketsChange: () => void;
   onMarketSettingsChange: (marketId: string, changes: MarketUpdates) => void;
 }) {
+  const [source, setSource] = useState<"polymarket" | "stock">("polymarket");
   const [urlInput, setUrlInput] = useState("");
+  const [tickerInput, setTickerInput] = useState("");
   const [labelInput, setLabelInput] = useState("");
   const [adding, setAdding] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [editingMarketId, setEditingMarketId] = useState<string | null>(null);
   const [savingMarketId, setSavingMarketId] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<{ marketId: string; message: string } | null>(null);
+  const busy = adding || removingId !== null || savingMarketId !== null;
+  const isStock = source === "stock";
 
   if (!open) return null;
 
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleAdd(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy) return;
     setError(null);
-
-    const slug = extractSlug(urlInput);
+    setNotice(null);
+    const slug = isStock ? normalizeStockTicker(tickerInput) : extractSlug(urlInput);
     if (!slug) {
-      setError("Paste a valid Polymarket URL");
+      setError(isStock ? "Enter a stock symbol, such as AAPL, MSFT, or BRK-B." : "Paste a valid Polymarket URL.");
+      return;
+    }
+    const duplicate = savedMarkets.some((market) => market.source === source
+      && (isStock ? normalizeStockTicker(market.slug) === slug : market.slug === slug));
+    if (duplicate) {
+      setError(isStock ? `${slug} is already in your saved stocks.` : "This Polymarket is already saved.");
       return;
     }
 
     setAdding(true);
-
-    // If no label provided, try to fetch the event title
-    let label = labelInput.trim();
-    if (!label) {
-      const info = await fetchEvent(slug);
-      label = resolveMarketLabel(label, info?.title) ?? slug;
-    }
-
-    const result = await addSavedMarket(userId, label, slug);
-    setAdding(false);
-
-    if (!result) {
-      setError("Failed to save market");
-      return;
-    }
-
-    setUrlInput("");
-    setLabelInput("");
-    onMarketsChange();
+    try {
+      let defaultLabel = slug;
+      if (isStock) {
+        const stock = await lookupStock(slug);
+        if (!stock) {
+          setError(`Could not verify ${slug}. Check the symbol or try again if the price feed is unavailable.`);
+          return;
+        }
+        defaultLabel = stock.label;
+      } else if (!labelInput.trim()) {
+        defaultLabel = (await fetchEvent(slug))?.title ?? slug;
+      }
+      const label = resolveMarketLabel(labelInput, defaultLabel) ?? slug;
+      const result = await addSavedMarket(userId, label, slug, source);
+      if (!result) { setError("Could not save. Your entry is still here; please try again."); return; }
+      setUrlInput("");
+      setTickerInput("");
+      setLabelInput("");
+      setNotice(`${label} added. Select it from any chart's market menu.`);
+      onMarketsChange();
+    } catch {
+      setError("Could not save. Your entry is still here; please try again.");
+    } finally { setAdding(false); }
   }
 
-  async function handleRemove(id: string) {
-    const ok = await removeSavedMarket(id);
-    if (ok) onMarketsChange();
+  async function handleRemove(market: SavedMarket) {
+    if (busy) return;
+    setRemovingId(market.id);
+    setError(null);
+    setNotice(null);
+    try {
+      if (!(await removeSavedMarket(market.id))) { setError(`Could not remove ${market.label}. Please try again.`); return; }
+      if (editingMarketId === market.id) setEditingMarketId(null);
+      onMarketsChange();
+    } catch { setError(`Could not remove ${market.label}. Please try again.`); }
+    finally { setRemovingId(null); }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/70"
-        onClick={onClose}
-      />
-
-      {/* Content */}
-      <div role="dialog" aria-modal="true" aria-labelledby="manage-markets-title" className="relative bg-zinc-950 rounded-2xl border border-white/10 w-full max-w-xl max-h-[80vh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-          <h2 id="manage-markets-title" className="text-lg font-semibold text-white">Manage Markets</h2>
-          <button
-            onClick={onClose}
-            aria-label="Close Manage Markets"
-            className="text-white/50 hover:text-white/80 transition text-xl leading-none"
-          >
-            &times;
-          </button>
-        </div>
-
-        {/* Add form */}
-        <form onSubmit={handleAdd} className="px-5 py-4 border-b border-white/10 space-y-2">
-          <input
-            type="text"
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            placeholder="Polymarket event URL..."
-            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-base md:text-sm text-white placeholder-white/30 outline-none focus:border-white/20"
-          />
-          <input
-            type="text"
-            value={labelInput}
-            onChange={(e) => setLabelInput(e.target.value)}
-            placeholder="Label (optional — auto-fetched if blank)"
-            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-base md:text-sm text-white placeholder-white/30 outline-none focus:border-white/20"
-          />
-          <button
-            type="submit"
-            disabled={adding || !urlInput.trim()}
-            className="w-full rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/15 transition disabled:opacity-50"
-          >
-            {adding ? "Adding..." : "Add Market"}
-          </button>
-          {error && <p className="text-red-400 text-xs">{error}</p>}
-        </form>
-
-        {/* Market list */}
-        <div className="flex-1 overflow-y-auto px-5 py-3">
-          {savedMarkets.length === 0 ? (
-            <p className="text-white/40 text-sm text-center py-4">
-              No saved markets yet
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {savedMarkets.map((m) => (
-                <li
-                  key={m.id}
-                  data-market-id={m.id}
-                  className="rounded-lg bg-white/5 px-3 py-2"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm text-white truncate">{m.label}</div>
-                      <div className="text-[10px] text-white/40 truncate">{m.slug}</div>
-                    </div>
-                    <button
-                      type={editingMarketId === m.id ? "submit" : "button"}
-                      form={editingMarketId === m.id ? `market-editor-${m.id}` : undefined}
-                      onClick={editingMarketId === m.id ? undefined : (event) => { event.preventDefault(); setEditingMarketId(m.id); setSaveNotice(null); }}
-                      disabled={savingMarketId !== null}
-                      aria-expanded={editingMarketId === m.id}
-                      aria-label={editingMarketId === m.id ? `Save ${m.label}` : `Edit ${m.label}`}
-                      className="shrink-0 rounded-md border border-white/15 px-2 py-1 text-xs text-white/70 hover:bg-white/10 disabled:opacity-50"
-                    >
-                      {savingMarketId === m.id ? "Saving..." : editingMarketId === m.id ? "Save" : "Edit"}
-                    </button>
-                    <button
-                      onClick={() => handleRemove(m.id)}
-                      disabled={savingMarketId !== null}
-                      aria-label={`Remove ${m.label}`}
-                      className="text-red-400/70 hover:text-red-400 text-xs shrink-0 transition"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                  {editingMarketId === m.id && (
-                    <MarketEditor
-                      key={m.id}
-                      market={m}
-                      userId={userId}
-                      onSettingsSaved={onMarketSettingsChange}
-                      onSavingChange={(saving) => setSavingMarketId(saving ? m.id : null)}
-                      onSaved={(message) => {
-                        setEditingMarketId(null);
-                        setSaveNotice(message ? { marketId: m.id, message } : null);
-                      }}
-                    />
-                  )}
-                  {editingMarketId !== m.id && saveNotice?.marketId === m.id && (
-                    <p role="status" className="mt-2 text-xs leading-relaxed text-white/60">{saveNotice.message}</p>
-                  )}
-                </li>
+    <div className={styles.overlay}>
+      <div className={styles.backdrop} onClick={onClose} />
+      <div role="dialog" aria-modal="true" aria-labelledby="manage-markets-title" className={styles.dialog}>
+        <header className={styles.header}>
+          <div>
+            <span className={styles.eyebrow}>TERMINAL / WATCHLIST</span>
+            <h2 id="manage-markets-title">Manage Markets</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close Manage Markets" className={styles.close}>&times;</button>
+        </header>
+        <div className={styles.scroll}>
+          <form onSubmit={handleAdd} className={styles.addForm} aria-label="Add to watchlist">
+            <div className={styles.sourcePicker} role="group" aria-label="Market type">
+              {(["polymarket", "stock"] as const).map((type) => (
+                <button key={type} type="button" aria-pressed={source === type} disabled={busy}
+                  onClick={() => { setSource(type); setError(null); setNotice(null); }}>
+                  {type === "stock" ? "Stock" : "Polymarket"}
+                </button>
               ))}
-            </ul>
-          )}
+            </div>
+            <label className={styles.field}>
+              <span>{isStock ? "Stock symbol" : "Event URL"}</span>
+              <input type="text" aria-label={isStock ? "Stock symbol" : "Polymarket event URL"}
+                value={isStock ? tickerInput : urlInput} disabled={busy} autoComplete="off" autoCorrect="off" spellCheck={false}
+                autoCapitalize={isStock ? "characters" : "none"}
+                onChange={(event) => { if (isStock) setTickerInput(event.target.value); else setUrlInput(event.target.value); setError(null); setNotice(null); }}
+                placeholder={isStock ? "AAPL, MSFT, SPY..." : "Polymarket event URL..."} />
+            </label>
+            <div className={styles.addRow}>
+              <label className={styles.field}>
+                <span>Label <small>optional</small></span>
+                <input type="text" aria-label="Label (optional)" value={labelInput} disabled={busy}
+                  onChange={(event) => setLabelInput(event.target.value)}
+                  placeholder={isStock ? "Company name if blank" : "Event title if blank"} />
+              </label>
+              <button type="submit" disabled={busy || !(isStock ? tickerInput : urlInput).trim()} className={styles.addButton}>
+                {adding ? isStock ? "Checking..." : "Adding..." : isStock ? "Add Stock" : "Add Market"}
+              </button>
+            </div>
+            <p className={styles.hint}>{isStock
+              ? "Stocks and ETFs. Use the Yahoo Finance symbol, such as BRK-B for Berkshire Hathaway. Prices use the same feed as the built-in stocks."
+              : "Paste an event link. You can edit its label and outcome colors after adding it."}</p>
+            {error && <p role="alert" className={styles.error}>{error}</p>}
+            {notice && <p role="status" className={styles.notice}>{notice}</p>}
+          </form>
+          <div className={styles.watchlist}>
+            {savedMarkets.length === 0 && <p className={styles.empty}>Your saved watchlist is empty. Add a market or stock above. Built-in markets are always available in the chart menus.</p>}
+            {(["stock", "polymarket"] as const).map((type) => {
+              const markets = savedMarkets.filter((market) => type === "stock" ? market.source === "stock" : market.source !== "stock");
+              if (!markets.length) return null;
+              return (
+                <section key={type} aria-label={type === "stock" ? "Saved stocks" : "Saved Polymarkets"} className={styles.section}>
+                  <h3>{type === "stock" ? "Stocks" : "Polymarkets"}<span>{markets.length}</span></h3>
+                  <ul className={styles.list}>
+                    {markets.map((market) => (
+                      <li key={market.id} data-market-id={market.id} className={styles.market}>
+                        <div className={styles.marketRow}>
+                          <div className={styles.marketText}>
+                            <div className={styles.marketName}>{market.label}</div>
+                            <div className={styles.marketDetail}>{market.source === "stock" ? `STOCK / ${market.slug}` : market.slug}</div>
+                          </div>
+                          <button type={editingMarketId === market.id ? "submit" : "button"}
+                            form={editingMarketId === market.id ? `market-editor-${market.id}` : undefined}
+                            onClick={editingMarketId === market.id ? undefined : (event) => { event.preventDefault(); setEditingMarketId(market.id); setSaveNotice(null); }}
+                            disabled={busy} aria-expanded={editingMarketId === market.id}
+                            aria-label={editingMarketId === market.id ? `Save ${market.label}` : `Edit ${market.label}`} className={styles.editButton}>
+                            {savingMarketId === market.id ? "Saving..." : editingMarketId === market.id ? "Save" : "Edit"}
+                          </button>
+                          <button type="button" onClick={() => handleRemove(market)} disabled={busy}
+                            aria-label={`Remove ${market.label}`} className={styles.removeButton}>
+                            {removingId === market.id ? "Removing..." : "Remove"}
+                          </button>
+                        </div>
+                        {editingMarketId === market.id && <MarketEditor key={market.id} market={market} userId={userId}
+                          onSettingsSaved={onMarketSettingsChange} onSavingChange={(saving) => setSavingMarketId(saving ? market.id : null)}
+                          onSaved={(message) => { setEditingMarketId(null); setSaveNotice(message ? { marketId: market.id, message } : null); }} />}
+                        {editingMarketId !== market.id && saveNotice?.marketId === market.id && <p role="status" className={styles.savedNotice}>{saveNotice.message}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
