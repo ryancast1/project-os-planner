@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { condition, weatherLocation, type Forecast } from "@/lib/weather";
 import { useForecast } from "./useForecast";
+import Attribution from "./Attribution";
 import DayDetail from "./DayDetail";
 import s from "./weather.module.css";
 
@@ -102,6 +103,6 @@ export default function Weather() {
     {failed ? <div className={s.status} role="status">{forecast ? "Couldn’t refresh the forecast." : "Couldn’t load the forecast."} <button onClick={retry}>Retry</button></div>
       : !forecast && <p className={s.status} role="status">Loading forecast…</p>}
     {forecast && <><Hourly forecast={forecast} /><Days forecast={forecast} />
-      <footer>As of {clock.format(forecast.current.time * 1000)} NYC time · °F · <a href="https://open-meteo.com/">Open-Meteo</a></footer></>}
+      <footer>As of {clock.format(forecast.current.time * 1000)} NYC time · °F · <Attribution forecast={forecast} /></footer></>}
     </div></main>;
 }

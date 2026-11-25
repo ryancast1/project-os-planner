@@ -7,17 +7,18 @@ export const weatherLocation = {
 
 type Reading = number | null;
 export type Forecast = {
+  appleAttribution?: { logo: string; legal: string };
   current: {
     time: number;
     temperature_2m: Reading;
-    weather_code: Reading;
+    weather_code: string | Reading;
     is_day: Reading;
     wind_speed_10m: Reading;
   };
   hourly: {
     time: number[];
     temperature_2m: Reading[];
-    weather_code: Reading[];
+    weather_code: (string | Reading)[];
     is_day: Reading[];
     precipitation: Reading[];
     relative_humidity_2m: Reading[];
@@ -29,7 +30,7 @@ export type Forecast = {
     time: number[];
     temperature_2m_min: Reading[];
     temperature_2m_max: Reading[];
-    weather_code: Reading[];
+    weather_code: (string | Reading)[];
     precipitation_probability_max: Reading[];
     sunrise: Reading[];
     sunset: Reading[];
@@ -37,36 +38,25 @@ export type Forecast = {
 };
 
 export async function fetchForecast(signal: AbortSignal): Promise<Forecast> {
-  // Anchor the requested dates to New York even when the device is traveling.
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: weatherLocation.timezone, year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(new Date());
-  const dateAtOffset = (days: number) => {
-    const date = new Date(today + "T12:00:00Z");
-    date.setUTCDate(date.getUTCDate() + days);
-    return date.toISOString().slice(0, 10);
-  };
-  const params = new URLSearchParams({
-    latitude: String(weatherLocation.latitude),
-    longitude: String(weatherLocation.longitude),
-    timezone: weatherLocation.timezone,
-    temperature_unit: "fahrenheit",
-    precipitation_unit: "inch",
-    wind_speed_unit: "mph",
-    start_date: dateAtOffset(-1),
-    end_date: dateAtOffset(9),
-    timeformat: "unixtime",
-    current: "temperature_2m,weather_code,is_day,wind_speed_10m",
-    hourly: "temperature_2m,precipitation,relative_humidity_2m,dew_point_2m,weather_code,is_day,precipitation_probability,wind_speed_10m",
-    daily: "temperature_2m_min,temperature_2m_max,weather_code,precipitation_probability_max,sunrise,sunset",
-  });
-  const response = await fetch("https://api.open-meteo.com/v1/forecast?" + params, { signal });
+  const response = await fetch("/api/weather", { signal });
   if (!response.ok) throw new Error("Forecast unavailable");
   return response.json();
 }
 
-export function condition(code: Reading, daylight = true): [string, string] {
+export function condition(code: string | Reading, daylight = true): [string, string] {
   if (code == null) return ["—", "Conditions unavailable"];
+  if (typeof code === "string") {
+    const label = code.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+    let icon = "☁️";
+    if (/Thunder|Storm|Hurricane|Tropical/.test(code)) icon = "⛈️";
+    else if (/Snow|Flurr|Blizzard|Sleet|Hail|Wintry/.test(code)) icon = "🌨️";
+    else if (/Rain|Drizzle|Showers/.test(code)) icon = "🌧️";
+    else if (/Fog|Haz|Smok|Dust/.test(code)) icon = "🌫️";
+    else if (/Wind|Breez/.test(code)) icon = "🌬️";
+    else if (/Clear|Hot/.test(code)) icon = daylight ? "☀️" : "🌙";
+    else if (code === "PartlyCloudy") icon = daylight ? "⛅" : "☁️";
+    return [icon, label.charAt(0).toUpperCase() + label.slice(1)];
+  }
   if (code === 0) return daylight ? ["☀️", "Clear"] : ["🌙", "Clear"];
   if (code === 1) return daylight ? ["🌤️", "Mostly clear"] : ["🌙", "Mostly clear"];
   if (code === 2) return [daylight ? "⛅" : "☁️", "Partly cloudy"];

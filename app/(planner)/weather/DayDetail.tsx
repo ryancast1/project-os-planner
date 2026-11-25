@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { condition, weatherLocation, type Forecast } from "@/lib/weather";
+import Attribution from "./Attribution";
 import s from "./day-detail.module.css";
 
 const metrics = {
@@ -145,5 +146,6 @@ export default function DayDetail({ forecast, day, today, planner = false, onSel
       const time = daily[event][day];
       return <div key={event}><span>{event}</span><strong>{time == null ? "—" : clock.format(time * 1000)}</strong></div>;
     })}</div>
+    {forecast.appleAttribution && <footer className="mt-3"><Attribution forecast={forecast} /></footer>}
   </dialog>;
 }

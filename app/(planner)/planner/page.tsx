@@ -7,6 +7,7 @@ import { localTrackingTime, TRICH_DAY_START_HOUR, trichLogFields } from "@/lib/l
 import { movePlanSchedule, planClockTime, planEndDate, planScheduleFields, resizePlanEnd } from "@/lib/planSchedule";
 import DayScheduleView, { type DayScheduleItem } from "@/components/DayScheduleView";
 import DayDetail from "../weather/DayDetail";
+import Attribution from "../weather/Attribution";
 import { useForecast } from "../weather/useForecast";
 import { condition, weatherLocation } from "@/lib/weather";
 import { NotesButton, NotesModal } from "@/components/DayNotes";
@@ -6331,6 +6332,7 @@ setMovieItems(
         onArchiveFocus={archiveEditedFocus}
       />
 
+      {forecast?.appleAttribution && <footer className="text-center"><Attribution forecast={forecast} /></footer>}
       {forecast && weatherIndex >= 0 && <DayDetail planner forecast={forecast} day={weatherIndex}
         today={weatherDates.indexOf(weatherDate.format(forecast.current.time * 1000))}
         onSelect={time => setWeatherDay(weatherDates[forecast.daily.time.indexOf(time)])}
