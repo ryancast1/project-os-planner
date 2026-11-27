@@ -21,7 +21,7 @@ export async function fetchOpenMeteo(signal: AbortSignal): Promise<Forecast> {
     end_date: dateAtOffset(9),
     timeformat: "unixtime",
     current: "temperature_2m,weather_code,is_day,wind_speed_10m",
-    hourly: "temperature_2m,precipitation,relative_humidity_2m,dew_point_2m,weather_code,is_day,precipitation_probability,wind_speed_10m",
+    hourly: "temperature_2m,precipitation,relative_humidity_2m,dew_point_2m,weather_code,is_day,precipitation_probability,wind_speed_10m,wind_gusts_10m",
     daily: "temperature_2m_min,temperature_2m_max,weather_code,precipitation_probability_max,sunrise,sunset",
   });
   const response = await fetch("https://api.open-meteo.com/v1/forecast?" + params, { signal });

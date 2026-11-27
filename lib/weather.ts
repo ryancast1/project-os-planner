@@ -25,6 +25,7 @@ export type Forecast = {
     dew_point_2m: Reading[];
     precipitation_probability: Reading[];
     wind_speed_10m: Reading[];
+    wind_gusts_10m?: Reading[];
   };
   daily: {
     time: number[];

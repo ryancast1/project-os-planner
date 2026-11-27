@@ -43,7 +43,10 @@ export default function DayDetail({ forecast, day, today, planner = false, onSel
   const selected = Math.min(selectedHour ?? Math.max(currentHour, 0), hours.length - 1);
   const index = hours[selected]?.index;
   const series = hours.map(h => hourly[metric][h.index]);
-  const values = series.filter(v => v !== null);
+  const wind = metric === "wind_speed_10m";
+  const gusts = wind ? hours.map(h => hourly.wind_gusts_10m?.[h.index] ?? null) : [];
+  const gust = gusts[selected];
+  const values = series.concat(gusts).filter(v => v !== null);
   const percent = metrics[metric][1] === "%";
   const degrees = metrics[metric][1] === "°F";
   const step = degrees ? 8 : metric === "precipitation" ? 0.04 : 4;
@@ -52,8 +55,9 @@ export default function DayDetail({ forecast, day, today, planner = false, onSel
   const x = (i: number) => 12 + 350 * i / Math.max(1, hours.length - 1);
   const y = (v: number) => 184 - (v - bottom) / (top - bottom) * 138;
   const [icon, label] = condition(hourly.weather_code[index], hourly.is_day[index] === 1);
-  const line = series.map((v, i) => v == null ? "" :
-    (series[i - 1] == null ? "M" : "L") + x(i) + " " + y(v)).join(" ");
+  const pathFor = (samples: (number | null)[]) => samples.map((v, i) => v == null ? "" :
+    (samples[i - 1] == null ? "M" : "L") + x(i) + " " + y(v)).join(" ");
+  const line = pathFor(series);
   const areas = line.trim().split(/(?=M)/).filter(Boolean).map(segment => {
     const coordinates = segment.trim().slice(1).split(/[ML]/);
     const firstX = coordinates[0].trim().split(" ")[0];
@@ -90,13 +94,16 @@ export default function DayDetail({ forecast, day, today, planner = false, onSel
     </select>
     <p className={s.detailTime}>{hours[selected] && hour.format(hours[selected].time * 1000)} · {metrics[metric][0]}</p>
     <p className={s.reading}>{read(activeValue, metric)} <span title={label} role="img" aria-label={label}>{icon}</span></p>
+    {wind && <div className={s.windLegend}>
+      <span>Sustained</span><span>Gusts {read(gust, metric)}</span>
+    </div>}
     <p className={s.detailSub}>{metric === "relative_humidity_2m" || metric === "dew_point_2m"
       ? <>Humidity {read(hourly.relative_humidity_2m[index], "relative_humidity_2m")} · Dew point {read(hourly.dew_point_2m[index], "dew_point_2m")}</>
-      : !planner && <>High {read(daily.temperature_2m_max[day], "temperature_2m")} · Low {read(daily.temperature_2m_min[day], "temperature_2m")}</>}</p>
+      : !planner && !wind && <>High {read(daily.temperature_2m_max[day], "temperature_2m")} · Low {read(daily.temperature_2m_min[day], "temperature_2m")}</>}</p>
     <svg className={s.plot} viewBox="0 0 413 211" role="slider" tabIndex={hours.length ? 0 : -1}
       aria-label={metrics[metric][0] + " by hour, " + dayTitle}
       aria-valuemin={0} aria-valuemax={lastHour} aria-valuenow={Math.max(0, selected)}
-      aria-valuetext={hours[selected] && clock.format(hours[selected].time * 1000) + ", " + read(activeValue, metric)}
+      aria-valuetext={hours[selected] && clock.format(hours[selected].time * 1000) + ", " + read(activeValue, metric) + (wind ? ", gusts " + read(gust, metric) : "")}
       onPointerDown={event => {
         if (!event.isPrimary) return;
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -138,6 +145,8 @@ export default function DayDetail({ forecast, day, today, planner = false, onSel
       {metric === "precipitation" ? series.map((v, i) => v == null ? null :
         <rect key={i} x={x(i) - 4} y={y(v)} width="8" height={184 - y(v)} fill="#78d8f3" />)
         : <path d={line} fill="none" stroke="#78d8f3" strokeWidth="3.5" strokeLinejoin="round" />}
+      {wind && <path d={pathFor(gusts)} fill="none" stroke="#ffc487" strokeWidth="2.4" strokeDasharray="5 3" />}
+      {gust != null && <circle cx={x(selected)} cy={y(gust)} r="3" fill="#ffc487" />}
       {selectedHour != null && hours.length > 0 && <path d={`M${x(selected)} 36 V184`} stroke="#ffffff77" />}
       {activeValue != null && <circle cx={x(selected)} cy={y(activeValue)} r="4.5" fill="white" stroke="#24405a" strokeWidth="2" />}
     </svg>

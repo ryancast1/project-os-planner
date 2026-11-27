@@ -20,3 +20,8 @@
 .sun span { text-transform: capitalize; }
 .synopsis { margin: 12px 0; color: #d4dfed; font-size: 14px; }
 .metricSelect { display: block; margin: 8px auto 12px; border: 1px solid #596372; border-radius: 8px; padding: 6px 10px; background: #343b48; font-size: 14px; }
+
+.windLegend { display: flex; justify-content: center; gap: 16px; color: #d4dfed; font-size: 14px; }
+.windLegend span { display: inline-flex; align-items: center; gap: 6px; }
+.windLegend span::before { content: ""; width: 18px; border-top: 2px solid #78d8f3; }
+.windLegend span:last-child::before { border-top: 2px dashed #ffc487; }

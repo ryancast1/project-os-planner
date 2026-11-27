@@ -9,6 +9,7 @@ type Conditions = {
   windSpeed?: number;
 };
 type Hour = Conditions & {
+  windGust?: number;
   forecastStart: string;
   precipitationAmount?: number;
   precipitationChance?: number;
@@ -54,6 +55,7 @@ export function normalizeWeather(data: AppleResponse, logo: string): Forecast {
       precipitation: hours.map(h => convert(h.precipitationAmount, 1 / 25.4)),
       precipitation_probability: hours.map(h => convert(h.precipitationChance, 100)),
       relative_humidity_2m: hours.map(h => convert(h.humidity, 100)),
+      wind_gusts_10m: hours.map(h => convert(h.windGust, 1 / 1.609344)),
       wind_speed_10m: hours.map(h => convert(h.windSpeed, 1 / 1.609344)),
       is_day: hours.map(h => daylight(h.daylight)),
     },
